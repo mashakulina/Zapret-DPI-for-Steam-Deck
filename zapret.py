@@ -37,32 +37,6 @@ class ZapretGUI:
         except subprocess.CalledProcessError:
             return False
 
-
-    def create_desktop_file(self):
-        desktop_file_content = """[Desktop Entry]
-    Version=1.0
-    Type=Application
-    Name=Zapret DPI Manager
-    Comment=GUI для управления Zapret DPI на Steam Deck
-    Exec=/usr/bin/python3 {script_path}
-    Icon=/opt/zapret/zapret.png
-    Terminal=false
-    Categories=Utility;System;
-    Keywords=zapret;dpi;steam;deck;
-    StartupNotify=false
-    """.format(script_path=os.path.abspath(__file__))
-
-        desktop_file_path = os.path.expanduser("~/Desktop/Zapret DPI.desktop")
-
-        try:
-            with open(desktop_file_path, 'w') as f:
-                f.write(desktop_file_content)
-            os.chmod(desktop_file_path, 0o755)  # Устанавливаем права на выполнение
-            messagebox.showinfo("Успех", "Ярлык приложения успешно создан")
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось создать ярлык: {str(e)}")
-
-
     def unlock_filesystem(self):
         """Разблокирует файловую систему для записи"""
         try:
@@ -305,8 +279,6 @@ class ZapretGUI:
                  command=self.reinstall_zapret).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Удаление Zapret DPI",
                  command=self.uninstall_zapret).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(main_frame, text="Создать ярлык на рабочем столе",
-                 command=self.create_desktop_file).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Выход",
                  command=self.root.destroy).pack(pady=10, fill=tk.X, padx=10)
 
