@@ -13,6 +13,7 @@ echo "[Desktop Entry]
 Type=Application
 Name=Zapret DPI Manager
 Exec=/usr/bin/python3 /home/deck/zapret/zapret.py
+Icon=/home/deck/zapret/zapret.png
 Terminal=false
 Categories=Utility;" > ~/Desktop/Zapret-DPI.desktop && \
 chmod +x ~/Desktop/Zapret-DPI.desktop
