@@ -5,10 +5,12 @@
 Для работы вам понадобится sudo пароль. Его можно установить через сконсоль командой `passwd`
 1. Скопировать весь код ниже
 ```  
-cd /home/deck && \
-mkdir -p zapret && cd zapret && \
-wget https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/download/zapret_steamdeck/zapret.py && \
-sudo chmod +x zapret.py && \
+mkdir -p /home/deck/zapret && \
+cd /home/deck/zapret && \
+wget https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret_dpi_manager.zip && \
+unzip zapret_dpi_manager.zip && \
+rm zapret_dpi_manager.zip && \
+sudo chmod +x zapret.py
 echo "[Desktop Entry]
 Type=Application
 Name=Zapret DPI Manager
