@@ -4,6 +4,7 @@ import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
+import sys, os
 
 
 class ZapretGUI:
@@ -11,6 +12,7 @@ class ZapretGUI:
         self.root = root
         self.root.title("Zapret DPI Manager")
         self.root.geometry("535x300")
+        self.version = "1.1"
 
         # Устанавливаем стиль и шрифты
         self.style = ttk.Style()
@@ -136,6 +138,36 @@ class ZapretGUI:
             return False
         finally:
             self.lock_filesystem()
+            
+    def install_zapret_dpi(self):
+        """Устанавливаем службу Zapret DPI"""
+        try:    
+            os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
+            subprocess.run([
+                'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/releases/latest/download/zapret.zip'
+            ], cwd='/home/deck/zapret/zapret', check=True)
+            subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret/zapret', check=True)
+            subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
+            subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
+                
+            return True
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка скачивания службы {str(e)}")
+            return False
+            
+    def install_zapret_dpi_manager(self):
+        """Устанавливаем Zapret DPI Manager"""
+        try:    
+            os.makedirs('/home/deck/zapret', exist_ok=True)
+            subprocess.run([
+                'wget', 'https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret.py'
+            ], cwd='/home/deck/zapret', check=True)
+            subprocess.run(['sudo', 'chmod', '+x', 'zapret.py'], cwd='/home/deck/zapret', check=True)
+                
+            return True
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка скачивания Zapret DPI Manager {str(e)}")
+            return False
 
     def show_password_dialog(self):
         self.password_window = tk.Toplevel(self.root)
@@ -231,16 +263,8 @@ class ZapretGUI:
                     raise RuntimeError("Не удалось установить зависимости")
 
                 # Устанавливаем Zapret
-                if not self.unlock_filesystem():
-                    return False
-                os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
-                subprocess.run([
-                    'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/releases/latest/download/zapret.zip'
-                ], cwd='/home/deck/zapret/zapret', check=True)
-
-                subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret/zapret', check=True)
-                subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
-                subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
+                if not self.install_zapret_dpi():
+                     raise RuntimeError("Не удалось скачать службу")
 
                 progress_window.destroy()
                 messagebox.showinfo("Успех", "Zapret DPI успешно установлен")
@@ -309,8 +333,8 @@ class ZapretGUI:
 
         tk.Button(main_frame, text="Проверка статуса службы",
                  command=self.check_status, font=('Helvetica', 11)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(main_frame, text="Переустановка Zapret DPI",
-                 command=self.reinstall_zapret, font=('Helvetica', 11)).pack(pady=10, fill=tk.X, padx=10)
+        tk.Button(main_frame, text="Обновление Zapret DPI Manager и службы",
+                 command=self.update_zapret, font=('Helvetica', 11)).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Удаление Zapret DPI",
                  command=self.uninstall_zapret, font=('Helvetica', 11)).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Выход",
@@ -351,12 +375,20 @@ class ZapretGUI:
         tk.Button(domains_frame, text="Добавить в ignore.txt",
                  command=self.open_ignore, font=('Helvetica', 11)).pack(pady=10, fill=tk.X, padx=20)
 
+        # Добавляем версию в нижнюю часть окна
+        version_frame = ttk.Frame(self.root)
+        version_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+    
+        # Укажите вашу текущую версию здесь
+        version_label = ttk.Label(version_frame, text=f"Zapret DPI Manager v{self.version}", font=('Helvetica', 9))
+        version_label.pack(side=tk.RIGHT, padx=10)
+        
         self.root.deiconify()
 
     def check_status(self):
         self.show_status_window()
 
-    def reinstall_zapret(self):
+    def update_zapret(self):
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Переустановка Zapret DPI")
         progress_window.geometry("350x100")
@@ -368,7 +400,7 @@ class ZapretGUI:
         progress.pack(pady=5)
         progress.start()
 
-        def run_reinstallation():
+        def run_update():
             try:
                 # Проверяем и устанавливаем зависимости
                 if not self.install_dependencies():
@@ -378,24 +410,31 @@ class ZapretGUI:
                 if os.path.exists('/opt/zapret'):
                     subprocess.run(['sudo', '/opt/zapret/uninstall.sh'], check=True)
                     subprocess.run(['sudo', 'rm', '-rf', '/opt/zapret'], check=True)
+                    
+                # Удаляем папку zapret
+                subprocess.run(['sudo', 'rm', '-rf', '/home/deck/zapret'], check=True)
+                
+                # Скачиваем обновление                            
+                if not self.install_zapret_dpi_manager():
+                    raise RuntimeError("Не удалось скачать Zapret DPI Manager")
 
                 # Устанавливаем Zapret
-                os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
-                subprocess.run([
-                    'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/releases/latest/download/zapret.zip'
-                ], cwd='/home/deck/zapret/zapret', check=True)
-                subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret/zapret', check=True)
-                subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
-                subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
+                if not self.install_zapret_dpi():
+                    raise RuntimeError("Не удалось скачать службу Zapret DPI")                   
 
                 progress_window.destroy()
                 messagebox.showinfo("Успех", "Zapret DPI успешно переустановлен")
                 self.create_main_menu()
+                
+                # Перезапуск приложения
+                python = sys.executable
+                os.execl(python, python, *sys.argv)
+        
             except Exception as e:
                 progress_window.destroy()
                 messagebox.showerror("Ошибка", f"Ошибка при переустановке: {str(e)}")
 
-        threading.Thread(target=run_reinstallation).start()
+        threading.Thread(target=run_update).start()
 
     def uninstall_zapret(self):
         if not os.path.exists('/opt/zapret'):
