@@ -160,10 +160,12 @@ class ZapretGUI:
         try:    
             os.makedirs('/home/deck/zapret', exist_ok=True)
             subprocess.run([
-                'wget', 'https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret.py'
+                'wget', 'https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret_dpi_manager.zip'
             ], cwd='/home/deck/zapret', check=True)
+            subprocess.run(['unzip', 'zapret_dpi_manager.zip'], cwd='/home/deck/zapret', check=True)
+            subprocess.run(['rm', 'zapret_dpi_manager.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['sudo', 'chmod', '+x', 'zapret.py'], cwd='/home/deck/zapret', check=True)
-                
+                            
             return True
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка скачивания Zapret DPI Manager {str(e)}")
