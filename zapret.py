@@ -11,7 +11,7 @@ class ZapretGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Zapret DPI Manager")
-        self.root.geometry("580x360")
+        self.root.geometry("580x410")
         self.version = "1.3"
 
         # # Устанавливаем стиль и шрифты
@@ -157,10 +157,7 @@ class ZapretGUI:
         try:
             if not self.unlock_filesystem():
                 return False
-            # os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
-            # subprocess.run([
-            #     'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/archive/refs/heads/main.zip'
-            # ], cwd='/home/deck/zapret', check=True)
+
 
             subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
@@ -383,19 +380,22 @@ class ZapretGUI:
 
         # Динамические кнопки управления службой
         if self.is_service_active():
-            self.stop_button = tk.Button(service_buttons_frame, text="Остановка службы", command=self.stop_service, font=('Helvetica', 13))
+            self.stop_button = tk.Button(service_buttons_frame, text="Остановить службу", command=self.stop_service, font=('Helvetica', 13))
             self.stop_button.pack(pady=5, fill=tk.X)
         else:
-            self.start_button = tk.Button(service_buttons_frame, text="Запуск службы", command=self.start_service, font=('Helvetica', 13))
+            self.start_button = tk.Button(service_buttons_frame, text="Запустить службу", command=self.start_service, font=('Helvetica', 13))
             self.start_button.pack(pady=5, fill=tk.X)
 
         # Динамические кнопки автозапуска
         if self.is_service_enabled():
-            self.disable_autorun_button = tk.Button(autorun_buttons_frame, text="Отключение автозапуска службы", command=self.disable_autorun,  font=('Helvetica', 13))
+            self.disable_autorun_button = tk.Button(autorun_buttons_frame, text="Отсключить автозапуск службы", command=self.disable_autorun,  font=('Helvetica', 13))
             self.disable_autorun_button.pack(pady=5, fill=tk.X)
         else:
-            self.enable_autorun_button = tk.Button(autorun_buttons_frame, text="Включение автозапуска службы",command=self.enable_autorun, font=('Helvetica', 13))
+            self.enable_autorun_button = tk.Button(autorun_buttons_frame, text="Включить автозапуск службы",command=self.enable_autorun, font=('Helvetica', 13))
             self.enable_autorun_button.pack(pady=5, fill=tk.X)
+
+        tk.Button(service_frame, text="Выход",
+                command=self.root.destroy, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
 
         # Вкладка "Списки доменов"
         domains_frame = ttk.Frame(self.notebook)
@@ -404,16 +404,20 @@ class ZapretGUI:
         note_text = """Примечание:
 Не работает какой-то заблокированный сайт?
 Попробуйте добавить его домен в autohosts.txt.
-
 Если не работает незаблокированный сайт?
-Добавьте его домен в ignore.txt."""
+Добавьте его домен в ignore.txt.
+Для внесения изменения в config выбрать
+'Изменить config.txt' (для опытных пользователей)"""
 
-        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=10, padx=10, anchor=tk.W)
+        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=0, padx=0, anchor=tk.W)
 
         tk.Button(domains_frame, text="Добавить в autohosts.txt",
-                 command=self.open_autohosts, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=20)
+                 command=self.open_autohosts, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(domains_frame, text="Добавить в ignore.txt",
-                 command=self.open_ignore, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=20)
+                 command=self.open_ignore, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
+        tk.Button(domains_frame, text="Изменить config.txt",
+                 command=self.open_config, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
+
 
         # Вкладка "Дополнительно"
         main_frame = ttk.Frame(self.notebook)
@@ -427,8 +431,6 @@ class ZapretGUI:
                  command=self.update_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Удалить Zapret DPI",
                  command=self.uninstall_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(main_frame, text="Выход",
-                 command=self.root.destroy, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
 
         # Добавляем версию в нижнюю часть окна
         version_frame = ttk.Frame(self.root)
@@ -599,6 +601,17 @@ class ZapretGUI:
                 messagebox.showerror("Ошибка", "Файл ignore.txt не найден")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
+
+    def open_config(self):
+        try:
+            ignore_path = "/opt/zapret/config.txt"
+            if os.path.exists(ignore_path):
+                subprocess.run(['xdg-open', ignore_path])
+            else:
+                messagebox.showerror("Ошибка", "Файл config.txt не найден")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
