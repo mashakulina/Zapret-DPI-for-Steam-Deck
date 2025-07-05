@@ -406,10 +406,10 @@ class ZapretGUI:
 Попробуйте добавить его домен в autohosts.txt.
 Если не работает незаблокированный сайт?
 Добавьте его домен в ignore.txt.
-Для внесения изменения в config выбрать
-'Изменить config.txt' (для опытных пользователей)"""
+Для внесения изменения в config выбрать'Изменить config.txt
+(для опытных пользователей) После измененеия требуется перезапуск службы)"""
 
-        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=0, padx=0, anchor=tk.W)
+        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 10)).pack(pady=10, padx=10, anchor=tk.W)
 
         tk.Button(domains_frame, text="Добавить в autohosts.txt",
                  command=self.open_autohosts, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
