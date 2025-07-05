@@ -12,9 +12,9 @@ class ZapretGUI:
         self.root = root
         self.root.title("Zapret DPI Manager")
         self.root.geometry("580x360")
-        self.version = "1.2"
+        self.version = "1.3"
 
-        # Устанавливаем стиль и шрифты
+        # # Устанавливаем стиль и шрифты
         self.style = ttk.Style()
         self.style.configure('.', font=('Helvetica', 14))  # Базовый шрифт
 
@@ -32,7 +32,13 @@ class ZapretGUI:
     def is_package_installed(self, package_name):
         """Проверяет, установлен ли пакет через проверку версии"""
         try:
-            if package_name == 'ipset':
+            if package_name == 'curl':
+                subprocess.run(['sudo', 'curl', '--version'],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             check=True)
+                return True
+            elif package_name == 'ipset':
                 subprocess.run(['sudo', 'ipset', '--version'],
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE,
@@ -40,9 +46,9 @@ class ZapretGUI:
                 return True
             elif package_name == 'iptables':
                 subprocess.run(['sudo', 'iptables', '--version'],
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             check=True)
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            check=True)
                 return True
             return False
         except subprocess.CalledProcessError:
@@ -120,11 +126,18 @@ class ZapretGUI:
             # Проверяем и устанавливаем зависимости
             dependencies_needed = False
 
+            if not self.is_package_installed('curl'):
+                if not self.fix_pacman_conf():
+                    return False
+                subprocess.run(['sudo', 'pacman', '-S', '--noconfirm', 'curl'], check=True)
+                dependencies_needed = True
+
             if not self.is_package_installed('ipset'):
                 if not self.fix_pacman_conf():
                     return False
                 subprocess.run(['sudo', 'pacman', '-S', '--noconfirm', 'ipset'], check=True)
                 dependencies_needed = True
+
 
             if not self.is_package_installed('iptables'):
                 if not self.fix_pacman_conf():
@@ -144,14 +157,15 @@ class ZapretGUI:
         try:
             if not self.unlock_filesystem():
                 return False
-            os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
-            subprocess.run([
-                'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/releases/latest/download/zapret.zip'
-            ], cwd='/home/deck/zapret/zapret', check=True)
+            # os.makedirs('/home/deck/zapret/zapret', exist_ok=True)
+            # subprocess.run([
+            #     'wget', 'https://github.com/ImMALWARE/zapret-linux-easy/archive/refs/heads/main.zip'
+            # ], cwd='/home/deck/zapret', check=True)
 
-            subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret/zapret', check=True)
+            subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
             subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
+            subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret.zip'], check=True)
                 
             return True
         except Exception as e:
@@ -307,7 +321,7 @@ class ZapretGUI:
         self.status_window.geometry("680x350")
         self.status_window.resizable(False, False)
 
-        tk.Label(self.status_window, text="В Loaded после zapret.service указывается автозапуск службы\ndisabled - автозапуск службы запущен\nenabled - автозапуск службы запущен\nВ строке Active указывается запущена служба или нет\nactive (running) - служба запущена\ninactive (dead) - служба не запущена", font=('Helvetica', 12)).pack(pady=5)
+        tk.Label(self.status_window, text="В Loaded после zapret.service указывается автозапуск службы\ndisabled - автозапуск службы запущен\nenabled - автозапуск службы запущен\nВ строке Active указывается запущена служба или нет\nactive (exited) - процесс службы завершился (не работает в фоне), но сама служба\nсчитается 'активной',\ninactive (dead) - служба не запущена", font=('Helvetica', 12)).pack(pady=5)
 
         status_text = scrolledtext.ScrolledText(self.status_window, height=5, font=('Helvetica', 12))
         status_text.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
@@ -356,6 +370,9 @@ class ZapretGUI:
 
         tk.Button(service_frame, text="Проверка статуса службы",
                 command=self.check_status, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
+
+        tk.Button(service_frame, text="Перезапустить службу",
+                command=self.restart_service, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
 
        # Создаем фреймы для кнопок
         service_buttons_frame = ttk.Frame(service_frame)
@@ -406,9 +423,9 @@ class ZapretGUI:
 
         tk.Label(main_frame, text=note_text, justify=tk.LEFT).pack(pady=10, padx=10, anchor=tk.W)
 
-        tk.Button(main_frame, text="Обновление Zapret DPI Manager и службы",
+        tk.Button(main_frame, text="Обновить Zapret DPI Manager и службы",
                  command=self.update_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(main_frame, text="Удаление Zapret DPI",
+        tk.Button(main_frame, text="Удалить Zapret DPI",
                  command=self.uninstall_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
         tk.Button(main_frame, text="Выход",
                  command=self.root.destroy, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
@@ -446,7 +463,9 @@ class ZapretGUI:
 
                 # Удаляем старую версию Zapret
                 if os.path.exists('/opt/zapret'):
-                    subprocess.run(['sudo', '/opt/zapret/uninstall.sh'], check=True)
+                    subprocess.run(['sudo', 'systemctl', 'disable', 'zapret'], check=True)
+                    subprocess.run(['sudo', 'systemctl', 'stop', 'zapret'], check=True)
+                    subprocess.run(['sudo', 'rm', '-rf', '/usr/lib/systemd/system/zapret.service'], check=True)
                     subprocess.run(['sudo', 'rm', '-rf', '/opt/zapret'], check=True)
                     
                 # Удаляем папку zapret
@@ -485,7 +504,9 @@ class ZapretGUI:
                     return
 
                 # Удаляем Zapret
-                subprocess.run(['sudo', '/opt/zapret/uninstall.sh'], check=True)
+                subprocess.run(['sudo', 'systemctl', 'disable', 'zapret'], check=True)
+                subprocess.run(['sudo', 'systemctl', 'stop', 'zapret'], check=True)
+                subprocess.run(['sudo', 'rm', '-rf', '/usr/lib/systemd/system/zapret.service'], check=True)
                 subprocess.run(['sudo', 'rm', '-rf', '/opt/zapret'], check=True)
 
                 # Удаляем зависимости (только ipset)
@@ -507,6 +528,14 @@ class ZapretGUI:
                 messagebox.showerror("Ошибка", f"Ошибка при удалении: {str(e)}")
             finally:
                 self.lock_filesystem()
+
+    def restart_service(self):
+        try:
+            subprocess.run(['sudo', 'systemctl', 'restart', 'zapret'], check=True)
+            messagebox.showinfo("Успех", "Служба Zapret DPI перезапущена")
+            self.update_service_tab()  # Обновляем интерфейс
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при перезапуске службы: {str(e)}")
 
     def stop_service(self):
         try:
