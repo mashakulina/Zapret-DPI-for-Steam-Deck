@@ -158,7 +158,6 @@ class ZapretGUI:
             if not self.unlock_filesystem():
                 return False
 
-
             subprocess.run(['unzip', 'zapret.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
             subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
@@ -458,18 +457,27 @@ class ZapretGUI:
         progress.start()
 
         def run_update():
+
             try:
                 # Проверяем и устанавливаем зависимости
                 if not self.install_dependencies():
                     raise RuntimeError("Не удалось установить зависимости")
 
                 # Удаляем старую версию Zapret
-                if os.path.exists('/opt/zapret'):
-                    subprocess.run(['sudo', 'systemctl', 'disable', 'zapret'], check=True)
-                    subprocess.run(['sudo', 'systemctl', 'stop', 'zapret'], check=True)
-                    subprocess.run(['sudo', 'rm', '-rf', '/usr/lib/systemd/system/zapret.service'], check=True)
-                    subprocess.run(['sudo', 'rm', '-rf', '/opt/zapret'], check=True)
-                    
+
+                try:
+                    if not self.unlock_filesystem():
+                        return
+
+                    if os.path.exists('/opt/zapret'):
+                        subprocess.run(['sudo', 'systemctl', 'disable', 'zapret'], check=True)
+                        subprocess.run(['sudo', 'systemctl', 'stop', 'zapret'], check=True)
+                        subprocess.run(['sudo', 'rm', '-rf', '/usr/lib/systemd/system/zapret.service'], check=True)
+                        subprocess.run(['sudo', 'rm', '-rf', '/opt/zapret'], check=True)
+
+                finally:
+                    self.lock_filesystem()
+
                 # Удаляем папку zapret
                 subprocess.run(['sudo', 'rm', '-rf', '/home/deck/zapret'], check=True)
                 
