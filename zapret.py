@@ -11,8 +11,8 @@ class ZapretGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Zapret DPI Manager")
-        self.root.geometry("580x410")
-        self.version = "1.3"
+        self.root.geometry("685x330")
+        self.version = "1.4"
 
         # # Устанавливаем стиль и шрифты
         self.style = ttk.Style()
@@ -202,6 +202,7 @@ class ZapretGUI:
         except:
             return False
 
+    # Экран ввода пароля
     def show_password_dialog(self):
         self.password_window = tk.Toplevel(self.root)
         self.password_window.title("Аутентификация")
@@ -224,6 +225,7 @@ class ZapretGUI:
         self.password_window.grab_set()
         self.root.withdraw()
 
+    # Проверка введеного пароля
     def verify_password(self):
         password = self.password_entry.get()
         try:
@@ -256,190 +258,6 @@ class ZapretGUI:
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при проверке статуса Zapret DPI: {str(e)}")
 
-    def show_install_dialog(self):
-        self.install_window = tk.Toplevel(self.root)
-        self.install_window.title("Установка Zapret DPI")
-        self.install_window.geometry("400x100")
-        self.install_window.resizable(False, False)
-
-        tk.Label(self.install_window, text="Zapret DPI не установлен. Установить?", font=('Helvetica', 13)).pack(pady=10)
-
-        button_frame = tk.Frame(self.install_window)
-        button_frame.pack(pady=10)
-
-        tk.Button(button_frame, text="Установить Zapret DPI",
-                 command=self.install_zapret, font=('Helvetica', 13)).pack(side=tk.LEFT, padx=10)
-        tk.Button(button_frame, text="Отмена",
-                 command=self.cancel_operation, font=('Helvetica', 13)).pack(side=tk.RIGHT, padx=10)
-
-        self.install_window.grab_set()
-        self.root.withdraw()
-
-    def install_zapret(self):
-        self.install_window.destroy()
-
-        progress_window = tk.Toplevel(self.root)
-        progress_window.title("Установка Zapret DPI")
-        progress_window.geometry("300x100")
-        progress_window.resizable(False, False)
-
-        tk.Label(progress_window, text="Идет установка Zapret DPI...", font=('Helvetica', 13)).pack(pady=10)
-
-        progress = ttk.Progressbar(progress_window, mode='indeterminate')
-        progress.pack(pady=5)
-        progress.start()
-
-        def run_installation():
-            try:
-                # Проверяем и устанавливаем зависимости
-                if not self.install_dependencies():
-                    raise RuntimeError("Не удалось установить зависимости")
-
-                # Устанавливаем Zapret
-                if not self.install_zapret_dpi():
-                     raise RuntimeError("Не удалось скачать службу")
-
-                progress_window.destroy()
-                messagebox.showinfo("Успех", "Zapret DPI успешно установлен")
-                self.show_status_window()
-            except Exception as e:
-                progress_window.destroy()
-                messagebox.showerror("Ошибка", f"Ошибка при установке: {str(e)}")
-                self.root.deiconify()
-            finally:
-                self.lock_filesystem()
-
-        threading.Thread(target=run_installation).start()
-
-    def show_status_window(self):
-        self.status_window = tk.Toplevel(self.root)
-        self.status_window.title("Статус Zapret DPI")
-        self.status_window.geometry("680x350")
-        self.status_window.resizable(False, False)
-
-        tk.Label(self.status_window, text="В Loaded после zapret.service указывается автозапуск службы\ndisabled - автозапуск службы запущен\nenabled - автозапуск службы запущен\nВ строке Active указывается запущена служба или нет\nactive (exited) - процесс службы завершился (не работает в фоне), но сама служба\nсчитается 'активной',\ninactive (dead) - служба не запущена", font=('Helvetica', 12)).pack(pady=5)
-
-        status_text = scrolledtext.ScrolledText(self.status_window, height=5, font=('Helvetica', 12))
-        status_text.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
-
-        try:
-            result = subprocess.run(['systemctl', 'status', 'zapret'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-            for line in result.stdout.split('\n'):
-                if 'Loaded:' in line:
-                    status_text.insert(tk.END, line + '\n')
-                    break
-            for line in result.stdout.split('\n'):
-                if 'Active:' in line:
-                    status_text.insert(tk.END, line + '\n')
-                    break
-        except Exception as e:
-            status_text.insert(tk.END, f"Ошибка при получении статуса: {str(e)}")
-
-        status_text.config(state=tk.DISABLED)
-
-        tk.Button(self.status_window, text="Далее", font=('Helvetica', 13),
-                  command=lambda: [self.status_window.destroy(),
-                                self.create_main_menu()]).pack(pady=5)
-
-        self.status_window.grab_set()
-        self.root.withdraw()
-
-    def create_main_menu(self):
-        # Очищаем предыдущие виджеты
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
-        # Создаем Notebook (вкладки)
-        self.notebook = ttk.Notebook(self.root)
-        self.style.configure('TNotebook.Tab', font=('Helvetica', 15))
-        self.notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Вкладка "Управление службами"
-        service_frame = ttk.Frame(self.notebook)
-        self.notebook.add(service_frame, text="Управление службой")
-
-        note_text = """Примечание: По умолчанию автозапуск службы включен."""
-
-        tk.Label(service_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=10, padx=10, anchor=tk.W)
-
-        tk.Button(service_frame, text="Проверка статуса службы",
-                command=self.check_status, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-
-        tk.Button(service_frame, text="Перезапустить службу",
-                command=self.restart_service, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-
-       # Создаем фреймы для кнопок
-        service_buttons_frame = ttk.Frame(service_frame)
-        service_buttons_frame.pack(pady=5, fill=tk.X, padx=10)
-
-        autorun_buttons_frame = ttk.Frame(service_frame)
-        autorun_buttons_frame.pack(pady=5, fill=tk.X, padx=10)
-
-        # Динамические кнопки управления службой
-        if self.is_service_active():
-            self.stop_button = tk.Button(service_buttons_frame, text="Остановить службу", command=self.stop_service, font=('Helvetica', 13))
-            self.stop_button.pack(pady=5, fill=tk.X)
-        else:
-            self.start_button = tk.Button(service_buttons_frame, text="Запустить службу", command=self.start_service, font=('Helvetica', 13))
-            self.start_button.pack(pady=5, fill=tk.X)
-
-        # Динамические кнопки автозапуска
-        if self.is_service_enabled():
-            self.disable_autorun_button = tk.Button(autorun_buttons_frame, text="Отсключить автозапуск службы", command=self.disable_autorun,  font=('Helvetica', 13))
-            self.disable_autorun_button.pack(pady=5, fill=tk.X)
-        else:
-            self.enable_autorun_button = tk.Button(autorun_buttons_frame, text="Включить автозапуск службы",command=self.enable_autorun, font=('Helvetica', 13))
-            self.enable_autorun_button.pack(pady=5, fill=tk.X)
-
-        tk.Button(service_frame, text="Выход",
-                command=self.root.destroy, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-
-        # Вкладка "Списки доменов"
-        domains_frame = ttk.Frame(self.notebook)
-        self.notebook.add(domains_frame, text="Списки доменов")
-
-        note_text = """Примечание:
-Не работает какой-то заблокированный сайт?
-Попробуйте добавить его домен в autohosts.txt.
-Если не работает незаблокированный сайт?
-Добавьте его домен в ignore.txt.
-Для внесения изменения в config выбрать'Изменить config.txt
-(для опытных пользователей) После измененеия требуется перезапуск службы)"""
-
-        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 10)).pack(pady=10, padx=10, anchor=tk.W)
-
-        tk.Button(domains_frame, text="Добавить в autohosts.txt",
-                 command=self.open_autohosts, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(domains_frame, text="Добавить в ignore.txt",
-                 command=self.open_ignore, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(domains_frame, text="Изменить config.txt",
-                 command=self.open_config, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-
-
-        # Вкладка "Дополнительно"
-        main_frame = ttk.Frame(self.notebook)
-        self.notebook.add(main_frame, text="Дополнительно")
-
-        note_text = """"""
-
-        tk.Label(main_frame, text=note_text, justify=tk.LEFT).pack(pady=10, padx=10, anchor=tk.W)
-
-        tk.Button(main_frame, text="Обновить Zapret DPI Manager и службы",
-                 command=self.update_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-        tk.Button(main_frame, text="Удалить Zapret DPI",
-                 command=self.uninstall_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
-
-        # Добавляем версию в нижнюю часть окна
-        version_frame = ttk.Frame(self.root)
-        version_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
-    
-        # Укажите вашу текущую версию здесь
-        version_label = ttk.Label(version_frame, text=f"Zapret DPI Manager v.{self.version}", font=('Helvetica', 10))
-        version_label.pack(side=tk.RIGHT, padx=10)
-        
-        self.root.deiconify()
 
     def check_status(self):
         self.show_status_window()
@@ -480,23 +298,23 @@ class ZapretGUI:
 
                 # Удаляем папку zapret
                 subprocess.run(['sudo', 'rm', '-rf', '/home/deck/zapret'], check=True)
-                
-                # Скачиваем обновление                            
+
+                # Скачиваем обновление
                 if not self.install_zapret_dpi_manager():
                     raise RuntimeError("Не удалось скачать Zapret DPI Manager")
 
                 # Устанавливаем Zapret
                 if not self.install_zapret_dpi():
-                    raise RuntimeError("Не удалось скачать службу Zapret DPI")                   
+                    raise RuntimeError("Не удалось скачать службу Zapret DPI")
 
                 progress_window.destroy()
                 messagebox.showinfo("Успех", "Zapret DPI успешно переустановлен")
                 self.create_main_menu()
-                
+
                 # Перезапуск приложения
                 python = sys.executable
                 os.execl(python, python, *sys.argv)
-        
+
             except Exception as e:
                 progress_window.destroy()
                 messagebox.showerror("Ошибка", f"Ошибка при переустановке: {str(e)}")
@@ -542,6 +360,7 @@ class ZapretGUI:
     def restart_service(self):
         try:
             subprocess.run(['sudo', 'systemctl', 'restart', 'zapret'], check=True)
+            self.update_strategy_display()  # Обновляем отображение
             messagebox.showinfo("Успех", "Служба Zapret DPI перезапущена")
             self.update_service_tab()  # Обновляем интерфейс
         except Exception as e:
@@ -619,6 +438,445 @@ class ZapretGUI:
                 messagebox.showerror("Ошибка", "Файл config.txt не найден")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
+
+    # Экран установки
+    def show_install_dialog(self):
+        self.install_window = tk.Toplevel(self.root)
+        self.install_window.title("Установка Zapret DPI")
+        self.install_window.geometry("400x100")
+        self.install_window.resizable(False, False)
+
+        tk.Label(self.install_window, text="Zapret DPI не установлен. Установить?", font=('Helvetica', 13)).pack(pady=10)
+
+        button_frame = tk.Frame(self.install_window)
+        button_frame.pack(pady=10)
+
+        tk.Button(button_frame, text="Установить Zapret DPI",
+                 command=self.install_zapret, font=('Helvetica', 13)).pack(side=tk.LEFT, padx=10)
+        tk.Button(button_frame, text="Отмена",
+                 command=self.cancel_operation, font=('Helvetica', 13)).pack(side=tk.RIGHT, padx=10)
+
+        self.install_window.grab_set()
+        self.root.withdraw()
+
+    def update_button_states(self):
+        """Обновляет текст и состояние кнопок в зависимости от статуса службы"""
+        if self.is_service_active():
+            self.service_control_btn.config(text="Остановить службу")
+        else:
+            self.service_control_btn.config(text="Запустить службу")
+
+        if self.is_service_enabled():
+            self.autostart_btn.config(text="Отключить автозапуск")
+        else:
+            self.autostart_btn.config(text="Включить автозапуск")
+
+    def toggle_service(self):
+        """Переключает состояние службы"""
+        if self.is_service_active():
+            self.stop_service()
+        else:
+            self.start_service()
+        self.update_button_states()
+
+    def toggle_autostart(self):
+        """Переключает автозапуск"""
+        if self.is_service_enabled():
+            self.disable_autorun()
+        else:
+            self.enable_autorun()
+        self.update_button_states()
+
+
+    # Сообщение о том, какая стретегия выбрана
+    def get_current_config(self):
+        """Возвращает текущую конфигурацию с определением провайдера"""
+        config_path = "/opt/zapret/config.txt"
+
+        try:
+            with open(config_path, 'r') as f:
+                first_line = f.readline().strip()
+                content = first_line + "\n" + f.read()  # Читаем остальное содержимое
+
+            # Определяем провайдера по первой строке
+            provider = "Пользовательская"
+            if "Ростелеком" in first_line:
+                provider = "Ростелеком/Теле2"
+            elif "МТС" in first_line:
+                provider = "МТС"
+
+            return (f"Текущая стратегия: {provider}\n")
+
+        except Exception as e:
+            return f"Ошибка чтения конфигурации: {str(e)}"
+
+    def update_strategy_display(self):
+        """Обновляет отображение стратегии"""
+        self.strategy_label.config(text=self.get_current_config())
+
+
+
+# ===========================================================
+# ======================== СТРАТЕГИИ ========================
+# ===========================================================
+
+    # Стратегия для Ростелеокма/Теле2
+    def config_rostelecom(self):
+        config_path = "/opt/zapret/config.txt"
+        config_content = """# Ростелеком/Теле2
+--wf-tcp=80,443 --wf-udp=443,50000-59000
+--filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-repeats=2 --dpi-desync-cutoff=n2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=split --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-cutoff=d2 --dpi-desync-ttl=4 --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=2 --dpi-desync-split-pos=3 --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=3 --new
+--filter-udp=50000-59000 --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=d3 --dpi-desync-repeats=6 --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=1 --dpi-desync-split-tls=sniext --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=2 --new"""
+
+        # Записываем новую конфигурацию с sudo правами
+        try:
+            # Создаем временный файл
+            temp_path = "/tmp/config.tmp"
+            with open(temp_path, 'w') as f:
+                f.write(config_content)
+
+            # Копируем с sudo правами
+            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
+            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
+
+            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
+            self.restart_service()
+            self.update_strategy_display()
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    # Стратегия для МТС
+    def config_mts(self):
+        """Применяет конфигурацию для выбранного провайдера"""
+        config_path = "/opt/zapret/config.txt"
+        config_content = """# МТС
+--wf-tcp=80,443 --wf-udp=443,50000-59000
+--filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-repeats=2 --dpi-desync-cutoff=n2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=2 --dpi-desync-split-pos=3 --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=3 --new
+--filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-udplen-increment=10 --dpi-desync-repeats=7 --dpi-desync-udplen-pattern=0xDEADBEEF --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --dpi-desync-cutoff=n2 --new
+--filter-udp=50000-59000 --dpi-desync=fake,split2 --dpi-desync-any-protocol --dpi-desync-cutoff=d2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=split --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-ttl=4 --new
+--filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=1 --dpi-desync-split-tls=sniext --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=2 --new"""
+
+        # Записываем новую конфигурацию с sudo правами
+        try:
+            # Создаем временный файл
+            temp_path = "/tmp/config.tmp"
+            with open(temp_path, 'w') as f:
+                f.write(config_content)
+
+            # Копируем с sudo правами
+            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
+            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
+
+            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
+            self.restart_service()
+            self.update_strategy_display()
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+# ===========================================================
+# ===========================================================
+# ===========================================================
+
+
+    # Установка Запрета
+    def install_zapret(self):
+        self.install_window.destroy()
+
+        progress_window = tk.Toplevel(self.root)
+        progress_window.title("Установка Zapret DPI")
+        progress_window.geometry("300x100")
+        progress_window.resizable(False, False)
+
+        tk.Label(progress_window, text="Идет установка Zapret DPI...", font=('Helvetica', 13)).pack(pady=10)
+
+        progress = ttk.Progressbar(progress_window, mode='indeterminate')
+        progress.pack(pady=5)
+        progress.start()
+
+        def run_installation():
+            try:
+                # Проверяем и устанавливаем зависимости
+                if not self.install_dependencies():
+                    raise RuntimeError("Не удалось установить зависимости")
+
+                # Устанавливаем Zapret
+                if not self.install_zapret_dpi():
+                     raise RuntimeError("Не удалось скачать службу")
+
+                progress_window.destroy()
+                messagebox.showinfo("Успех", "Zapret DPI успешно установлен")
+                self.show_status_window()
+            except Exception as e:
+                progress_window.destroy()
+                messagebox.showerror("Ошибка", f"Ошибка при установке: {str(e)}")
+                self.root.deiconify()
+            finally:
+                self.lock_filesystem()
+
+        threading.Thread(target=run_installation).start()
+
+    # Окно с выводом статуса службы
+    def show_status_window(self):
+        self.status_window = tk.Toplevel(self.root)
+        self.status_window.title("Статус Zapret DPI")
+        self.status_window.geometry("680x350")
+        self.status_window.resizable(False, False)
+
+        tk.Label(self.status_window, text="В Loaded после zapret.service указывается автозапуск службы\nenabled - автозапуск службы запущен\ndisabled - автозапуск службы не запущен\nВ строке Active указывается запущена служба или нет\nactive (exited) - процесс службы завершился (не работает в фоне), но сама служба\nсчитается 'активной',\ninactive (dead) - служба не запущена", font=('Helvetica', 12)).pack(pady=5)
+
+        status_text = scrolledtext.ScrolledText(self.status_window, height=5, font=('Helvetica', 12))
+        status_text.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
+
+        try:
+            result = subprocess.run(['systemctl', 'status', 'zapret'],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            for line in result.stdout.split('\n'):
+                if 'Loaded:' in line:
+                    status_text.insert(tk.END, line + '\n')
+                    break
+            for line in result.stdout.split('\n'):
+                if 'Active:' in line:
+                    status_text.insert(tk.END, line + '\n')
+                    break
+        except Exception as e:
+            status_text.insert(tk.END, f"Ошибка при получении статуса: {str(e)}")
+
+        status_text.config(state=tk.DISABLED)
+
+        tk.Button(self.status_window, text="Далее", font=('Helvetica', 13),
+                  command=lambda: [self.status_window.destroy(),
+                                self.create_main_menu()]).pack(pady=5)
+
+        self.status_window.grab_set()
+        self.root.withdraw()
+
+    # Основной экран
+    def create_main_menu(self):
+        # Очищаем предыдущие виджеты
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Создаем Notebook (вкладки)
+        self.notebook = ttk.Notebook(self.root)
+        self.style.configure('TNotebook.Tab', font=('Helvetica', 15))
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+
+        # Вкладка "Управление службой"
+        service_frame = ttk.Frame(self.notebook)
+        self.notebook.add(service_frame, text="Управление службой")
+
+        # Строка статуса (компактная)
+        status_frame = ttk.Frame(service_frame)
+        status_frame.pack(fill=tk.X, pady=(10, 10), padx=5)
+
+        self.strategy_label = ttk.Label(
+            status_frame,
+            text=self.get_current_config(),
+            font=('Helvetica', 12, 'bold'),
+            foreground='blue'
+        )
+        self.strategy_label.pack(side=tk.LEFT)
+
+        # Сетка кнопок (2 колонки)
+        buttons_frame = ttk.Frame(service_frame)
+        buttons_frame.pack(fill=tk.BOTH, expand=True, padx=5)
+
+        buttons_frame.columnconfigure(0, weight=1, uniform='cols')
+        buttons_frame.columnconfigure(1, weight=1, uniform='cols')
+
+        # Динамические кнопки управления службой
+        self.service_control_btn = ttk.Button(
+            buttons_frame,
+            command=self.toggle_service,
+            style='TButton'
+        )
+        self.service_control_btn.grid(row=0, column=0, padx=3, pady=3, sticky='nsew')
+
+        # Динамические кнопки автозапуска
+        self.autostart_btn = ttk.Button(
+            buttons_frame,
+            command=self.toggle_autostart,
+            style='TButton'
+        )
+        self.autostart_btn.grid(row=0, column=1, padx=3, pady=3, sticky='nsew')
+
+        # Динамические кнопки (сохраняем как атрибуты)
+        ttk.Button(
+            buttons_frame,
+            text="Проверка статуса",
+            command=self.check_status,
+            style='TButton'
+        ).grid(row=1, column=0, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="Выход",
+            command=self.root.destroy,
+            style='TButton'
+        ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
+
+        # Настройка строк
+        for i in range(3):
+            buttons_frame.rowconfigure(i, weight=0, minsize=30)
+
+        # Обновляем состояние кнопок
+        self.update_button_states()
+
+
+        # Вкладка "Стратегия"
+        config_frame = ttk.Frame(self.notebook)
+        self.notebook.add(config_frame, text="Стратегия")
+
+        # Строка статуса (компактная)
+        status_frame = ttk.Frame(config_frame)
+        status_frame.pack(fill=tk.X, pady=(10, 1), padx=5)
+
+        self.strategy_label = ttk.Label(
+            status_frame,
+            text=self.get_current_config(),
+            font=('Helvetica', 12, 'bold'),
+            foreground='blue'
+        )
+        self.strategy_label.pack(side=tk.LEFT)
+
+        note_text = """Стратегия для Ростел./Т2 работает с Мегафон, но без голосового в дисе.
+Если нужно добавить свою стратегию, то выбрать 'Изменить config.txt'.
+Обязательно после изменений перезапустите службу"""
+        tk.Label(config_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=(0, 5), padx=5, anchor=tk.W)
+
+        # Сетка кнопок (2 колонки)
+        buttons_frame = ttk.Frame(config_frame)
+        buttons_frame.pack(fill=tk.BOTH, expand=True, padx=5)
+
+        buttons_frame.columnconfigure(0, weight=1, uniform='cols')
+        buttons_frame.columnconfigure(1, weight=1, uniform='cols')
+
+        # Динамические кнопки (сохраняем как атрибуты)
+        ttk.Button(
+            buttons_frame,
+            text="Ростелеком/Теле2",
+            command=self.config_rostelecom,
+            style='TButton'
+        ).grid(row=0, column=0, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="МТС",
+            command=self.config_mts,
+            style='TButton'
+        ).grid(row=0, column=1, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="Изменить config.txt",
+            command=self.open_config,
+            style='TButton'
+        ).grid(row=1, column=0, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="Перезапустить службу",
+            command=self.restart_service,
+            style='TButton'
+        ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
+
+        # Настройка строк
+        for i in range(3):
+            buttons_frame.rowconfigure(i, weight=0, minsize=30)
+
+        # Обновляем состояние кнопок
+        self.update_button_states()
+
+
+        # Вкладка "Списки доменов"
+        domains_frame = ttk.Frame(self.notebook)
+        self.notebook.add(domains_frame, text="Списки доменов")
+
+        note_text = """Примечание:
+Не работает какой-то заблокированный сайт?
+Попробуйте добавить его домен в autohosts.txt.
+Если не работает незаблокированный сайт?
+Добавьте его домен в ignore.txt."""
+
+        tk.Label(domains_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=10, padx=10, anchor=tk.W)
+
+        # Сетка кнопок (2 колонки)
+        buttons_frame = ttk.Frame(domains_frame)
+        buttons_frame.pack(fill=tk.BOTH, expand=True, padx=5)
+
+        buttons_frame.columnconfigure(0, weight=1, uniform='cols')
+        buttons_frame.columnconfigure(1, weight=1, uniform='cols')
+
+        # Динамические кнопки (сохраняем как атрибуты)
+        ttk.Button(
+            buttons_frame,
+            text="Добавить в autohosts.txt",
+            command=self.open_autohosts,
+            style='TButton'
+        ).grid(row=0, column=0, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="Добавить в ignore.txt",
+            command=self.open_ignore,
+            style='TButton'
+        ).grid(row=0, column=1, padx=3, pady=3, sticky='nsew')
+
+
+        # Настройка строк
+        for i in range(3):
+            buttons_frame.rowconfigure(i, weight=0, minsize=30)
+
+        # Обновляем состояние кнопок
+        self.update_button_states()
+
+
+        # Вкладка "Дополнительно"
+        extra_frame = ttk.Frame(self.notebook)
+        self.notebook.add(extra_frame, text="Дополнительно")
+
+        note_text = """"""
+
+        tk.Label(extra_frame, text=note_text, justify=tk.LEFT).pack(pady=10, padx=10, anchor=tk.W)
+
+        tk.Button(extra_frame, text="Обновить службу Zapret DPI и Manager",
+                 command=self.update_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
+        tk.Button(extra_frame, text="Удалить службу Zapret DPI и Manager",
+                 command=self.uninstall_zapret, font=('Helvetica', 13)).pack(pady=10, fill=tk.X, padx=10)
+
+        # Сетка кнопок (2 колонки)
+        buttons_frame = ttk.Frame(extra_frame)
+        buttons_frame.pack(fill=tk.BOTH, expand=True, padx=5)
+
+        buttons_frame.columnconfigure(0, weight=1, uniform='cols')
+        buttons_frame.columnconfigure(1, weight=1, uniform='cols')
+
+        # Добавляем версию в нижнюю часть окна
+        version_frame = ttk.Frame(self.root)
+        version_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
+    
+        # Укажите вашу текущую версию здесь
+        version_label = ttk.Label(version_frame, text=f"Zapret DPI Manager v.{self.version}", font=('Helvetica', 10))
+        version_label.pack(side=tk.RIGHT, padx=10)
+        
+        self.root.deiconify()
 
 
 if __name__ == "__main__":
