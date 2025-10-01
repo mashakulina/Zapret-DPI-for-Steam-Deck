@@ -11,8 +11,8 @@ class ZapretGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Zapret DPI Manager")
-        self.root.geometry("685x330")
-        self.version = "1.4"
+        self.root.geometry("685x350")
+        self.version = "1.6"
 
         # # Устанавливаем стиль и шрифты
         self.style = ttk.Style()
@@ -151,7 +151,7 @@ class ZapretGUI:
             return False
         finally:
             self.lock_filesystem()
-            
+
     def install_zapret_dpi(self):
         """Устанавливаем службу Zapret DPI"""
         try:
@@ -162,15 +162,15 @@ class ZapretGUI:
             subprocess.run(['sudo', './install.sh'], cwd='/home/deck/zapret/zapret', check=True)
             subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret'], check=True)
             subprocess.run(['rm', '-rf', '/home/deck/zapret/zapret.zip'], check=True)
-                
+
             return True
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка скачивания службы {str(e)}")
             return False
-            
+
     def install_zapret_dpi_manager(self):
         """Устанавливаем Zapret DPI Manager"""
-        try:    
+        try:
             os.makedirs('/home/deck/zapret', exist_ok=True)
             subprocess.run([
                 'wget', 'https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret_dpi_manager.zip'
@@ -178,7 +178,7 @@ class ZapretGUI:
             subprocess.run(['unzip', 'zapret_dpi_manager.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['rm', 'zapret_dpi_manager.zip'], cwd='/home/deck/zapret', check=True)
             subprocess.run(['sudo', 'chmod', '+x', 'zapret.py'], cwd='/home/deck/zapret', check=True)
-                            
+
             return True
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка скачивания Zapret DPI Manager {str(e)}")
@@ -439,6 +439,44 @@ class ZapretGUI:
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
 
+
+    def fix_protondb_dns(self):
+        """Добавляет DNS для работы с Protondb и перезапускает службу"""
+        try:
+            # Создаем резервную копию
+            subprocess.run(["sudo", "cp", "/etc/systemd/resolved.conf", "/etc/systemd/resolved.conf.backup"], check=True)
+
+            # Читаем и модифицируем файл
+            with open("/etc/systemd/resolved.conf", "r") as f:
+                lines = f.readlines()
+
+            # Удаляем старые DNS настройки если есть
+            lines = [line for line in lines if not line.startswith("DNS=")]
+
+            # Добавляем новую DNS настройку в конец
+            if lines and not lines[-1].endswith('\n'):
+                lines[-1] += '\n'
+            lines.append("DNS=1.1.1.1\n")
+
+            # Записываем обратно
+            with open("/tmp/resolved.conf.new", "w") as f:
+                f.writelines(lines)
+
+            # Копируем с правами sudo
+            subprocess.run(["sudo", "cp", "/tmp/resolved.conf.new", "/etc/systemd/resolved.conf"], check=True)
+            subprocess.run(["sudo", "rm", "/tmp/resolved.conf.new"], check=True)
+
+            # Перезапускаем службу
+            subprocess.run(["sudo", "systemctl", "restart", "systemd-resolved"], check=True)
+            subprocess.run(["sudo", "systemctl", "enable", "systemd-resolved"], check=True)
+
+            messagebox.showinfo("Успех", "DNS для ProtonDB успешно добавлен!\nСлужба перезапущена.")
+
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Ошибка", f"Ошибка выполнения команды: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось настроить DNS: {str(e)}")
+
     # Экран установки
     def show_install_dialog(self):
         self.install_window = tk.Toplevel(self.root)
@@ -504,6 +542,8 @@ class ZapretGUI:
                 provider = "Ростелеком/Теле2"
             elif "МТС" in first_line:
                 provider = "МТС"
+            elif "Общая стратегия" in first_line:
+                provider = "Общая стратегия"
 
             return (f"Текущая стратегия: {provider}\n")
 
@@ -587,6 +627,47 @@ class ZapretGUI:
             # Удаляем временный файл
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+
+    # Стратегия Общая стратегия
+    def config_all(self):
+        """Применяет конфигурацию для выбранного провайдера"""
+        config_path = "/opt/zapret/config.txt"
+        config_content = """# Общая стратегия
+--wf-l3=ipv4,ipv6 --wf-tcp=80,443,6695-6705 --wf-udp=443,50000-50100,1024-65535
+--filter-tcp=443 --ipset=/opt/zapret/lists/russia-youtube-rtmps.txt --dpi-desync=syndata --dpi-desync-fake-syndata=/opt/zapret/bin/tls_clienthello_4.bin --dpi-desync-autottl --new
+--filter-tcp=443 --hostlist=/opt/zapret/lists/youtube_v2.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=midsld+1 --new
+--filter-tcp=443 --hostlist=/opt/zapret/lists/youtubeGV.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=midsld-1 --new
+--filter-udp=443 --hostlist=/opt/zapret/lists/youtubeQ.txt --dpi-desync=fake,udplen --dpi-desync-udplen-increment=4 --dpi-desync-fake-quic=/opt/zapret/bin/quic_3.bin --dpi-desync-cutoff=n3 --dpi-desync-repeats=2 --new
+--filter-tcp=443 --ipset=/opt/zapret/lists/ipset-discord.txt --dpi-desync=syndata --dpi-desync-fake-syndata=/opt/zapret/bin/tls_clienthello_3.bin --dpi-desync-autottl --new
+--filter-udp=443 --hostlist=/opt/zapret/lists/discord.txt --dpi-desync=fake,udplen --dpi-desync-udplen-increment=5 --dpi-desync-udplen-pattern=0xDEADBEEF --dpi-desync-fake-quic=/opt/zapret/bin/quic_2.bin --dpi-desync-repeats=7 --dpi-desync-cutoff=n2 --new
+--filter-udp=50000-50090 --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=n3 --new
+--filter-tcp=443 --hostlist-domains=googlevideo.com --dpi-desync=multidisorder --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=1,host+2,sld+2,sld+5,sniext+1,sniext+2,endhost-2 --new
+--filter-tcp=6695-6705 --dpi-desync=fake,split2 --dpi-desync-repeats=8 --dpi-desync-fooling=md5sig --dpi-desync-autottl=2 --dpi-desync-fake-tls=/opt/zapret/bin/tls_clienthello_www_google_com.bin --new
+--filter-tcp=443 --hostlist-exclude=/opt/zapret/lists/netrogat.txt --dpi-desync=fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-autottl --new"""
+
+        # Записываем новую конфигурацию с sudo правами
+        try:
+            # Создаем временный файл
+            temp_path = "/tmp/config.tmp"
+            with open(temp_path, 'w') as f:
+                f.write(config_content)
+
+            # Копируем с sudo правами
+            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
+            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
+
+            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
+            self.restart_service()
+            self.update_strategy_display()
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
 
 # ===========================================================
 # ===========================================================
@@ -732,6 +813,13 @@ class ZapretGUI:
             style='TButton'
         ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
 
+        ttk.Button(
+            buttons_frame,
+            text="Исправление ProtonDB.com",
+            command=self.fix_protondb_dns,
+            style='TButton'
+        ).grid(row=2, column=0, padx=3, pady=3, sticky='nsew')
+
         # Настройка строк
         for i in range(3):
             buttons_frame.rowconfigure(i, weight=0, minsize=30)
@@ -785,6 +873,13 @@ class ZapretGUI:
 
         ttk.Button(
             buttons_frame,
+            text="Общая стратегия",
+            command=self.config_all,
+            style='TButton'
+        ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
             text="Изменить config.txt",
             command=self.open_config,
             style='TButton'
@@ -795,7 +890,8 @@ class ZapretGUI:
             text="Перезапустить службу",
             command=self.restart_service,
             style='TButton'
-        ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
+        ).grid(row=2, column=1, padx=3, pady=3, sticky='nsew')
+
 
         # Настройка строк
         for i in range(3):
@@ -871,11 +967,11 @@ class ZapretGUI:
         # Добавляем версию в нижнюю часть окна
         version_frame = ttk.Frame(self.root)
         version_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
-    
+
         # Укажите вашу текущую версию здесь
         version_label = ttk.Label(version_frame, text=f"Zapret DPI Manager v.{self.version}", font=('Helvetica', 10))
         version_label.pack(side=tk.RIGHT, padx=10)
-        
+
         self.root.deiconify()
 
 
