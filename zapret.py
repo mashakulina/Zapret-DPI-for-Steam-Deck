@@ -12,7 +12,7 @@ class ZapretGUI:
         self.root = root
         self.root.title("Zapret DPI Manager")
         self.root.geometry("685x350")
-        self.version = "1.6"
+        self.version = "1.7"
 
         # # Устанавливаем стиль и шрифты
         self.style = ttk.Style()
@@ -265,7 +265,7 @@ class ZapretGUI:
     def update_zapret(self):
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Переустановка Zapret DPI")
-        progress_window.geometry("350x100")
+        progress_window.geometry("350x120")
         progress_window.resizable(False, False)
 
         tk.Label(progress_window, text="Идет переустановка Zapret DPI...", font=('Helvetica', 13)).pack(pady=10)
@@ -274,15 +274,23 @@ class ZapretGUI:
         progress.pack(pady=5)
         progress.start()
 
-        def run_update():
+        status_label = tk.Label(progress_window, text="Создание бэкапа...", font=('Helvetica', 11))
+        status_label.pack(pady=5)
 
+        def run_update():
             try:
+                # Создаем бэкап конфигурационных файлов
+                status_label.config(text="Создание бэкапа конфигураций...")
+                if not self.backup_config_files():
+                    print("Предупреждение: не удалось создать бэкап конфигурационных файлов")
+
                 # Проверяем и устанавливаем зависимости
+                status_label.config(text="Проверка зависимостей...")
                 if not self.install_dependencies():
                     raise RuntimeError("Не удалось установить зависимости")
 
                 # Удаляем старую версию Zapret
-
+                status_label.config(text="Удаление старой версии...")
                 try:
                     if not self.unlock_filesystem():
                         return
@@ -300,12 +308,19 @@ class ZapretGUI:
                 subprocess.run(['sudo', 'rm', '-rf', '/home/deck/zapret'], check=True)
 
                 # Скачиваем обновление
+                status_label.config(text="Скачивание обновления...")
                 if not self.install_zapret_dpi_manager():
                     raise RuntimeError("Не удалось скачать Zapret DPI Manager")
 
                 # Устанавливаем Zapret
+                status_label.config(text="Установка Zapret DPI...")
                 if not self.install_zapret_dpi():
                     raise RuntimeError("Не удалось скачать службу Zapret DPI")
+
+                # Восстанавливаем конфигурационные файлы
+                status_label.config(text="Восстановление конфигураций...")
+                if not self.restore_config_files():
+                    print("Предупреждение: не удалось восстановить конфигурационные файлы")
 
                 progress_window.destroy()
                 messagebox.showinfo("Успех", "Zapret DPI успешно переустановлен")
@@ -439,6 +454,57 @@ class ZapretGUI:
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
 
+    def backup_config_files(self):
+        """Создает бэкап конфигурационных файлов"""
+        try:
+            backup_dir = "/home/deck/zapret_backup"
+            os.makedirs(backup_dir, exist_ok=True)
+
+            files_to_backup = [
+                ("/opt/zapret/autohosts.txt", "autohosts.txt"),
+                ("/opt/zapret/ignore.txt", "ignore.txt"),
+                ("/opt/zapret/config.txt", "config.txt")
+            ]
+
+            for source_path, filename in files_to_backup:
+                if os.path.exists(source_path):
+                    backup_path = os.path.join(backup_dir, filename)
+                    subprocess.run(['sudo', 'cp', source_path, backup_path], check=True)
+                    subprocess.run(['sudo', 'chown', 'deck:deck', backup_path], check=True)
+
+            return True
+        except Exception as e:
+            print(f"Ошибка при создании бэкапа: {str(e)}")
+            return False
+
+    def restore_config_files(self):
+        """Восстанавливает конфигурационные файлы из бэкапа"""
+        try:
+            backup_dir = "/home/deck/zapret_backup"
+
+            files_to_restore = [
+                ("autohosts.txt", "/opt/zapret/autohosts.txt"),
+                ("ignore.txt", "/opt/zapret/ignore.txt"),
+                ("config.txt", "/opt/zapret/config.txt")
+            ]
+
+            # Восстанавливаем файлы
+            for backup_filename, target_path in files_to_restore:
+                backup_path = os.path.join(backup_dir, backup_filename)
+                if os.path.exists(backup_path):
+                    subprocess.run(['sudo', 'cp', backup_path, target_path], check=True)
+                    subprocess.run(['sudo', 'chmod', '644', target_path], check=True)
+
+            # Удаляем папку бэкапа после успешного восстановления
+            if os.path.exists(backup_dir):
+                subprocess.run(['sudo', 'rm', '-rf', backup_dir], check=True)
+                print("Папка бэкапа удалена после восстановления")
+
+            return True
+        except Exception as e:
+            print(f"Ошибка при восстановлении бэкапа: {str(e)}")
+            return False
+
 
     def fix_protondb_dns(self):
         """Добавляет DNS для работы с Protondb и перезапускает службу"""
@@ -476,6 +542,61 @@ class ZapretGUI:
             messagebox.showerror("Ошибка", f"Ошибка выполнения команды: {str(e)}")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось настроить DNS: {str(e)}")
+
+    def fix_update_applications(self):
+        """Модифицирует pacman.conf и инициализирует ключи"""
+        # Создаем окно ожидания
+        progress_window = tk.Toplevel(self.root)
+        progress_window.title("Обновление программ")
+        progress_window.geometry("400x120")
+        progress_window.resizable(False, False)
+        progress_window.grab_set()
+
+        tk.Label(progress_window, text="Идет обновление программ...",
+                font=('Helvetica', 13)).pack(pady=10)
+
+        progress = ttk.Progressbar(progress_window, mode='indeterminate')
+        progress.pack(pady=5, padx=20, fill=tk.X)
+        progress.start()
+
+        status_label = tk.Label(progress_window, text="Подготовка...",
+                            font=('Helvetica', 11))
+        status_label.pack(pady=5)
+
+        def run_update():
+            try:
+                if not self.unlock_filesystem():
+                    raise RuntimeError("Не удалось разблокировать файловую систему")
+
+                # Обновляем статус
+                status_label.config(text="Обновление openh264...")
+                progress_window.update()
+
+                # Обновляем базу пакетов и устанавливаем openh264
+                subprocess.run(['sudo', 'pacman', '-S', '--noconfirm', 'openh264'], check=True)
+
+                # Обновляем статус
+                status_label.config(text="Обновление flatpak приложений...")
+                progress_window.update()
+
+                # Обновляем flatpak приложения
+                subprocess.run(['flatpak', 'update', '-y'], check=True)
+
+                progress_window.destroy()
+                messagebox.showinfo("Успех", "Программы успешно обновлены!")
+
+            except subprocess.CalledProcessError as e:
+                progress_window.destroy()
+                messagebox.showerror("Ошибка", f"Ошибка выполнения команды: {str(e)}")
+            except Exception as e:
+                progress_window.destroy()
+                messagebox.showerror("Ошибка", f"Ошибка обновления: {str(e)}")
+            finally:
+                self.lock_filesystem()
+
+        # Запускаем в отдельном потоке
+        threading.Thread(target=run_update, daemon=True).start()
+
 
     # Экран установки
     def show_install_dialog(self):
@@ -819,6 +940,14 @@ class ZapretGUI:
             command=self.fix_protondb_dns,
             style='TButton'
         ).grid(row=2, column=0, padx=3, pady=3, sticky='nsew')
+
+        ttk.Button(
+            buttons_frame,
+            text="Обновление программ",
+            command=self.fix_update_applications,
+            style='TButton'
+        ).grid(row=2, column=1, padx=3, pady=3, sticky='nsew')
+
 
         # Настройка строк
         for i in range(3):
