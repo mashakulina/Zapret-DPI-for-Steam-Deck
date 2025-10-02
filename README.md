@@ -4,37 +4,19 @@
 
 ## Установка
 Для работы вам понадобится sudo пароль. Его можно установить через консоль командой `passwd`
-1. Скопировать весь код ниже
-```  
-mkdir -p /home/deck/zapret && \
-cd /home/deck/zapret && \
-wget https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret_dpi_manager.zip && \
-unzip zapret_dpi_manager.zip && \
-rm zapret_dpi_manager.zip && \
-sudo chmod +x zapret.py
-echo "[Desktop Entry]
-Type=Application
-Name=Zapret DPI Manager
-Exec=/usr/bin/python3 /home/deck/zapret/zapret.py
-Icon=/home/deck/zapret/zapret.png
-Terminal=false
-Categories=Utility;" > ~/Desktop/Zapret-DPI.desktop && \
-chmod +x ~/Desktop/Zapret-DPI.desktop
-```  
-2. Открыть консоль на рабочем столе
-3. Вставить команду в консоль и нажать энтер
-4. В консоли нужно будет ввести sudo пароль
-На рабочем столе появится ярлык для запуска Zapret DPI Manager
-Сам файл находится по пути /home/deck/zapret - не удалять
+1. Скачать архив  [reinstall_zapret.tar.gz](https://raw.githubusercontent.com/mashakulina/Zapret-DPI-for-Steam-Deck/main/reinstall_zapret.tar.gz) 
+2. Распаковать в удобном месте. Например в загрузках
+3. Кликнуть по нему два раза
+4. Выбрать Установить Zapret DPI Manager
+5. Дождаться окончания установки (появится окно `Zapret DPI Manager` с вводом пароля)
+6. После ввода пароля будет предложено установить Zapret DPI
+После установки Zapret DPI будет автоматически настроен конфиг для `Ростелеком/Теле2`
+На рабочем столе появится ярлык для запуска `Zapret DPI Manager`
 
-## Если у Вас Zapret Manager начинает сыпать ошибками
-Переустановите его:
-1. Кликнуть по файлу `uninstall.sh` правой кнопкой
-2. Выбрать `Запустить в Konsole`
-3. В открывшейся консоле ввести `sudo` пароль и нажать энтер
-4. После успешного удаления, можно закрыть консоль
-5. Кликнуть по файлу `install.sh` правой кнопкой
-6. Выбрать `Запустить в Konsole`
-7. В открывшейся консоле ввести `sudo` пароль и нажать энтер
-После успешной установки откроется окно `Zapret Manager` с вводом `sudo` пароля.
-После ввода пароля будет предложено установить `Zapret Manager`
+Списки доменов `autohosts.txt` и `ignore.txt` доступен только для МТС и Ростелеком/Теле2
+Общая стратегия работает со своими домеными листами, которые лежат в папке /opt/zapret/lists/ (папку можно открыть через Zapret DPI Manager - Списки доменов)
+
+Сама программа находится по пути `/home/deck/zapret` - не удалять
+
+## Если у Вас с Zapret Manager возникли проблемы
+Воскользуйтесь файлом `reinstall_zapret.sh` в папке `/home/deck/zapret`
