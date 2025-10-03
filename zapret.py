@@ -1172,14 +1172,21 @@ class ZapretGUI:
                 self.autostart_btn.config(text="Отключить автозапуск")
             else:
                 self.autostart_btn.config(text="Включить автозапуск")
+
+        """Обновляет текст и состояние кнопок в зависимости от статуса доступа к сайту"""
         if hasattr(self, 'site_buttons'):
             for name, keyword in self.AI_SITES.items():
                 if keyword in self.site_buttons:
                     button = self.site_buttons[keyword]
+
+                    if not button.winfo_exists():
+                        continue
+
                     if self.is_site_unblocked(keyword):
                         button.config(text=f"Отключить доступ к {name}", style='TButton')
                     else:
                         button.config(text=f"Включить доступ к {name}", style='TButton')
+
 
     def toggle_service(self):
         """Переключает состояние службы"""
