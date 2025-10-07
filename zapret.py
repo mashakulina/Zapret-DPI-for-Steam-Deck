@@ -18,6 +18,9 @@ class ZapretGUI:
         # Константы для путей
         self.ETC_HOSTS_PATH = "/etc/hosts"
         self.ZAPRET_HOSTS_PATH = "/opt/zapret/hosts.txt"
+        self.zapret_config_path = os.path.join("/", "opt", "zapret", "config.txt") # Путь до стратегий запрета
+        self.zapret_manager_working_dir_path = os.path.join("/", "home", "deck", "zapret") # Путь до корневой папки скрипта
+        self.zapret_manager_strategy_dir = "strategy" # Папка с стратегиями
 
         # Список сайтов для новой вкладки
         self.AI_SITES = {
@@ -810,6 +813,16 @@ class ZapretGUI:
                 messagebox.showerror("Ошибка", "Файл config.txt не найден")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
+            
+    def open_strategy(self):
+        try:
+            strategy_path = os.path.join(self.zapret_manager_working_dir_path, self.zapret_manager_strategy_dir)
+            if os.path.exists(strategy_path):
+                subprocess.run(['xdg-open', strategy_path])
+            else:
+                messagebox.showerror("Ошибка", "Папка strategy не найдена")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
 
     def backup_config_files(self):
         """Создает бэкап конфигурационных файлов и папки lists"""
@@ -1203,155 +1216,65 @@ class ZapretGUI:
         else:
             self.enable_autorun()
         self.update_button_states()
+        
+    # Ищем файлы в переданном пути и 
+    # возвращаем массив названий файлов
+    def get_file_list(self, target_dir_path: str) -> list[str]:
+        files_name = []
+        for item in os.listdir(target_dir_path):
+            full_path = os.path.join(target_dir_path, item)
+            if os.path.isfile(full_path):
+                files_name.append(item)
+        return files_name
 
     # Сообщение о том, какая стретегия выбрана
-    def get_current_config(self):
-        """Возвращает текущую конфигурацию с определением провайдера"""
-        config_path = "/opt/zapret/config.txt"
-
-        try:
-            with open(config_path, 'r') as f:
-                first_line = f.readline().strip()
-                content = first_line + "\n" + f.read()  # Читаем остальное содержимое
-
-            # Определяем провайдера по первой строке
-            provider = "Пользовательская"
-            if "Ростелеком" in first_line:
-                provider = "Ростелеком/Теле2"
-            elif "МТС" in first_line:
-                provider = "МТС"
-            elif "Общая стратегия" in first_line:
-                provider = "Общая стратегия"
-
-            return (f"Текущая стратегия: {provider}\n")
-
-        except Exception as e:
-            return f"Ошибка чтения конфигурации: {str(e)}"
+    def get_current_config(self) -> str:
+        filename_with_ext = "Missing info"
+        if os.path.exists(self.zapret_config_path):
+            if os.path.islink(self.zapret_config_path):
+                target_path = os.readlink(self.zapret_config_path)
+                filename_with_ext = os.path.basename(target_path)
+            else:
+                subprocess.run(['sudo', 'rm', '-rf', self.zapret_config_path], check=False)
+        
+        return (f"Текущая стратегия: {filename_with_ext}\n")
 
     def update_strategy_display(self):
         """Обновляет отображение стратегии"""
         self.strategy_label.config(text=self.get_current_config())
-
-
-
-# ===========================================================
-# ======================== СТРАТЕГИИ ========================
-# ===========================================================
-
-    # Стратегия для Ростелеокма/Теле2
-    def config_rostelecom(self):
-        config_path = "/opt/zapret/config.txt"
-        config_content = """# Ростелеком/Теле2
---wf-tcp=80,443 --wf-udp=443,50000-59000
---filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-repeats=2 --dpi-desync-cutoff=n2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=split --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-cutoff=d2 --dpi-desync-ttl=4 --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=2 --dpi-desync-split-pos=3 --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=3 --new
---filter-udp=50000-59000 --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=d3 --dpi-desync-repeats=6 --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=1 --dpi-desync-split-tls=sniext --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=2 --new"""
-
-        # Записываем новую конфигурацию с sudo правами
+        
+    # Принимает путь до файла и путь, где необходимо создать symlink
+    def create_symlink_to_file(self, source_path: str, target_path: str):
         try:
-            # Создаем временный файл
-            temp_path = "/tmp/config.tmp"
-            with open(temp_path, 'w') as f:
-                f.write(config_content)
-
-            # Копируем с sudo правами
-            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
-            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
-
-            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
+            subprocess.run(['sudo', 'ln', '-s', source_path, target_path], check=False)
+            # os.symlink(source_path, target_path, target_is_directory=False)
+        except Exception as e:
+            print(f"Error creating symbolic link: {e}")
+    
+    # Принимает путь до symlink и удаляет его, если 
+    # путь действительно ведёт на symlink
+    def remove_symlink_to_file(self, symlink_path: str):
+        if os.path.islink(symlink_path):
+            try:
+                subprocess.run(['sudo', 'unlink', symlink_path], check=False)
+                os.unlink(symlink_path)
+            except OSError as e:
+                print(f"Error removing symbolic link '{symlink_path}': {e}")
+                
+    # Функция изменения стратегии
+    def change_strategy(self, strategy_name: str):
+        try:
+            selected_strategy_path = os.path.join(self.zapret_manager_working_dir_path, self.zapret_manager_strategy_dir, strategy_name)
+            self.remove_symlink_to_file(self.zapret_config_path)
+            self.create_symlink_to_file(selected_strategy_path, self.zapret_config_path)
+            
+            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапуск службы для применения изменений.")
+            
             self.restart_service()
             self.update_strategy_display()
-
+            
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
-        finally:
-            # Удаляем временный файл
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    # Стратегия для МТС
-    def config_mts(self):
-        """Применяет конфигурацию для выбранного провайдера"""
-        config_path = "/opt/zapret/config.txt"
-        config_content = """# МТС
---wf-tcp=80,443 --wf-udp=443,50000-59000
---filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-repeats=2 --dpi-desync-cutoff=n2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=2 --dpi-desync-split-pos=3 --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=3 --new
---filter-udp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake --dpi-desync-udplen-increment=10 --dpi-desync-repeats=7 --dpi-desync-udplen-pattern=0xDEADBEEF --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --dpi-desync-cutoff=n2 --new
---filter-udp=50000-59000 --dpi-desync=fake,split2 --dpi-desync-any-protocol --dpi-desync-cutoff=d2 --dpi-desync-fake-quic=/opt/zapret/system/quic_initial_www_google_com.bin --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=split --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-ttl=4 --new
---filter-tcp=443 --hostlist=/opt/zapret/autohosts.txt --hostlist-exclude=/opt/zapret/ignore.txt --dpi-desync=fake,split2 --dpi-desync-split-seqovl=1 --dpi-desync-split-tls=sniext --dpi-desync-fake-tls=/opt/zapret/system/tls_clienthello_www_google_com.bin --dpi-desync-ttl=2 --new"""
-
-        # Записываем новую конфигурацию с sudo правами
-        try:
-            # Создаем временный файл
-            temp_path = "/tmp/config.tmp"
-            with open(temp_path, 'w') as f:
-                f.write(config_content)
-
-            # Копируем с sudo правами
-            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
-            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
-
-            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
-            self.restart_service()
-            self.update_strategy_display()
-
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
-        finally:
-            # Удаляем временный файл
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-
-    # Стратегия Общая стратегия
-    def config_all(self):
-        """Применяет конфигурацию для выбранного провайдера"""
-        config_path = "/opt/zapret/config.txt"
-        config_content = """# Общая стратегия
---wf-l3=ipv4,ipv6 --wf-tcp=80,443,6695-6705 --wf-udp=443,50000-50100,1024-65535
---filter-tcp=443 --ipset=/opt/zapret/lists/russia-youtube-rtmps.txt --dpi-desync=syndata --dpi-desync-fake-syndata=/opt/zapret/bin/tls_clienthello_4.bin --dpi-desync-autottl --new
---filter-tcp=443 --hostlist=/opt/zapret/lists/youtube_v2.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=midsld+1 --new
---filter-tcp=443 --hostlist=/opt/zapret/lists/youtubeGV.txt --dpi-desync=multisplit --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=midsld-1 --new
---filter-udp=443 --hostlist=/opt/zapret/lists/youtubeQ.txt --dpi-desync=fake,udplen --dpi-desync-udplen-increment=4 --dpi-desync-fake-quic=/opt/zapret/bin/quic_3.bin --dpi-desync-cutoff=n3 --dpi-desync-repeats=2 --new
---filter-tcp=443 --ipset=/opt/zapret/lists/ipset-discord.txt --dpi-desync=syndata --dpi-desync-fake-syndata=/opt/zapret/bin/tls_clienthello_3.bin --dpi-desync-autottl --new
---filter-udp=443 --hostlist=/opt/zapret/lists/discord.txt --dpi-desync=fake,udplen --dpi-desync-udplen-increment=5 --dpi-desync-udplen-pattern=0xDEADBEEF --dpi-desync-fake-quic=/opt/zapret/bin/quic_2.bin --dpi-desync-repeats=7 --dpi-desync-cutoff=n2 --new
---filter-udp=50000-50090 --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=n3 --new
---filter-tcp=443 --hostlist-domains=googlevideo.com --dpi-desync=multidisorder --dpi-desync-split-seqovl=1 --dpi-desync-split-pos=1,host+2,sld+2,sld+5,sniext+1,sniext+2,endhost-2 --new
---filter-tcp=6695-6705 --dpi-desync=fake,split2 --dpi-desync-repeats=8 --dpi-desync-fooling=md5sig --dpi-desync-autottl=2 --dpi-desync-fake-tls=/opt/zapret/bin/tls_clienthello_www_google_com.bin --new
---filter-tcp=443 --hostlist-exclude=/opt/zapret/lists/netrogat.txt --dpi-desync=fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=10 --dpi-desync-autottl --new"""
-
-        # Записываем новую конфигурацию с sudo правами
-        try:
-            # Создаем временный файл
-            temp_path = "/tmp/config.tmp"
-            with open(temp_path, 'w') as f:
-                f.write(config_content)
-
-            # Копируем с sudo правами
-            subprocess.run(['sudo', 'cp', temp_path, config_path], check=True)
-            subprocess.run(['sudo', 'chmod', '644', config_path], check=True)
-
-            messagebox.showinfo("Успех", f"Стратегия успешно применена. Перезапустите службу для применения изменений.")
-            self.restart_service()
-            self.update_strategy_display()
-
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось применить конфигурацию: {str(e)}")
-        finally:
-            # Удаляем временный файл
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-
-# ===========================================================
-# ===========================================================
-# ===========================================================
-
-
 
     # Установка Запрета
     def install_zapret(self):
@@ -1515,7 +1438,7 @@ class ZapretGUI:
         self.update_button_states()
 
 
-        # Вкладка "Стратегия"
+        # =========== Вкладка "Стратегия" ===========
         config_frame = ttk.Frame(self.notebook)
         self.notebook.add(config_frame, text="Стратегия")
 
@@ -1531,61 +1454,48 @@ class ZapretGUI:
         )
         self.strategy_label.pack(side=tk.LEFT)
 
-        note_text = """Стратегия для Ростел./Т2 работает с Мегафон, но без голосового в дисе.
-Если нужно добавить свою стратегию, то выбрать 'Изменить config.txt'.
-Обязательно после изменений перезапустите службу"""
+        note_text = "Для выбора стратегии, выберите конфиг в выпадающем меню"
         tk.Label(config_frame, text=note_text, justify=tk.LEFT, font=('Helvetica', 12)).pack(pady=(0, 5), padx=5, anchor=tk.W)
-
+        
+        def get_strategy_list():
+            strategy_list = self.get_file_list(os.path.join(self.zapret_manager_working_dir_path, self.zapret_manager_strategy_dir))
+            return strategy_list
+        
+        def onSelect_strategy_combobox(event):
+            self.change_strategy(strategy_combobox.get())
+            
+        strategy_combobox = ttk.Combobox(config_frame, values=get_strategy_list())
+        strategy_combobox.pack()
+        strategy_combobox.bind("<<ComboboxSelected>>", onSelect_strategy_combobox)
+        
+        def onClick_update_strategy_button():
+            strategy_combobox['values'] = get_strategy_list()
+            
         # Сетка кнопок (2 колонки)
         buttons_frame = ttk.Frame(config_frame)
         buttons_frame.pack(fill=tk.BOTH, expand=True, padx=5)
 
         buttons_frame.columnconfigure(0, weight=1, uniform='cols')
         buttons_frame.columnconfigure(1, weight=1, uniform='cols')
-
-        # Динамические кнопки (сохраняем как атрибуты)
+        
         ttk.Button(
             buttons_frame,
-            text="Ростелеком/Теле2",
-            command=self.config_rostelecom,
+            text="Обновить список стратегий",
+            command=onClick_update_strategy_button,
             style='TButton'
         ).grid(row=0, column=0, padx=3, pady=3, sticky='nsew')
-
         ttk.Button(
             buttons_frame,
-            text="МТС",
-            command=self.config_mts,
+            text="Открыть папку с стратегиями",
+            command=self.open_strategy,
             style='TButton'
         ).grid(row=0, column=1, padx=3, pady=3, sticky='nsew')
-
-        ttk.Button(
-            buttons_frame,
-            text="Общая стратегия",
-            command=self.config_all,
-            style='TButton'
-        ).grid(row=1, column=1, padx=3, pady=3, sticky='nsew')
-
-        ttk.Button(
-            buttons_frame,
-            text="Изменить config.txt",
-            command=self.open_config,
-            style='TButton'
-        ).grid(row=1, column=0, padx=3, pady=3, sticky='nsew')
-
-        ttk.Button(
-            buttons_frame,
-            text="Перезапустить службу",
-            command=self.restart_service,
-            style='TButton'
-        ).grid(row=2, column=0, columnspan=3, padx=3, pady=3, sticky='nsew')
-
-        # Настройка строк
-        for i in range(3):
-            buttons_frame.rowconfigure(i, weight=0, minsize=30)
-
+        
+        buttons_frame.rowconfigure(0, weight=0, minsize=30)
         # Обновляем состояние кнопок
         self.update_button_states()
-
+        
+        # =========== Вкладка "Стратегия" ===========
 
         # Вкладка "Списки доменов"
         domains_frame = ttk.Frame(self.notebook)
