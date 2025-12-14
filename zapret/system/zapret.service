@@ -1,0 +1,14 @@
+[Unit]
+Description=zapret
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/zapret
+ExecStart=/bin/bash /opt/zapret/starter.sh
+ExecStop=/bin/bash /opt/zapret/stopper.sh
+
+[Install]
+WantedBy=multi-user.target

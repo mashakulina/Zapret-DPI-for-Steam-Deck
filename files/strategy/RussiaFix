@@ -1,0 +1,6 @@
+--filter-tcp=80 --dpi-desync=fake,split2 --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --hostlist-auto={russia_blacklist} --new
+--filter-tcp=443 --hostlist-auto={hosts} --hostlist={other} --hostlist={other2} --ipset={ipset_all} --ipset={ipset_all2} --hostlist-exclude={ignore} --dpi-desync=fake,split2 --dpi-desync-repeats=11 --dpi-desync-fooling=md5sig --dpi-desync-fake-tls={tlsgoogle} --new
+--filter-tcp=80,443 --dpi-desync=fake,disorder2 --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new
+--filter-udp=50000-50099 --hostlist={ipset_discord} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-any-protocol --dpi-desync-cutoff=n4 --new
+--filter-udp=443 --hostlist-auto={hosts} --hostlist={other} --hostlist={other2} --ipset={ipset_all} --ipset={ipset_all2} --hostlist-exclude={ignore} --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-fake-quic={quicgoogle} --new
+--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11
