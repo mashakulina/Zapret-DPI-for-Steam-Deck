@@ -1,0 +1,9 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Name=Zapret_Manager_V2_Install
+Comment=Установка Zapret Manager
+Exec=sh -c 'rm -rf /tmp/install_zapret.tar.gz; rm -rf install_zapret.sh; if curl -Is https://github.com | head -1 | grep 200 > /dev/null; then curl -S -s -L -O --output-dir /tmp/ --connect-timeout 60 https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/raw/refs/heads/main/install_zapret.tar.gz && tar -xf /tmp/install_zapret.tar.gz -C /tmp && bash /tmp/install_zapret.sh || echo "Установка прервана пользователем или неверный пароль sudo!"; else echo "Не удалось запустить скрипт!"; xdg-open https://t.me/gamekoHchat/86650/1122099; echo "Не удалось скачать и запустить скрипт!\nНет доступа к github.\nЗапустите скрипт вручную."; exit 1; fi'
+Icon=utilities-terminal
+Terminal=true
+Type=Application
+Categories=Utility;
