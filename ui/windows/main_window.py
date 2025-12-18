@@ -19,6 +19,7 @@ from ui.windows.donat_window import DonationWindow
 from ui.windows.info_window import show_info_dialog
 from core.dependency_checker import run_dependency_check
 from core.zapret_checker import run_zapret_check
+from core.file_checker import run_file_check
 from core.zapret_uninstaller import run_zapret_uninstall
 from ui.windows.update_window import show_update_window
 
@@ -41,6 +42,8 @@ class MainWindow:
         self.check_dependencies_on_startup()
         # Затем проверяем zapret
         self.check_zapret_on_startup()
+        # Проверяем целостность файлов
+        self.check_files_on_startup()
         self.load_current_strategy()
         self.check_service_status()  # Проверяем статус службы при запуске
         self.schedule_status_update()  # Запускаем периодическую проверку
@@ -95,6 +98,28 @@ class MainWindow:
         print("=== КОНЕЦ ПРОВЕРКИ ZAPRET ===")
 
         return zapret_ok
+
+    def check_files_on_startup(self):
+        """Проверяет наличие zapret при запуске программы"""
+        print("=== НАЧАЛО ПРОВЕРКИ ФАЙЛОВ ===")
+
+        # Делаем окно видимым
+        self.root.update()
+
+        # Запускаем проверку zapret
+        print("Запуск проверки файлов...")
+        try:
+            files_ok = run_file_check(self.root)
+            print(f"Результат проверки файлов: {files_ok}")
+        except Exception as e:
+            print(f"ОШИБКА при проверке файлов: {e}")
+            import traceback
+            traceback.print_exc()
+            files_ok = False
+
+        print("=== КОНЕЦ ПРОВЕРКИ ФАЙЛОВ ===")
+
+        return files_ok
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
