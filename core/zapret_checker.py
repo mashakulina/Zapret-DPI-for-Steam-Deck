@@ -24,8 +24,19 @@ class ZapretChecker:
         self.last_command_result = None  # Результат последней команды
 
         # Из manager_config.py
-
         self.zapret_archive_url = f"{RELEASES_URL}/zapret.tar.gz"
+
+        # Список обязательных файлов для zapret
+        self.required_files = [
+            "FWTYPE",           # Тип файрвола
+            "nfqws",           # Бинарный файл
+            "starter.sh",      # Скрипт запуска
+            "stopper.sh",      # Скрипт остановки
+            "zapret.service"    # Конфигурационный файл сервера
+        ]
+
+        # Путь к папке zapret
+        self.zapret_dir = "/opt/zapret"
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -37,12 +48,64 @@ class ZapretChecker:
     def is_zapret_installed(self):
         """Проверяет, установлен ли zapret"""
         # Проверяем наличие папки /opt/zapret
-        zapret_dir_exists = os.path.exists("/opt/zapret")
+        zapret_dir_exists = os.path.exists(self.zapret_dir)
 
         # Проверяем наличие службы
         service_exists = os.path.exists("/usr/lib/systemd/system/zapret.service")
 
         return zapret_dir_exists and service_exists
+
+    def check_zapret_files(self):
+        """Проверяет наличие всех обязательных файлов в /opt/zapret"""
+        self.log_debug("Проверка наличия всех необходимых файлов zapret...")
+
+        # Сначала проверяем, существует ли папка /opt/zapret
+        if not os.path.exists(self.zapret_dir):
+            self.log_debug(f"Папка {self.zapret_dir} не существует")
+            return False
+
+        missing_files = []
+
+        # Проверяем каждый обязательный файл
+        for file_name in self.required_files:
+            file_path = os.path.join(self.zapret_dir, file_name)
+
+            # Проверяем существование файла
+            if not os.path.exists(file_path):
+                missing_files.append(file_name)
+                self.log_debug(f"Файл {file_name} отсутствует в {self.zapret_dir}")
+                continue
+
+            # Проверяем размер файла (не должен быть пустым)
+            try:
+                if os.path.getsize(file_path) == 0:
+                    missing_files.append(file_name)
+                    self.log_debug(f"Файл {file_name} существует, но пустой")
+            except OSError as e:
+                missing_files.append(file_name)
+                self.log_debug(f"Ошибка при проверке размера файла {file_name}: {e}")
+
+        # Если есть отсутствующие файлы, проверяем их через ls -la для деталей
+        if missing_files:
+            for file_name in missing_files:
+                file_path = os.path.join(self.zapret_dir, file_name)
+                try:
+                    result = subprocess.run(
+                        ["ls", "-la", file_path],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        self.log_debug(f"Информация о файле {file_name}: {result.stdout.strip()}")
+                    else:
+                        self.log_debug(f"Файл {file_name} не найден (ls вернул код {result.returncode})")
+                except Exception as e:
+                    self.log_debug(f"Ошибка при проверке файла {file_name} через ls: {e}")
+
+            return False
+
+        self.log_debug("Все необходимые файлы zapret присутствуют")
+        return True
 
     def is_zapret_running(self):
         """Проверяет, запущена ли служба zapret"""
@@ -60,7 +123,6 @@ class ZapretChecker:
         """Показывает информационное сообщение"""
         if self.root and self.root.winfo_exists():
             try:
-
                 custom_show_info(self.root, title, message)
             except ImportError:
                 messagebox.showinfo(title, message, parent=self.root)
@@ -689,13 +751,28 @@ WantedBy=multi-user.target
         """Проверяет и устанавливает zapret при необходимости"""
         # Проверяем, установлен ли уже zapret
         if self.is_zapret_installed():
-            print("Zapret уже установлен")
+            print("Zapret уже установлен (служба найдена)")
+
+            # Проверяем наличие всех необходимых файлов
+            if not self.check_zapret_files():
+                print("Обнаружены отсутствующие файлы, требуется переустановка")
+                self.show_info("Проверка файлов Zapret",
+                            "Обнаружены отсутствующие или поврежденные файлы Zapret.\n\n"
+                            "Выполняется автоматическая переустановка...")
+
+                # Просто запускаем установку, которая заново скачает и установит
+                return self.install_zapret()
+
+            print("Все файлы Zapret присутствуют")
             return True
+
+        # Если zapret не установлен совсем
+        print("Zapret не установлен, требуется установка")
 
         # Показываем информацию о необходимости установки
         self.show_info("Установка Zapret",
-                     "Для работы программы требуется установить службу Zapret.\n\n"
-                     "Сейчас будет произведена её автоматическая установка.")
+                    "Для работы программы требуется установить службу Zapret.\n\n"
+                    "Сейчас будет произведена её автоматическая установка.")
 
         # Устанавливаем zapret
         return self.install_zapret()
