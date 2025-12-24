@@ -28,18 +28,10 @@ class UpdateWindow:
 
     def setup_window(self):
         self.root.title("Обновление")
-        self.root.geometry("600x500")
+        self.root.geometry("400x400")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
-
-        # Центрируем окно
-        self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'{width}x{height}+{x}+{y}')
 
     def setup_ui(self):
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
@@ -85,7 +77,7 @@ class UpdateWindow:
 
         self.log_text = tk.Text(
             log_frame,
-            height=12,
+            height=5,
             bg='#15354D',
             fg='white',
             wrap=tk.WORD,
@@ -101,7 +93,7 @@ class UpdateWindow:
 
         self.close_btn = create_hover_button(
             close_frame,
-            text="Закрыть",
+            text="Назад",
             command=self.close_window,
             bg='#15354D', fg='white', font=('Arial', 10),
             width=15, bd=0, highlightthickness=0, padx=10, pady=5
