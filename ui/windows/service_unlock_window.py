@@ -3,7 +3,7 @@ import tkinter as tk
 import os
 import subprocess
 from ui.components.custom_messagebox import show_info, show_error
-from core.service_data import PROXY_DOMAINS
+from core.service_data import SERVICE_CATEGORIES, PROXY_DOMAINS
 from ui.components.button_styler import create_hover_button
 from ui.windows.sudo_password_window import SudoPasswordWindow
 
@@ -16,51 +16,59 @@ class ServiceUnlockWindow:
         # Переменные для чекбоксов сервисов
         self.service_vars = {}
 
-        # Группируем домены по сервисам
-        self.services_groups = self.group_domains_by_service()
+        # Группируем домены по основным категориям
+        self.main_categories = self.group_domains_by_main_category()
+
+        # Создаем плоский словарь всех доменов с IP для быстрого доступа
+        self.all_domains = self.create_all_domains_dict()
 
         # Загружаем существующие записи
         self.existing_entries = self.load_existing_entries()
 
-    def group_domains_by_service(self):
-        """Группирует домены по сервисам"""
-        services = {
-            "ChatGPT / OpenAI": [],
-            "Google AI (Gemini)": [],
-            "Microsoft Copilot": [],
-            "Социальные сети": [],
-            "Spotify": [],
-            "GitHub": [],
-            "Разработка": [],
-            "Rutracker":[],
-            "Другие сервисы": []
+
+    def create_all_domains_dict(self):
+        """Создает плоский словарь всех доменов с IP"""
+        all_domains = {}
+
+        for category_name, category_content in SERVICE_CATEGORIES.items():
+            if isinstance(category_content, dict):
+                # Если это категория с подкатегориями (chatgpt, gemini и т.д.)
+                if category_name != "other":
+                    # Для обычных категорий (chatgpt, gemini, claude и т.д.)
+                    all_domains.update(category_content)
+                else:
+                    # Для категории "other" - она уже плоский словарь
+                    all_domains.update(category_content)
+
+        return all_domains
+
+    def group_domains_by_main_category(self):
+        """Группирует домены по основным категориям"""
+        main_categories = {
+            "Искусственный интеллект": {
+                "ChatGPT": SERVICE_CATEGORIES["chatgpt"],
+                "Gemini": SERVICE_CATEGORIES["gemini"],
+                "Claude": SERVICE_CATEGORIES["claude"],
+                "Copilot": SERVICE_CATEGORIES["copilot"],
+                "Grok": SERVICE_CATEGORIES["grok"],
+            },
+            "Развлечения": {
+                "Instagram": SERVICE_CATEGORIES["instagram"],
+                "Facebook": SERVICE_CATEGORIES["facebook"],
+                "TikTok": SERVICE_CATEGORIES["tiktok"],
+                "Twitch": SERVICE_CATEGORIES["twitch"],
+            },
+            "Музыка": {
+                "Spotify": SERVICE_CATEGORIES["spotify"],
+                "SoundCloud": SERVICE_CATEGORIES["soundcloud"],
+            },
+            "Торрент": {
+                "Rutracker": SERVICE_CATEGORIES["rutracker"],
+                "Rutor": SERVICE_CATEGORIES["rutor"],
+            },
+            "Другое": SERVICE_CATEGORIES["other"]
         }
-
-        for domain in PROXY_DOMAINS.keys():
-            domain_lower = domain.lower()
-            if any(x in domain_lower for x in ['openai', 'chatgpt', 'oai']):
-                services["ChatGPT / OpenAI"].append(domain)
-            elif any(x in domain_lower for x in ['gemini', 'google', 'generativelanguage']):
-                services["Google AI (Gemini)"].append(domain)
-            elif any(x in domain_lower for x in ['microsoft', 'bing', 'copilot', 'xbox']):
-                services["Microsoft Copilot"].append(domain)
-            elif any(x in domain_lower for x in ['facebook', 'instagram', 'tiktok', 'truthsocial', 'threads']):
-                services["Социальные сети"].append(domain)
-            elif 'spotify' in domain_lower:
-                services["Spotify"].append(domain)
-            elif any(x in domain_lower for x in ['github', 'jetbrains']):
-                services["GitHub"].append(domain)
-            elif any(x in domain_lower for x in ['codeium', 'elevenlabs', 'nvidia', 'intel', 'dell', 'autodesk', 'notion', 'protonmail', 'deeplearning.ai']):
-                services["Разработка"].append(domain)
-            elif any(x in domain_lower for x in ['rutracker']):
-                services["Rutracker"].append(domain)
-            else:
-                services["Другие сервисы"].append(domain)
-
-        # Удаляем пустые группы
-        services = {k: v for k, v in services.items() if v}
-
-        return services
+        return main_categories
 
     def load_existing_entries(self):
         """Загружает существующие записи из файла /etc/hosts"""
@@ -74,218 +82,281 @@ class ServiceUnlockWindow:
                             parts = line.split()
                             if len(parts) >= 2:
                                 domain = parts[1]
-                                if domain in PROXY_DOMAINS:
+                                if domain in self.all_domains:  # Используем self.all_domains
                                     existing_entries.add(domain)
         except Exception as e:
             print(f"Ошибка чтения файла hosts: {e}")
-
         return existing_entries
 
     def create_hover_button(self, parent, text, command, **kwargs):
         """Создает кнопку в стиле главного меню с эффектом наведения"""
         return create_hover_button(parent, text, command, **kwargs)
 
-    def update_service_count_label(self, service_name, count_label):
-        """Обновляет метку с количеством выбранных доменов"""
-        service_info = self.service_vars.get(service_name)
-        if service_info:
-            selected_count = sum(1 for var in service_info['domain_vars'].values() if var.get())
-            total_count = len(service_info['domains'])
-            count_label.config(text=f"({selected_count}/{total_count})")
-
-            # Обновляем состояние чекбокса сервиса
-            if selected_count == 0:
-                service_info['var'].set(False)
-            elif selected_count == total_count:
-                service_info['var'].set(True)
-            else:
-                # Частичный выбор - устанавливаем чекбокс в неопределенное состояние
-                # В tkinter нет встроенного состояния "частично", но мы можем использовать другое отображение
-                pass
-
-    def create_service_frame(self, parent, service_name, domains):
-        """Создает фрейм для сервиса с чекбоксами"""
+    def create_main_category_frame(self, parent, category_name, category_content):
+        """Создает фрейм для основной категории"""
         frame = tk.Frame(parent, bg='#182030', padx=10, pady=5)
 
-        # Подсчитываем сколько доменов уже выбрано
-        selected_count = sum(1 for domain in domains if domain in self.existing_entries)
-        total_count = len(domains)
+        # Проверяем, является ли категория "Другое" (без вложенных списков)
+        is_other_category = category_name == "Другое"
 
-        # Переменная для чекбокса сервиса
-        service_var = tk.BooleanVar(value=selected_count == total_count)
-        self.service_vars[service_name] = {
-            'var': service_var,
-            'domains': domains,
-            'domain_vars': {}
-        }
-
-        # Фрейм для заголовка и чекбокса сервиса
+        # Фрейм для заголовка и чекбокса категории
         header_frame = tk.Frame(frame, bg='#182030')
         header_frame.pack(fill=tk.X, pady=(0, 5))
 
-        # Фрейм для доменов (изначально скрыт)
-        domains_frame = tk.Frame(frame, bg='#182030')
+        # Подсчитываем сколько доменов уже выбрано для всей категории
+        all_domains = []
+        if is_other_category:
+            # Для категории "Другое" берем домены напрямую
+            all_domains = list(category_content.keys())
+            spacer = tk.Label(
+                header_frame,
+                text="",
+                font=("Arial", 10),
+                bg='#182030',
+                width=1
+            )
+            spacer.pack(side=tk.LEFT, padx=(0, 8))
 
-        # Кнопка для раскрытия/скрытия доменов (ПЕРЕД ЧЕКБОКСОМ) - уменьшенная и без подсветки
-        toggle_button = tk.Label(
-            header_frame,
-            text="▼",
-            font=("Arial", 10),
-            fg='#8e8e93',
-            bg='#182030',
-            cursor='hand2',
-            width=1  # Фиксированная ширина
-        )
-        # Обработка кликов по метке
-        toggle_button.bind("<Button-1>", lambda e, f=domains_frame, b=toggle_button: self.toggle_domains_frame(f, b))
-        toggle_button.pack(side=tk.LEFT, padx=(0, 8))
+        else:
+            # Для остальных категорий собираем все домены из подкатегорий
+            for subcategory in category_content.values():
+                all_domains.extend(list(subcategory.keys()))
 
-        # Чекбокс сервиса
-        service_check = tk.Checkbutton(
+        selected_count = sum(1 for domain in all_domains if domain in self.existing_entries)
+        total_count = len(all_domains)
+
+        # Переменная для чекбокса основной категории
+        category_var = tk.BooleanVar(value=selected_count == total_count)
+
+        # Только для НЕ "Другое" создаем кнопку раскрытия
+        if not is_other_category:
+            # Фрейм для содержимого (изначально скрыт)
+            content_frame = tk.Frame(frame, bg='#182030')
+
+            # Кнопка для раскрытия/скрытия содержимого
+            toggle_button = tk.Label(
+                header_frame,
+                text="▼",
+                font=("Arial", 10),
+                fg='#8e8e93',
+                bg='#182030',
+                cursor='hand2',
+                width=1
+            )
+            toggle_button.bind("<Button-1>", lambda e, f=content_frame, b=toggle_button: self.toggle_content_frame(f, b))
+            toggle_button.pack(side=tk.LEFT, padx=(0, 8))
+
+        # Чекбокс основной категории
+        category_check = tk.Checkbutton(
             header_frame,
-            text=service_name,
-            variable=service_var,
-            font=("Arial", 11, "bold"),
+            text=category_name,
+            variable=category_var,
+            font=("Arial", 12, "bold"),
             fg='#0a84ff',
             bg='#182030',
             selectcolor='#182030',
             activebackground='#182030',
             activeforeground='#0a84ff',
             highlightthickness=0,
-            command=lambda: self.toggle_service_domains(service_name),
+            command=lambda: self.toggle_category_content(category_name, is_other_category, category_content),
             cursor='hand2'
         )
-        service_check.pack(side=tk.LEFT)
+        category_check.pack(side=tk.LEFT)
 
         # Метка с количеством доменов
         count_label = tk.Label(
             header_frame,
             text=f"({selected_count}/{total_count})",
-            font=("Arial", 9),
+            font=("Arial", 10),
             fg='#8e8e93',
             bg='#182030'
         )
         count_label.pack(side=tk.LEFT, padx=(5, 0))
 
-        # Теперь создаем домены
-        for domain in sorted(domains):
-            # Переменная для чекбокса домена
-            domain_var = tk.BooleanVar(value=domain in self.existing_entries)
-            self.service_vars[service_name]['domain_vars'][domain] = domain_var
+        # Сохраняем информацию о категории
+        self.service_vars[category_name] = {
+            'var': category_var,
+            'is_other': is_other_category,
+            'count_label': count_label,
+            'all_domains': all_domains
+        }
 
-            domain_frame = tk.Frame(domains_frame, bg='#182030')
-            domain_frame.pack(fill=tk.X, pady=1)
+        if not is_other_category:
+            # Для категорий с подкатегориями
+            self.service_vars[category_name]['subcategories'] = {}
+            self.service_vars[category_name]['content_frame'] = content_frame
+            self.service_vars[category_name]['toggle_button'] = toggle_button
 
-            # Чекбокс домена
-            domain_check = tk.Checkbutton(
-                domain_frame,
-                text=domain,
-                variable=domain_var,
-                font=("Courier New", 9),
-                fg='white',
-                bg='#182030',
-                selectcolor='#182030',
-                activebackground='#182030',
-                activeforeground='white',
-                highlightthickness=0,
-                cursor='hand2',
-                command=lambda sn=service_name, cl=count_label: self.update_service_count_label(sn, cl)
-            )
-            domain_check.pack(side=tk.LEFT, anchor='w')
+            # Создаем подкатегории (список сервисов)
+            for subcategory_name, domains_dict in category_content.items():
+                self.service_vars[category_name]['subcategories'][subcategory_name] = {
+                    'domains': list(domains_dict.keys()),
+                    'selected': sum(1 for domain in domains_dict.keys() if domain in self.existing_entries)
+                }
+
+                # Создаем чекбокс для подкатегории
+                subcategory_frame = self.create_subcategory_checkbox(content_frame, category_name, subcategory_name, domains_dict)
+                subcategory_frame.pack(fill=tk.X, pady=(5, 0), padx=(30, 0))
+        else:
+            # Для категории "Другое" создаем один чекбокс для всей категории
+            self.service_vars[category_name]['selected'] = selected_count
 
         return frame
 
-    def toggle_domains_frame(self, domains_frame, toggle_button):
-        """Раскрывает или скрывает фрейм с доменами"""
-        if domains_frame.winfo_ismapped():
-            domains_frame.pack_forget()
+    def create_subcategory_checkbox(self, parent, category_name, subcategory_name, domains_dict):
+        """Создает чекбокс для подкатегории (сервиса)"""
+        frame = tk.Frame(parent, bg='#182030')
+
+        domains = list(domains_dict.keys())
+        selected_count = sum(1 for domain in domains if domain in self.existing_entries)
+        total_count = len(domains)
+
+        # Переменная для чекбокса подкатегории
+        subcategory_var = tk.BooleanVar(value=selected_count == total_count)
+
+        # Сохраняем переменную в структуре данных
+        self.service_vars[category_name]['subcategories'][subcategory_name]['var'] = subcategory_var
+
+        # Чекбокс подкатегории (сервиса)
+        subcategory_check = tk.Checkbutton(
+            frame,
+            text=subcategory_name,
+            variable=subcategory_var,
+            font=("Arial", 11),
+            fg='#34c759',
+            bg='#182030',
+            selectcolor='#182030',
+            activebackground='#182030',
+            activeforeground='#34c759',
+            highlightthickness=0,
+            command=lambda: self.update_category_count(category_name, subcategory_name),
+            cursor='hand2'
+        )
+        subcategory_check.pack(side=tk.LEFT)
+
+        # Метка с количеством доменов подкатегории
+        sub_count_label = tk.Label(
+            frame,
+            text=f"({selected_count}/{total_count})",
+            font=("Arial", 9),
+            fg='#8e8e93',
+            bg='#182030'
+        )
+        sub_count_label.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Сохраняем ссылку на метку
+        self.service_vars[category_name]['subcategories'][subcategory_name]['count_label'] = sub_count_label
+
+        return frame
+
+    def toggle_content_frame(self, content_frame, toggle_button):
+        """Раскрывает или скрывает фрейм с содержимым"""
+        if content_frame.winfo_ismapped():
+            content_frame.pack_forget()
             toggle_button.config(text='▼')
         else:
-            domains_frame.pack(fill=tk.X, padx=(30, 0), pady=(5, 0))
+            content_frame.pack(fill=tk.X, pady=(5, 0))
             toggle_button.config(text='▲')
 
-    def toggle_service_domains(self, service_name):
-        """Включает/выключает все домены сервиса"""
-        service_info = self.service_vars.get(service_name)
-        if service_info:
-            state = service_info['var'].get()
-            for domain_var in service_info['domain_vars'].values():
-                domain_var.set(state)
+    def toggle_category_content(self, category_name, is_other, category_content):
+        """Включает/выключает все содержимое категории"""
+        category_info = self.service_vars.get(category_name)
+        if category_info:
+            state = category_info['var'].get()
 
-            # Находим и обновляем метку с количеством
-            for widget in self.window.winfo_children():
-                if hasattr(widget, 'winfo_children'):
-                    for child in widget.winfo_children():
-                        if hasattr(child, 'winfo_children'):
-                            for frame in child.winfo_children():
-                                if hasattr(frame, 'winfo_children'):
-                                    for header_frame in frame.winfo_children():
-                                        if isinstance(header_frame, tk.Frame):
-                                            for w in header_frame.winfo_children():
-                                                if isinstance(w, tk.Label) and '(' in w.cget('text'):
-                                                    # Обновляем все метки с количеством
-                                                    self.update_all_count_labels()
+            if is_other:
+                # Для категории "Другое" просто обновляем счетчик
+                selected_count = len(category_info['all_domains']) if state else 0
+                category_info['count_label'].config(text=f"({selected_count}/{len(category_info['all_domains'])})")
+                category_info['selected'] = selected_count
+            else:
+                # Для категорий с подкатегориями
+                for subcategory_name, subcategory_info in category_info['subcategories'].items():
+                    subcategory_info['var'].set(state)
+                    selected_count = len(subcategory_info['domains']) if state else 0
+                    subcategory_info['count_label'].config(text=f"({selected_count}/{len(subcategory_info['domains'])})")
+                    subcategory_info['selected'] = selected_count
 
-    def update_all_count_labels(self):
-        """Обновляет все метки с количеством выбранных доменов"""
-        for service_name, service_info in self.service_vars.items():
-            selected_count = sum(1 for var in service_info['domain_vars'].values() if var.get())
-            total_count = len(service_info['domains'])
+                # Обновляем счетчик категории
+                self.update_category_total_count(category_name)
 
-            # Находим метку для этого сервиса и обновляем ее
-            for widget in self.window.winfo_children():
-                if hasattr(widget, 'winfo_children'):
-                    for child in widget.winfo_children():
-                        if hasattr(child, 'winfo_children'):
-                            for frame in child.winfo_children():
-                                if hasattr(frame, 'winfo_children'):
-                                    for header_frame in frame.winfo_children():
-                                        if isinstance(header_frame, tk.Frame):
-                                            for w in header_frame.winfo_children():
-                                                if isinstance(w, tk.Label) and service_name in header_frame.winfo_children()[0].cget('text'):
-                                                    w.config(text=f"({selected_count}/{total_count})")
+    def update_category_count(self, category_name, subcategory_name):
+        """Обновляет счетчики после изменения состояния подкатегории"""
+        category_info = self.service_vars.get(category_name)
+        if category_info and not category_info['is_other']:
+            subcategory_info = category_info['subcategories'].get(subcategory_name)
+            if subcategory_info:
+                # Получаем текущее состояние подкатегории
+                state = subcategory_info['var'].get()
+                selected_count = len(subcategory_info['domains']) if state else 0
+                subcategory_info['count_label'].config(text=f"({selected_count}/{len(subcategory_info['domains'])})")
+                subcategory_info['selected'] = selected_count
+
+                # Обновляем общий счетчик категории
+                self.update_category_total_count(category_name)
+
+    def update_category_total_count(self, category_name):
+        """Обновляет общий счетчик категории"""
+        category_info = self.service_vars.get(category_name)
+        if category_info and not category_info['is_other']:
+            total_selected = 0
+            total_domains = 0
+
+            for subcategory_name, subcategory_info in category_info['subcategories'].items():
+                total_domains += len(subcategory_info['domains'])
+                total_selected += subcategory_info['selected']
+
+            category_info['count_label'].config(text=f"({total_selected}/{total_domains})")
+
+            # Обновляем состояние чекбокса категории
+            if total_selected == 0:
+                category_info['var'].set(False)
+            elif total_selected == total_domains:
+                category_info['var'].set(True)
 
     def select_all(self):
         """Выбирает все сервисы и домены"""
-        for service_name, service_info in self.service_vars.items():
-            service_info['var'].set(True)
-            for domain_var in service_info['domain_vars'].values():
-                domain_var.set(True)
-        self.update_all_count_labels()
+        for category_name, category_info in self.service_vars.items():
+            category_info['var'].set(True)
+            self.toggle_category_content(category_name, category_info['is_other'], None)
 
     def deselect_all(self):
         """Снимает выделение со всех сервисов и доменов"""
-        for service_name, service_info in self.service_vars.items():
-            service_info['var'].set(False)
-            for domain_var in service_info['domain_vars'].values():
-                domain_var.set(False)
-        self.update_all_count_labels()
+        for category_name, category_info in self.service_vars.items():
+            category_info['var'].set(False)
+            self.toggle_category_content(category_name, category_info['is_other'], None)
 
     def save_to_hosts(self):
         """Сохраняет выбранные сервисы в файл /etc/hosts"""
         try:
-            # Сначала собираем выбранные домены
+            # Собираем выбранные домены
             selected_entries = []
             selected_domains = set()
 
-            for service_name, service_info in self.service_vars.items():
-                for domain, domain_var in service_info['domain_vars'].items():
-                    if domain_var.get():  # Только если чекбокс установлен
-                        ip = PROXY_DOMAINS.get(domain)
-                        if ip:
-                            selected_entries.append(f"{ip} {domain}")
-                            selected_domains.add(domain)
+            for category_name, category_info in self.service_vars.items():
+                if category_info['is_other']:
+                    # Для категории "Другое"
+                    if category_info['var'].get():
+                        for domain in category_info['all_domains']:
+                            ip = self.all_domains.get(domain)  # Используем self.all_domains
+                            if ip:
+                                selected_entries.append(f"{ip} {domain}")
+                                selected_domains.add(domain)
+                else:
+                    # Для категорий с подкатегориями
+                    for subcategory_name, subcategory_info in category_info['subcategories'].items():
+                        if subcategory_info['var'].get():
+                            for domain in subcategory_info['domains']:
+                                ip = self.all_domains.get(domain)  # Используем self.all_domains
+                                if ip:
+                                    selected_entries.append(f"{ip} {domain}")
+                                    selected_domains.add(domain)
 
-            # Всегда показываем окно ввода пароля (даже если ничего не выбрано)
-            # Потому что нам нужно обновить файл hosts
-
+            # Всегда показываем окно ввода пароля
             def on_password_valid(password):
-                # Пароль валидный, сохраняем файл
                 self.save_hosts_with_password(password, selected_entries, selected_domains)
 
-            # Создаем окно с callback-функцией
             password_window = SudoPasswordWindow(self.window, on_password_valid=on_password_valid)
-            # Запускаем окно (оно само вызовет on_password_valid при успешном вводе)
             password_window.run()
 
         except Exception as e:
@@ -294,7 +365,6 @@ class ServiceUnlockWindow:
     def save_hosts_with_password(self, password, selected_entries, selected_domains):
         """Сохраняет файл hosts с использованием введенного пароля"""
         try:
-            # Читаем существующий файл hosts с sudo
             import subprocess
             import tempfile
 
@@ -316,7 +386,7 @@ class ServiceUnlockWindow:
 
             # 2. Обрабатываем содержимое - УДАЛЯЕМ ВСЕ наши старые записи
             new_lines = []
-            service_domains = set(PROXY_DOMAINS.keys())
+            service_domains = set(self.all_domains.keys())  # Используем self.all_domains
 
             # Флаг, чтобы знать, был ли наш раздел в файле
             our_section_exists = False
@@ -333,12 +403,12 @@ class ServiceUnlockWindow:
                     new_lines.append("# Разблокировка сервисов (добавлено Zapret_DPI_Manager)\n")
                     continue
 
-                # Если это наша запись (домен из PROXY_DOMAINS), пропускаем ее
+                # Если это наша запись (домен из наших сервисов), пропускаем ее
                 if line_stripped and not line_stripped.startswith('#'):
                     parts = line_stripped.split()
                     if len(parts) >= 2:
                         domain = parts[1]
-                        if domain in service_domains:
+                        if domain in service_domains:  # Используем service_domains из self.all_domains
                             continue  # Пропускаем эту строку
 
                 # Сохраняем все остальные строки
@@ -398,13 +468,16 @@ class ServiceUnlockWindow:
                     total_selected = len(selected_entries)
 
                     if total_selected > 0:
-                        services_selected = sum(1 for s in self.service_vars.values()
-                                            if any(var.get() for var in s['domain_vars'].values()))
+                        # Подсчитываем количество выбранных категорий
+                        categories_selected = 0
+                        for category_name, category_info in self.service_vars.items():
+                            if category_info['var'].get():
+                                categories_selected += 1
 
                         show_info(self.window, "Сохранение",
                                 f"Данные успешно сохранены в {self.hosts_file}\n\n"
                                 f"Добавлено записей: {total_selected}\n"
-                                f"Выбранных сервисов: {services_selected}")
+                                f"Выбранных категорий: {categories_selected}")
                     else:
                         show_info(self.window, "Сохранение",
                                 f"Все записи разблокировки удалены из {self.hosts_file}")
@@ -458,7 +531,7 @@ class ServiceUnlockWindow:
         """Создает окно разблокировки сервисов"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Разблокировка сервисов")
-        self.window.geometry("460x625")
+        self.window.geometry("500x560")
         self.window.configure(bg='#182030')
         # ЭТИ СТРОКИ ДЛЯ УДАЛЕНИЯ ОБВОДКИ
         try:
@@ -482,16 +555,27 @@ class ServiceUnlockWindow:
 
         # Описание
         desc_label = tk.Label(main_frame,
-                             text="Выберите сервисы для разблокировки. Записи будут добавлены в файл /etc/hosts\n"
-                                  "Разверните группу, чтобы увидеть отдельные домены",
+                             text="Выберите категории сервисов для разблокировки.\n"
+                                  "Разверните категорию, чтобы увидеть отдельные сервисы.\n"
+                                  "Записи будут добавлены в файл /etc/hosts.",
                              font=("Arial", 10),
                              fg='#8e8e93',
                              bg='#182030',
-                             justify=tk.LEFT,
-                             wraplength=350)
-        desc_label.pack(anchor=tk.W, pady=(0, 15))
+                             justify=tk.CENTER,
+                             wraplength=400)
+        desc_label.pack(anchor=tk.CENTER, pady=(0, 0))
 
-        # Фрейм с прокруткой для сервисов
+        desc_label = tk.Label(main_frame,
+                             text="После добавления перезагрузите браузер",
+                             font=("Arial", 10),
+                             fg='#ff9500',
+                             bg='#182030',
+                             justify=tk.CENTER,
+                             wraplength=400)
+        desc_label.pack(anchor=tk.CENTER, pady=(0, 15))
+
+
+        # Фрейм с прокруткой для категорий
         canvas_frame = tk.Frame(main_frame, bg='#182030')
         canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
 
@@ -526,12 +610,11 @@ class ServiceUnlockWindow:
 
         # Размещаем Canvas и Scrollbar
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        # scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Создаем фреймы для сервисов
-        for service_name, domains in self.services_groups.items():
-            service_frame = self.create_service_frame(scrollable_frame, service_name, domains)
-            service_frame.pack(fill=tk.X, pady=(0, 0))
+        # Создаем фреймы для основных категорий
+        for category_name, category_content in self.main_categories.items():
+            category_frame = self.create_main_category_frame(scrollable_frame, category_name, category_content)
+            category_frame.pack(fill=tk.X, pady=(0, 10))
 
         # ========== КНОПКИ ВНИЗУ ==========
         buttons_frame = tk.Frame(main_frame, bg='#182030')
