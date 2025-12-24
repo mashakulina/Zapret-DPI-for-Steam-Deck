@@ -52,7 +52,7 @@ class ServiceUnlockWindow:
                 "Copilot": SERVICE_CATEGORIES["copilot"],
                 "Grok": SERVICE_CATEGORIES["grok"],
             },
-            "Развлечения": {
+            "Соцсети": {
                 "Instagram": SERVICE_CATEGORIES["instagram"],
                 "Facebook": SERVICE_CATEGORIES["facebook"],
                 "TikTok": SERVICE_CATEGORIES["tiktok"],
