@@ -7,7 +7,7 @@ import platform
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
 from ui.windows.strategy_window import StrategyWindow
-from ui.windows.strategy_selector import StrategySelectorWindow
+from ui.windows.strategy_selector_window import StrategySelectorWindow
 from core.service_manager import ServiceManager
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from ui.windows.ipset_settings_window import IpsetSettingsWindow
@@ -43,7 +43,7 @@ class MainWindow:
         # Затем проверяем zapret
         self.check_zapret_on_startup()
         # Проверяем целостность файлов
-        self.check_files_on_startup()
+        # self.check_files_on_startup()
         self.load_current_strategy()
         self.check_service_status()  # Проверяем статус службы при запуске
         self.schedule_status_update()  # Запускаем периодическую проверку
@@ -99,27 +99,27 @@ class MainWindow:
 
         return zapret_ok
 
-    def check_files_on_startup(self):
-        """Проверяет наличие zapret при запуске программы"""
-        print("=== НАЧАЛО ПРОВЕРКИ ФАЙЛОВ ===")
-
-        # Делаем окно видимым
-        self.root.update()
-
-        # Запускаем проверку zapret
-        print("Запуск проверки файлов...")
-        try:
-            files_ok = run_file_check(self.root)
-            print(f"Результат проверки файлов: {files_ok}")
-        except Exception as e:
-            print(f"ОШИБКА при проверке файлов: {e}")
-            import traceback
-            traceback.print_exc()
-            files_ok = False
-
-        print("=== КОНЕЦ ПРОВЕРКИ ФАЙЛОВ ===")
-
-        return files_ok
+    # def check_files_on_startup(self):
+    #     """Проверяет наличие zapret при запуске программы"""
+    #     print("=== НАЧАЛО ПРОВЕРКИ ФАЙЛОВ ===")
+    #
+    #     # Делаем окно видимым
+    #     self.root.update()
+    #
+    #     # Запускаем проверку zapret
+    #     print("Запуск проверки файлов...")
+    #     try:
+    #         files_ok = run_file_check(self.root)
+    #         print(f"Результат проверки файлов: {files_ok}")
+    #     except Exception as e:
+    #         print(f"ОШИБКА при проверке файлов: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         files_ok = False
+    #
+    #     print("=== КОНЕЦ ПРОВЕРКИ ФАЙЛОВ ===")
+    #
+    #     return files_ok
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
@@ -145,7 +145,7 @@ class MainWindow:
 
     def on_focus_in(self, event):
         """Обрабатывает получение фокуса окном"""
-        pass  # Можно добавить логику при необходимости
+        self.load_current_strategy()  # Обновляем стратегию при получении фокуса
 
     def on_focus_out(self, event):
         """Обрабатывает потерю фокуса окном - закрываем меню"""
@@ -620,19 +620,19 @@ class MainWindow:
                 # Автозапуск включен
                 self.autostart_enabled = True
                 self.autostart_button.config(text="Отключить автозапуск")
-                print("DEBUG: Автозапуск включен")
+                # print("DEBUG: Автозапуск включен")
             elif result.returncode == 1:
                 # Автозапуск отключен
                 self.autostart_enabled = False
                 self.autostart_button.config(text="Включить автозапуск")
-                print("DEBUG: Автозапуск отключен")
+                # print("DEBUG: Автозапуск отключен")
             else:
                 # Неизвестный статус (служба может не существовать)
                 self.autostart_enabled = False
                 self.autostart_button.config(text="Включить автозапуск")
-                print(f"DEBUG: Статус автозапуска неизвестен, код возврата: {result.returncode}")
-                print(f"DEBUG: Вывод: {result.stdout.strip()}")
-                print(f"DEBUG: Ошибка: {result.stderr.strip()}")
+                # print(f"DEBUG: Статус автозапуска неизвестен, код возврата: {result.returncode}")
+                # print(f"DEBUG: Вывод: {result.stdout.strip()}")
+                # print(f"DEBUG: Ошибка: {result.stderr.strip()}")
 
         except Exception as e:
             print(f"Ошибка проверки автозапуска: {e}")

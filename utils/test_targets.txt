@@ -1,0 +1,44 @@
+### YouTube
+YouTubeWeb              = "https://www.youtube.com"
+YouTubeShort            = "https://youtu.be"
+YouTubeImage            = "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"
+YouTubeVideoRedirect    = "https://redirector.googlevideo.com"
+YouTube_WatchPage       = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+YouTubeAvatar           = "https://yt3.ggpht.com/a/default-user"
+generate_204            = "https://www.google.com/generate_204"
+YouTube_API             = "https://www.googleapis.com/youtube/v3/videos?id=dQw4w9WgXcQ&key=test"
+
+### Discord
+DiscordMain             = "https://discord.com"
+DiscordGateway          = "https://discord.com/api/v9/gateway"
+DiscordCDN              = "https://cdn.discordapp.com"
+DiscordUpdates          = "https://updates.discord.com"
+
+### CSS Loader
+CSS_Loader              = "https://deckthemes.com"
+
+### Decky loader
+Decky_loader_official   = "https://plugins.deckbrew.xyz/plugins"
+Decky_loader_unofficial = "https://ndp.ngni.us/plugins"
+
+### ProtonDB
+ProtonDB                = "https://www.protondb.com"
+
+### SteamGridDB
+SteamGridDB             = "https://www.steamgriddb.com"
+
+### Google
+GoogleMain              = "https://www.google.com"
+GoogleGstatic           = "https://www.gstatic.com"
+
+### Cloudflare
+CloudflareWeb           = "https://www.cloudflare.com"
+CloudflareCDN           = "https://cdnjs.cloudflare.com"
+
+### Public DNS (PING-only)
+CloudflareDNS1111       = "PING:1.1.1.1"
+CloudflareDNS1001       = "PING:1.0.0.1"
+GoogleDNS8888           = "PING:8.8.8.8"
+GoogleDNS8844           = "PING:8.8.4.4"
+Quad9DNS9999            = "PING:9.9.9.9"
+

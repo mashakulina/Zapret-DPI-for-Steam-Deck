@@ -1,4 +1,0 @@
---filter-udp=443 --hostlist-auto={hosts} --hostlist={other} --hostlist={other2} --ipset={ipset_all} --ipset={ipset_all2} --hostlist-exclude={ignore} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={quicgoogle} --new
---filter-udp=50000-65535 --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=d3 --dpi-desync-repeats=6 --new
---filter-tcp=80 --hostlist-auto={hosts} --hostlist={other} --hostlist={other2} --ipset={ipset_all} --ipset={ipset_all2} --hostlist-exclude={ignore} --dpi-desync=fake,split2 --dpi-desync-autottl=2 --dpi-desync-fooling=md5sig --new
---filter-tcp=443 --hostlist-auto={hosts} --hostlist={other} --hostlist={other2} --ipset={ipset_all} --ipset={ipset_all2} --hostlist-exclude={ignore} --dpi-desync=fake --dpi-desync-autottl=2 --dpi-desync-repeats=6 --dpi-desync-fooling=badseq --dpi-desync-fake-tls={tlsgoogle}

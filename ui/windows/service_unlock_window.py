@@ -66,6 +66,7 @@ class ServiceUnlockWindow:
                 "Rutracker": SERVICE_CATEGORIES["rutracker"],
                 "Rutor": SERVICE_CATEGORIES["rutor"],
             },
+            "Discord": SERVICE_CATEGORIES["discord"],
             "Другое": SERVICE_CATEGORIES["other"]
         }
         return main_categories
@@ -94,14 +95,14 @@ class ServiceUnlockWindow:
 
     def create_main_category_frame(self, parent, category_name, category_content):
         """Создает фрейм для основной категории"""
-        frame = tk.Frame(parent, bg='#182030', padx=10, pady=5)
+        frame = tk.Frame(parent, bg='#182030', padx=10, pady=0)
 
         # Проверяем, является ли категория "Другое" (без вложенных списков)
-        is_other_category = category_name == "Другое"
+        is_other_category = category_name in ["Другое", "Discord"]
 
         # Фрейм для заголовка и чекбокса категории
         header_frame = tk.Frame(frame, bg='#182030')
-        header_frame.pack(fill=tk.X, pady=(0, 5))
+        header_frame.pack(fill=tk.X, pady=(0, 0))
 
         # Подсчитываем сколько доменов уже выбрано для всей категории
         all_domains = []
@@ -531,7 +532,7 @@ class ServiceUnlockWindow:
         """Создает окно разблокировки сервисов"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Разблокировка сервисов")
-        self.window.geometry("500x560")
+        self.window.geometry("450x500")
         self.window.configure(bg='#182030')
         # ЭТИ СТРОКИ ДЛЯ УДАЛЕНИЯ ОБВОДКИ
         try:
@@ -542,7 +543,7 @@ class ServiceUnlockWindow:
         self.window.resizable(True, True)
 
         # Основной фрейм
-        main_frame = tk.Frame(self.window, bg='#182030', padx=20, pady=20)
+        main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Заголовок
@@ -577,10 +578,10 @@ class ServiceUnlockWindow:
 
         # Фрейм с прокруткой для категорий
         canvas_frame = tk.Frame(main_frame, bg='#182030')
-        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
 
         # Создаем Canvas и Scrollbar
-        canvas = tk.Canvas(canvas_frame, bg='#182030', highlightthickness=0)
+        canvas = tk.Canvas(canvas_frame, bg='#182030', highlightthickness=0, height=250)
         scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg='#182030')
 
