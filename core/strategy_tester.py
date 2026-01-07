@@ -745,7 +745,7 @@ class StrategyTester:
     async def _json_request(self, url: str, protocol: str, args: List[str]) -> Dict:
         """Выполняет запрос и проверяет корректность JSON"""
         # Команда для получения статуса и времени
-        status_cmd = ['curl', '-s', '-L', '-m', '10',
+        status_cmd = ['curl', '-s', '-L', '-m', '1',
                     '-H', 'Accept: application/json',
                     '-H', 'User-Agent: Zapret-Tester/1.0',
                     '-o', '/dev/null',
@@ -754,7 +754,7 @@ class StrategyTester:
         status_cmd.append(url)
 
         # Команда для получения контента
-        content_cmd = ['curl', '-s', '-L', '-m', '10',
+        content_cmd = ['curl', '-s', '-L', '-m', '1',
                     '-H', 'Accept: application/json',
                     '-H', 'User-Agent: Zapret-Tester/1.0']
         content_cmd.extend(args)
