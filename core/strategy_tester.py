@@ -231,6 +231,160 @@ class StrategyTester:
 
         return sorted_targets
 
+    async def _rutracker_test(self, target: Dict, result: Dict) -> Dict:
+        """Специальный тест для Rutracker с проверкой заголовка Connection и 3 попытками"""
+        url = target["url"]
+
+        # Для Rutracker используем форумный URL для проверки
+        if "rutracker.org" in url and "/forum/index.php" not in url:
+            test_url = "http://rutracker.org/forum/index.php"
+        else:
+            test_url = url
+
+        result.update({
+            "protocol": "HTTP",
+            "success": False,
+            "blocked": False,
+            "details": "",
+            "attempts": []
+        })
+
+        # Параметры curl для получения заголовков
+        curl_cmd = [
+            'curl', '-k', '-I', '-s', '-m', '1',
+            '-L',  # Следуем редиректам
+            '-o', '/dev/null',
+            '-w', '%{http_code}::%{time_total}'
+        ]
+
+        # Выполняем 3 попытки
+        attempts_results = []
+
+        for attempt in range(1, 4):
+            try:
+                # Создаем команду для этой попытки
+                attempt_cmd = curl_cmd.copy()
+                attempt_cmd.append(test_url)
+
+                # Запускаем процесс curl для получения заголовков
+                proc = await asyncio.create_subprocess_exec(
+                    *attempt_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+
+                stdout, stderr = await proc.communicate()
+                output = stdout.decode('utf-8', errors='ignore')
+
+                # Также получаем полные заголовки для анализа Connection
+                headers_cmd = ['curl', '-k', '-I', '-s', '-m', '1', '-L', test_url]
+                proc_headers = await asyncio.create_subprocess_exec(
+                    *headers_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+
+                stdout_headers, _ = await proc_headers.communicate()
+                headers_text = stdout_headers.decode('utf-8', errors='ignore')
+
+                # Анализируем результат попытки
+                attempt_result = {
+                    "attempt": attempt,
+                    "success": False,
+                    "http_code": None,
+                    "time_taken": None,
+                    "connection": "не определен",
+                    "raw_headers": headers_text[:200]
+                }
+
+                if proc.returncode == 0 and '::' in output:
+                    http_code, time_taken = output.split('::')
+                    attempt_result["http_code"] = http_code
+                    attempt_result["time_taken"] = time_taken
+
+                    # Ищем заголовок Connection
+                    connection_found = False
+                    for line in headers_text.split('\n'):
+                        if line.lower().startswith('connection:'):
+                            connection_value = line.split(':', 1)[1].strip().lower()
+                            attempt_result["connection"] = connection_value
+                            connection_found = True
+
+                            if connection_value == 'keep-alive':
+                                attempt_result["success"] = True
+                            else:
+                                # Любое другое значение Connection (close или что-то еще)
+                                attempt_result["success"] = False
+                            break
+
+                    # Если заголовок Connection не найден, ищем keep-alive в других заголовках
+                    if not connection_found:
+                        # Ищем keep-alive в любом месте заголовков
+                        if "keep-alive" in headers_text.lower() or "keepalive" in headers_text.lower():
+                            attempt_result["success"] = True
+                            attempt_result["connection"] = "keep-alive (обнаружено в заголовках)"
+                        else:
+                            # Нет keep-alive нигде
+                            attempt_result["connection"] = "нет keep-alive"
+                            attempt_result["success"] = False
+
+                attempts_results.append(attempt_result)
+
+                # Если удачная попытка (keep-alive найден), прерываем дальнейшие проверки
+                if attempt_result["success"]:
+                    break
+
+                # Добавляем минимальную задержку между попытками (0.3 секунды)
+                if attempt < 3:
+                    await asyncio.sleep(0.3)
+
+            except Exception as e:
+                attempts_results.append({
+                    "attempt": attempt,
+                    "success": False,
+                    "error": str(e)[:80]
+                })
+
+                # Задержка после ошибки (0.2 секунды)
+                if attempt < 3:
+                    await asyncio.sleep(0.2)
+
+        # Сохраняем все попытки в результат
+        result["attempts"] = attempts_results
+
+        # ПРОСТАЯ ЛОГИКА: есть keep-alive = успех, нет keep-alive = блокировка
+        successful_attempts = sum(1 for a in attempts_results if a.get("success", False))
+
+        if successful_attempts > 0:
+            # ХОТЯ БЫ ОДНА УСПЕШНАЯ ПОПЫТКА С KEEP-ALIVE
+            result["success"] = True
+            result["blocked"] = False
+
+            # Используем данные из первой успешной попытки
+            successful_attempt = next((a for a in attempts_results if a.get("success", False)), None)
+            if successful_attempt:
+                time_display = successful_attempt['time_taken'] if successful_attempt['time_taken'] else 'N/A'
+                result["details"] = f"HTTP: код {successful_attempt['http_code']}, " \
+                                f"Connection: {successful_attempt['connection']}, " \
+                                f"время {time_display}с"
+        else:
+            # НИ ОДНОЙ УСПЕШНОЙ ПОПЫТКИ С KEEP-ALIVE = БЛОКИРОВКА
+            result["success"] = False
+            result["blocked"] = True
+
+            # Используем данные из первой попытки для деталей
+            if attempts_results and attempts_results[0]:
+                first_attempt = attempts_results[0]
+                http_code = first_attempt.get('http_code', 'N/A')
+                connection = first_attempt.get('connection', 'нет данных')
+
+                result["details"] = f"HTTP: код {http_code}, " \
+                                f"Connection: {connection} (блокировка РКН)"
+            else:
+                result["details"] = "HTTP: все попытки завершились ошибкой (блокировка РКН)"
+
+        return result
+
     def _load_standard_targets(self) -> List[Dict]:
         """Загружает все стандартные цели"""
         targets = []
@@ -377,13 +531,19 @@ class StrategyTester:
             # Ping-тест
             return await self._ping_test(target, result)
         else:
-            # Проверяем, является ли целью Decky loader
-            if "decky" in target["name"].lower() or "decky" in target.get("url", "").lower():
+            # Проверяем специальные цели
+            target_name_lower = target["name"].lower()
+
+            if "rutracker" in target_name_lower:
+                # Специальный тест для Rutracker
+                return await self._rutracker_test(target, result)
+            elif "decky" in target_name_lower:
                 # JSON-тест для Decky loader
                 return await self._json_test(target, result)
             else:
                 # HTTP/HTTPS тест для остальных
                 return await self._curl_test(target, result)
+
 
     async def _ping_test(self, target: Dict, result: Dict) -> Dict:
         """Выполняет ping тест"""
@@ -493,7 +653,17 @@ class StrategyTester:
 
     async def _curl_request(self, url: str, protocol: str, args: List[str]) -> Dict:
         """Выполняет один запрос через curl"""
-        curl_cmd = ['curl', '-I', '-s', '-L', '-m', '5',
+
+        # Пропускаем для Rutracker, так как у него свой тест
+        if "rutracker.org" in url:
+            return {
+                "protocol": protocol,
+                "success": False,
+                "blocked": False,
+                "details": "Rutracker тестируется отдельным методом"
+            }
+
+        curl_cmd = ['curl', '-I', '-s', '-L', '-m', '1',
                 '-o', '/dev/null', '-w', '%{http_code}::%{time_total}::%{size_download}']
         curl_cmd.extend(args)
         curl_cmd.append(url)
@@ -1083,14 +1253,14 @@ class StrategyTester:
             youtube_passed = result.get('youtube_passed', False)
             discord_passed = result.get('discord_passed', False)
 
-            # Если процент успеха < 65% - сразу в нерабочие
-            if success_rate < 65:
+            # Если процент успеха < 60% - сразу в нерабочие
+            if success_rate < 60:
                 non_working_strategies.append(result)
                 result["critical_fail"] = True
                 result["critical_fail_reason"] = f"YouTube и Discord не работает"
                 continue
 
-            # Если процент успеха ≥ 65%, проверяем YouTube/Discord
+            # Если процент успеха ≥ 60%, проверяем YouTube/Discord
             youtube_working = youtube_passed is True
             discord_working = discord_passed is True
 
@@ -1951,7 +2121,7 @@ class StrategyTester:
 
                 if success_rate >= 80:
                     rating = "⭐ ОТЛИЧНО"
-                elif success_rate >= 65:
+                elif success_rate >= 60:
                     rating = "⚠️  НОРМАЛЬНО"
                 else:
                     rating = "❌ ПЛОХО"

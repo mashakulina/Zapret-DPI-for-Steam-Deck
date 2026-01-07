@@ -14,6 +14,9 @@ DiscordGateway          = "https://discord.com/api/v9/gateway"
 DiscordCDN              = "https://cdn.discordapp.com"
 DiscordUpdates          = "https://updates.discord.com"
 
+### Rutracker
+Rutracker             = "http://rutracker.org"
+
 ### CSS Loader
 CSS_Loader              = "https://deckthemes.com"
 
@@ -41,4 +44,3 @@ CloudflareDNS1001       = "PING:1.0.0.1"
 GoogleDNS8888           = "PING:8.8.8.8"
 GoogleDNS8844           = "PING:8.8.4.4"
 Quad9DNS9999            = "PING:9.9.9.9"
-
