@@ -1,4 +1,3 @@
-# ui/windows/connection_check_window.py
 #!/usr/bin/env python3
 
 import tkinter as tk
@@ -111,24 +110,14 @@ class ConnectionCheckWindow:
             'cursor': 'hand2'
         }
 
-        # Кнопка запуска
-        self.start_button = create_hover_button(
+        # Динамическая кнопка Запустить/Остановить
+        self.toggle_button = create_hover_button(
             control_frame,
             text="Запустить проверку",
-            command=self.start_check,
+            command=self.toggle_check,
             **button_style
         )
-        self.start_button.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Кнопка остановки
-        self.stop_button = create_hover_button(
-            control_frame,
-            text="Остановить",
-            command=self.stop_check,
-            **button_style
-        )
-        self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
-        self.stop_button.config(state=tk.DISABLED)
+        self.toggle_button.pack(side=tk.LEFT, padx=(0, 10))
 
         # Кнопка назад
         self.back_button = create_hover_button(
@@ -139,6 +128,13 @@ class ConnectionCheckWindow:
         )
         self.back_button.pack(side=tk.RIGHT)
 
+    def toggle_check(self):
+        """Переключает состояние проверки (запуск/остановка)"""
+        if not self.checking:
+            self.start_check()
+        else:
+            self.stop_check()
+
     def start_check(self):
         """Запускает проверку соединения"""
         if self.checking:
@@ -147,11 +143,11 @@ class ConnectionCheckWindow:
         self.checking = True
         self.results = []
 
+        # Обновляем текст кнопки
+        self.toggle_button.config(text="Остановить проверку", bg='#15354D')
+
         # Очищаем результаты перед началом проверки
         self.clear_results()
-
-        self.start_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.NORMAL)
 
         # Все операции с GUI должны выполняться в главном потоке
         self.window.after(0, self._start_check_ui)
@@ -194,6 +190,12 @@ class ConnectionCheckWindow:
         if self.checking:
             self.checking = False
             self.log_message("\n[!] Проверка остановлена пользователем", "#ff9500")
+            # Обновляем кнопку немедленно
+            self.window.after(0, self._update_button_to_start)
+
+    def _update_button_to_start(self):
+        """Обновляет кнопку в состояние 'Запустить'"""
+        self.toggle_button.config(text="Запустить проверку", bg='#15354D')
 
     def clear_results(self):
         """Очищает область результатов"""
@@ -744,8 +746,8 @@ class ConnectionCheckWindow:
     def on_check_complete(self):
         """Вызывается при завершении проверки"""
         self.checking = False
-        self.start_button.config(state=tk.NORMAL)
-        self.stop_button.config(state=tk.DISABLED)
+        # Обновляем кнопку обратно в состояние "Запустить проверку"
+        self.toggle_button.config(text="Запустить проверку", bg='#15354D')
 
         total_success = sum(1 for _, _, success in self.results if success)
         total_tests = len(self.results)
