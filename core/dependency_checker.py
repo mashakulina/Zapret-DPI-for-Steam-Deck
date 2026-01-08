@@ -262,6 +262,7 @@ class DependencyChecker:
         progress_map = {
             "unlock": 10,
             "pacman": 20,
+            "db_lock_check": 25,
             "keys": 30,
             "install": 60,
             "lock": 90
@@ -269,6 +270,48 @@ class DependencyChecker:
         progress = progress_map.get(self.current_task, 0)
         self.log_debug(f"Текущая задача: {self.current_task}, прогресс: {progress}")
         return progress
+
+    def remove_pacman_db_lock(self):
+        """Удаляет блокировочные файлы базы данных pacman"""
+        self.current_task = "db_lock_check"
+        self.log_debug("Проверка и удаление блокировочных файлов pacman...")
+
+        lock_files = [
+            '/usr/lib/holo/pacmandb/db.lck',
+            '/var/lib/pacman/db.lck',
+            '/var/lib/pacman/db.lck.lock'
+        ]
+
+        for lock_file in lock_files:
+            try:
+                # Проверяем существование файла
+                self.log_debug(f"Проверка существования файла: {lock_file}")
+                check_result = self.run_with_sudo(['ls', '-la', lock_file],
+                                                f"Проверка блокировочного файла: {lock_file}")
+
+                if check_result and check_result['returncode'] == 0:
+                    self.log_debug(f"Блокировочный файл найден: {lock_file}")
+
+                    # Удаляем файл
+                    self.log_debug(f"Удаление блокировочного файла: {lock_file}")
+                    delete_result = self.run_with_sudo(['rm', '-f', lock_file],
+                                                      f"Удаление блокировочного файла: {lock_file}")
+
+                    if delete_result and delete_result['returncode'] == 0:
+                        self.log_debug(f"Блокировочный файл успешно удален: {lock_file}")
+                    else:
+                        self.log_debug(f"Не удалось удалить блокировочный файл: {lock_file}")
+                        if delete_result:
+                            self.log_debug(f"Ошибка удаления: {delete_result['stderr']}")
+                else:
+                    self.log_debug(f"Блокировочный файл не найден: {lock_file}")
+
+            except Exception as e:
+                self.log_debug(f"Ошибка при работе с блокировочным файлом {lock_file}: {e}")
+                # Продолжаем проверку других файлов
+
+        self.log_debug("Проверка блокировочных файлов завершена")
+        return True  # Всегда возвращаем True, так как это предварительная очистка
 
     def unlock_readonly_system(self):
         """Разблокирует систему SteamOS"""
@@ -507,8 +550,14 @@ class DependencyChecker:
                          "Установка зависимостей невозможна.")
             return False
 
-        # 6. Инициализируем ключи
-        self.log_debug("Шаг 3: Инициализация ключей pacman...")
+        # 6. Удаляем блокировочные файлы базы данных pacman
+        self.log_debug("Шаг 3: Проверка и удаление блокировочных файлов pacman...")
+        if not self.remove_pacman_db_lock():
+            self.log_debug("Предупреждение: проблема с удалением блокировочных файлов")
+            # Не прерываем процесс, так как это предварительная очистка
+
+        # 7. Инициализируем ключи
+        self.log_debug("Шаг 4: Инициализация ключей pacman...")
         if not self.init_pacman_keys():
             self.log_debug("Ошибка инициализации ключей")
             self.lock_readonly_system()
@@ -522,8 +571,8 @@ class DependencyChecker:
                          "• Подключиться через VPN")
             return False
 
-        # 7. Устанавливаем зависимости
-        self.log_debug("Шаг 4: Установка зависимостей...")
+        # 8. Устанавливаем зависимости
+        self.log_debug("Шаг 5: Установка зависимостей...")
         success_count = 0
         failed_deps = []
 
@@ -538,15 +587,15 @@ class DependencyChecker:
 
         self.log_debug(f"Итог установки: успешно={success_count}, неудачно={len(failed_deps)}")
 
-        # 8. Блокируем систему
-        self.log_debug("Шаг 5: Блокировка системы...")
+        # 9. Блокируем систему
+        self.log_debug("Шаг 6: Блокировка системы...")
         self.lock_readonly_system()
 
         # Закрываем окно прогресса
         if self.progress_window:
             self.close_progress_window()
 
-        # 9. Показываем итоги
+        # 10. Показываем итоги
         if success_count == len(missing_deps):
             self.log_debug("Все зависимости успешно установлены")
             self.show_info("Успешная установка",
