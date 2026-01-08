@@ -13,9 +13,9 @@ class HostlistSettingsWindow:
 
         # Путь к файлам
         self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
-        self.other_file = os.path.join(self.manager_dir, "files", "lists", "other.txt")
+        self.list_general_file = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
         self.other2_file = os.path.join(self.manager_dir, "files", "lists", "other2.txt")
-        self.ignore_file = os.path.join(self.manager_dir, "files", "lists", "ignore.txt")
+        self.ignore_file = os.path.join(self.manager_dir, "files", "lists", "list-exclude.txt")
 
         # Данные для предустановленных сервисов
         self.services = {
@@ -42,12 +42,23 @@ class HostlistSettingsWindow:
                 "epicgames-download1.akamaized.net",
                 "fortnite.com",
                 "rockstargames.com"
+            ],
+            "Github": [
+                "github.com",
+                "raw.githubusercontent.com",
+                "gist.githubusercontent.com",
+                "githubusercontent.com",
+                "gitlab.com",
+                "raw.gitlab.com",
+                "snippets.gitlab.com",
+                "git.sr.ht"
             ]
         }
 
         # Переменные для чекбоксов
         self.whatsapp_var = tk.BooleanVar()
         self.rockstar_var = tk.BooleanVar()
+        self.github_var = tk.BooleanVar()
 
         # Переменные для текстовых полей вкладок
         self.blocked_text_input = None
@@ -85,10 +96,10 @@ class HostlistSettingsWindow:
         except Exception as e:
             print(f"Ошибка загрузки файла ignore.txt: {e}")
 
-        # Загружаем существующие домены из other.txt для проверки выбранных сервисов
+        # Загружаем существующие домены из list-general.txt для проверки выбранных сервисов
         try:
-            if os.path.exists(self.other_file):
-                with open(self.other_file, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.list_general_file):
+                with open(self.list_general_file, 'r', encoding='utf-8') as f:
                     self.existing_domains = [line.strip() for line in f if line.strip()]
 
                     # Проверяем наличие доменов WhatsApp
@@ -107,8 +118,16 @@ class HostlistSettingsWindow:
                             break
                     self.rockstar_var.set(rockstar_selected)
 
+                    # Проверяем наличие доменов Github
+                    github_selected = False
+                    for domain in self.services["Github"]:
+                        if domain in self.existing_domains:
+                            github_selected = True
+                            break
+                    self.github_var.set(github_selected)
+
         except Exception as e:
-            print(f"Ошибка загрузки файла other.txt: {e}")
+            print(f"Ошибка загрузки файла list-general.txt: {e}")
             self.existing_domains = []
 
     def validate_domain(self, domain_str):
@@ -215,18 +234,18 @@ class HostlistSettingsWindow:
             if unblocked_count is None:  # Если была ошибка
                 return
 
-            # Обрабатываем other.txt: сохраняем существующие данные + добавляем/удаляем выбранные сервисы
+            # Обрабатываем list-general.txt: сохраняем существующие данные + добавляем/удаляем выбранные сервисы
             # Загружаем текущие домены из файла (если он существует)
             current_domains = set()
-            if os.path.exists(self.other_file):
-                with open(self.other_file, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.list_general_file):
+                with open(self.list_general_file, 'r', encoding='utf-8') as f:
                     current_domains = set([line.strip() for line in f if line.strip()])
             else:
                 # Если файла нет, используем существующие домены из загрузки
                 current_domains = set(self.existing_domains)
 
             # Удаляем все домены сервисов (чтобы потом добавить только выбранные)
-            all_service_domains = set(self.services["WhatsApp"] + self.services["Rockstar/Epic Games"])
+            all_service_domains = set(self.services["WhatsApp"] + self.services["Rockstar/Epic Games"] + self.services["Github"])
             current_domains = current_domains - all_service_domains
 
             # Добавляем домены выбранных сервисов
@@ -236,10 +255,13 @@ class HostlistSettingsWindow:
             if self.rockstar_var.get():
                 current_domains.update(self.services["Rockstar/Epic Games"])
 
-            # Сортируем и сохраняем в файл other.txt
+            if self.github_var.get():
+                current_domains.update(self.services["Github"])
+
+            # Сортируем и сохраняем в файл list-general.txt
             sorted_domains = sorted(current_domains)
-            os.makedirs(os.path.dirname(self.other_file), exist_ok=True)
-            with open(self.other_file, 'w', encoding='utf-8') as f:
+            os.makedirs(os.path.dirname(self.list_general_file), exist_ok=True)
+            with open(self.list_general_file, 'w', encoding='utf-8') as f:
                 for domain in sorted_domains:
                     f.write(f"{domain}\n")
 
@@ -249,13 +271,15 @@ class HostlistSettingsWindow:
                 selected_services.append("WhatsApp")
             if self.rockstar_var.get():
                 selected_services.append("Rockstar/Epic Games")
+            if self.github_var.get():
+                selected_services.append("Github")
 
             services_text = ", ".join(selected_services) if selected_services else "ни одного сервиса"
 
             show_info(self.window, "Сохранение",
                      f"Данные успешно сохранены!\n\n"
                      f"Выбранные сервисы: {services_text}\n"
-                     f"Всего доменов в other.txt: {len(sorted_domains)}\n"
+                     f"Всего доменов в list-general.txt: {len(sorted_domains)}\n"
                      f"Заблокированные домены: {blocked_count} (сохранено в other2.txt)\n"
                      f"Незаблокированные домены: {unblocked_count} (сохранено в ignore.txt)")
 
@@ -393,7 +417,7 @@ class HostlistSettingsWindow:
 
         left_info = tk.Label(left_frame,
                            text="Выбрать предустановленные сервисы для фильтрации\n"
-                                "Домены сервисов будут прописаны в файл other.txt",
+                                "Домены сервисов будут прописаны в файл list-general.txt",
                            font=("Arial", 10),
                            fg='#8e8e93',
                            bg='#182030',
@@ -403,7 +427,7 @@ class HostlistSettingsWindow:
 
         # Фрейм для чекбоксов
         checkboxes_frame = tk.Frame(left_frame, bg='#182030')
-        checkboxes_frame.pack(fill=tk.X, pady=(0, 20))
+        checkboxes_frame.pack(fill=tk.X, pady=(0, 0))
 
         # Чекбокс WhatsApp
         whatsapp_check = tk.Checkbutton(checkboxes_frame,
@@ -430,6 +454,19 @@ class HostlistSettingsWindow:
                                        highlightthickness=0,
                                        activeforeground='white')
         rockstar_check.pack(anchor=tk.W, pady=(0, 10))
+
+        # Чекбокс Github
+        github_check = tk.Checkbutton(checkboxes_frame,
+                                       text="Github",
+                                       variable=self.github_var,
+                                       font=("Arial", 11),
+                                       fg='white',
+                                       bg='#182030',
+                                       selectcolor='#182030',
+                                       activebackground='#182030',
+                                       highlightthickness=0,
+                                       activeforeground='white')
+        github_check.pack(anchor=tk.W, pady=(0, 10))
 
 
         # ========== ПРАВАЯ КОЛОНКА ==========
