@@ -23,7 +23,7 @@ class ManagerUpdater(BaseUpdater):
             os.path.join(self.manager_dir, "utils", "chosen_strategies.txt"),
             os.path.join(self.manager_dir, "utils", "name_strategy.txt"),
             os.path.join(self.manager_dir, "files", "lists", "ipset-all2.txt"),
-            os.path.join(self.manager_dir, "files", "lists", "other2.txt")
+            os.path.join(self.manager_dir, "files", "lists", "other2.txt"),
             os.path.join(self.manager_dir, "files", "lists", "working_strategies.txt")
         ]
 
