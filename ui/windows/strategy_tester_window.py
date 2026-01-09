@@ -422,7 +422,6 @@ class StrategyTesterWindow:
                                     stop_callback=lambda: not self.testing)  # Добавляем callback
             )
 
-
             # Проверяем, была ли остановка
             if not self.testing:
                 self.window.after(0, self.log_message, "\n⏹️ Тестирование остановлено пользователем", "#ff9500")
@@ -432,60 +431,153 @@ class StrategyTesterWindow:
             sys.stdout = old_stdout
 
             if results and len(results) > 0:
+                # Классифицируем стратегии
+                good_results = []      # Оба работают + ≥60%
+                partial_results = []   # Только один работает + ≥60%
+                bad_results = []       # Оба не работают или <60%
+
+                for result in results:
+                    success_rate = result.get('success_rate', 0)
+                    youtube_passed = result.get('youtube_passed', False)
+                    discord_passed = result.get('discord_passed', False)
+                    critical_fail = result.get('critical_fail', False)
+                    critical_reason = result.get('critical_fail_reason', '')
+
+                    if success_rate >= 60:
+                        if youtube_passed and discord_passed:
+                            good_results.append(result)
+                            result["status"] = "good"
+                        elif youtube_passed or discord_passed:
+                            partial_results.append(result)
+                            result["status"] = "partial"
+                            # Определяем причину частичной работы
+                            if youtube_passed and not discord_passed:
+                                result["partial_reason"] = "YouTube работает, Discord нет"
+                            elif not youtube_passed and discord_passed:
+                                result["partial_reason"] = "Discord работает, YouTube нет"
+                        else:
+                            bad_results.append(result)
+                            result["status"] = "bad"
+                            result["bad_reason"] = "YouTube и Discord не работают"
+                    else:
+                        bad_results.append(result)
+                        result["status"] = "bad"
+                        result["bad_reason"] = f"Низкая эффективность ({success_rate:.1f}% < 60%)"
+
                 # Анализируем результаты
                 successful_tests = sum(r.get('successful', 0) for r in results)
                 total_tests = sum(r.get('total_targets', 0) for r in results)
-
-                # Находим лучшую стратегию
-                best_result = max(results, key=lambda x: x.get('success_rate', 0))
-                best_strategy = best_result.get('strategy', 'Неизвестная')
-                best_rate = best_result.get('success_rate', 0)
-                best_successful = best_result.get('successful', 0)
-                best_total = best_result.get('total_targets', 0)
 
                 self.log_message("\n" + "=" * 60, "#4fc3f7")
                 self.log_message("📊 ИТОГИ ТЕСТИРОВАНИЯ ВСЕХ СТРАТЕГИЙ", "#4fc3f7")
                 self.log_message("=" * 60, "#4fc3f7")
 
                 self.log_message(f"✅ Протестировано стратегий: {len(results)}", "#30d158")
-                self.log_message(f"📈 Всего проверок: {total_tests}", "#4fc3f7")
-                self.log_message(f"🎯 Успешных проверок: {successful_tests}", "#30d158")
 
-                self.log_message("\n🏆 ЛУЧШАЯ СТРАТЕГИЯ:", "#4fc3f7")
-                self.log_message(f"   {best_strategy}", "#FFD700")  # Золотой цвет
+                # Показываем статистику по качеству стратегий
+                self.log_message(f"📊 Полностью рабочих: {len(good_results)}", "#30d158" if good_results else "#ff9500")
+                self.log_message(f"📊 Частично рабочих: {len(partial_results)}", "#ffb74d" if partial_results else "#8e8e93")
+                self.log_message(f"📊 Не рабочих: {len(bad_results)}", "#ff3b30" if bad_results else "#30d158")
 
-                if best_rate >= 80:
-                    self.log_message(f"   ✅ ОТЛИЧНО: {best_successful}/{best_total} ({best_rate:.1f}%)", "#30d158")
-                elif best_rate >= 60:
-                    self.log_message(f"   ⚠️  НОРМАЛЬНО: {best_successful}/{best_total} ({best_rate:.1f}%)", "#ff9500")
-                else:
-                    self.log_message(f"   ❌ ПЛОХО: {best_successful}/{best_total} ({best_rate:.1f}%)", "#ff3b30")
 
-                # Выводим топ-3 стратегии
-                self.log_message("\n🏅 ТОП-3 СТРАТЕГИИ:", "#4fc3f7")
-                sorted_results = sorted(results, key=lambda x: x.get('success_rate', 0), reverse=True)
+                # Показываем анализ частичных стратегий
+                if partial_results:
+                    self.log_message("\n📊 ЧАСТИЧНО РАБОЧИЕ СТРАТЕГИИ:", "#ffb74d")
+                    youtube_only = [r for r in partial_results if r.get('youtube_passed', False) and not r.get('discord_passed', False)]
+                    discord_only = [r for r in partial_results if not r.get('youtube_passed', False) and r.get('discord_passed', False)]
 
-                for i, result in enumerate(sorted_results[:3], 1):
-                    strategy = result.get('strategy', 'Неизвестная')
-                    rate = result.get('success_rate', 0)
-                    successful = result.get('successful', 0)
-                    total = result.get('total_targets', 0)
+                    if youtube_only:
+                        best_youtube = max(youtube_only, key=lambda x: x.get('success_rate', 0))
+                        yt_name = best_youtube.get('strategy', 'Неизвестная')
+                        yt_rate = best_youtube.get('success_rate', 0)
+                        self.log_message(f"   Только YouTube: {yt_name} ({yt_rate:.1f}%)", "#ffb74d")
 
-                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
-                    self.log_message(f"   {medal} {strategy}: {successful}/{total} ({rate:.1f}%)", "#4fc3f7")
+                    if discord_only:
+                        best_discord = max(discord_only, key=lambda x: x.get('success_rate', 0))
+                        dc_name = best_discord.get('strategy', 'Неизвестная')
+                        dc_rate = best_discord.get('success_rate', 0)
+                        self.log_message(f"   Только Discord: {dc_name} ({dc_rate:.1f}%)", "#ffb74d")
 
-                # АВТОМАТИЧЕСКОЕ ПРИМЕНЕНИЕ ЛУЧШЕЙ СТРАТЕГИИ
-                if best_rate > 0:  # Если есть успешные тесты
+                # Выбираем лучшую стратегию для применения (сначала из хороших, потом из частичных)
+                all_working = good_results + partial_results
+                sorted_all_working = sorted(all_working, key=lambda x: x.get('success_rate', 0), reverse=True)
+
+                if sorted_all_working:
+                    best_result = sorted_all_working[0]  # Лучшая стратегия
+                    best_status = best_result.get("status", "")
+
+                    # Сортируем отдельно для топа
+                    sorted_good = sorted(good_results, key=lambda x: x.get('success_rate', 0), reverse=True)
+                    sorted_partial = sorted(partial_results, key=lambda x: x.get('success_rate', 0), reverse=True)
+
+                    # Объединяем для топа: сначала хорошие, потом частичные
+                    top_strategies = sorted_good[:3] + sorted_partial[:max(0, 3 - len(sorted_good))]
+
+                    # Определяем параметры лучшей стратегии
+                    best_strategy = best_result.get('strategy', 'Неизвестная')
+                    best_rate = best_result.get('success_rate', 0)
+                    best_successful = best_result.get('successful', 0)
+                    best_total = best_result.get('total_targets', 0)
+
+                    # Выводим информацию о выбранной стратегии
+                    self.log_message("\n🏆 ВЫБРАНА СТРАТЕГИЯ:", "#4fc3f7")
+                    self.log_message(f"   {best_strategy}", "#FFD700")
+
+                    if best_status == "good":
+                        self.log_message(f"   ✅ ПОЛНОСТЬЮ РАБОТАЕТ: {best_successful}/{best_total} ({best_rate:.1f}%)", "#30d158")
+                    elif best_status == "partial":
+                        reason = best_result.get('partial_reason', 'Частично работает')
+                        self.log_message(f"   ⚠️  ЧАСТИЧНО РАБОТАЕТ: {best_successful}/{best_total} ({best_rate:.1f}%)", "#ffb74d")
+                        self.log_message(f"   Причина: {reason}", "#ffb74d")
+
+                    # Затем идет вывод топа стратегий (следующий блок)
+                    self.log_message("\n🏅 ТОП СТРАТЕГИИ:", "#4fc3f7")
+                    for i, result in enumerate(top_strategies[:3], 1):
+                        strategy = result.get('strategy', 'Неизвестная')
+                        rate = result.get('success_rate', 0)
+                        successful = result.get('successful', 0)
+                        total = result.get('total_targets', 0)
+                        status = result.get('status', '')
+
+                        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+
+                        if status == "good":
+                            self.log_message(f"   {medal} {strategy}: {successful}/{total} ({rate:.1f}%) ✅", "#30d158")
+                        elif status == "partial":
+                            reason = result.get('partial_reason', 'Частично работает')
+                            self.log_message(f"   {medal} {strategy}: {successful}/{total} ({rate:.1f}%) ⚠️  [{reason}]", "#ffb74d")
+
+                    # АВТОМАТИЧЕСКОЕ ПРИМЕНЕНИЕ ЛУЧШЕЙ ХОРОШЕЙ СТРАТЕГИИ
                     self.log_message("\n" + "=" * 60, "#4fc3f7")
-                    self.log_message("🤖 АВТОМАТИЧЕСКОЕ ПРИМЕНЕНИЕ СТРАТЕГИИ", "#4fc3f7")
+                    self.log_message("АВТОМАТИЧЕСКОЕ ПРИМЕНЕНИЕ СТРАТЕГИИ", "#4fc3f7")
                     self.log_message("=" * 60, "#4fc3f7")
 
-                    # Применяем лучшую стратегию
+                    # Применяем лучшую хорошую стратегию
                     if self.apply_best_strategy(best_strategy):
                         # Перезапускаем службу
                         self.restart_service_with_strategy(best_strategy, sudo_password)
                     else:
                         self.log_message("⚠️  Не удалось применить стратегию автоматически", "#ff9500")
+
+                else:
+                    # Нет хороших стратегий
+                    self.log_message("\n⚠️  НЕТ РАБОЧИХ СТРАТЕГИЙ", "#ff3b30")
+                    self.log_message("   Все протестированные стратегии имеют статус 'ПЛОХО'", "#ff9500")
+                    self.log_message("   Автоматическое применение отменено", "#ff9500")
+
+                    # Если есть плохие стратегии, показываем худшую и причины
+                    if bad_results:
+                        # Сортируем плохие стратегии (лучшие из плохих вверху)
+                        sorted_bad = sorted(bad_results, key=lambda x: x.get('success_rate', 0), reverse=True)
+
+                        self.log_message("\n📊 АНАЛИЗ ПЛОХИХ СТРАТЕГИЙ:", "#ff9500")
+                        for i, result in enumerate(sorted_bad[:3], 1):  # Показываем первые 3
+                            strategy = result.get('strategy', 'Неизвестная')
+                            rate = result.get('success_rate', 0)
+                            reason = result.get('bad_reason', 'Неизвестная причина')
+
+                            badge = "❶" if i == 1 else "❷" if i == 2 else "❸"
+                            self.log_message(f"   {badge} {strategy}: {rate:.1f}% - {reason}", "#ff3b30")
 
                 # Проверяем, есть ли отчет
                 report_path = tester.reports_dir
@@ -524,9 +616,8 @@ class StrategyTesterWindow:
             except:
                 pass
 
-            # Восстанавливаем состояние кнопок и останавливаем таймер
+            # Восстанавливаем состояние кнопок
             self.window.after(0, self.on_test_complete)
-
     def on_test_complete(self):
         """Вызывается при завершении тестирования"""
         self.testing = False
@@ -563,27 +654,50 @@ class StrategyTesterWindow:
     def apply_best_strategy(self, strategy_name):
         """
         Применяет лучшую стратегию, записывая ее в config.txt и name_strategy.txt
+        Добавляет дополнительные проверки
         """
         try:
             strategy_path = self.project_root / "files" / "strategy" / strategy_name
 
-            # Проверяем, существует ли файл стратегии
+            # ПРОВЕРКА 1: Существует ли файл стратегии
             if not strategy_path.exists():
                 # Ищем файл с любым расширением
                 matching_files = list(strategy_path.parent.glob(strategy_name + ".*"))
                 if not matching_files:
                     self.log_message(f"❌ Файл стратегии не найден: {strategy_name}", "#ff3b30")
+                    self.log_message("   Автоматическое применение отменено", "#ff9500")
                     return False
                 strategy_path = matching_files[0]
 
-            # Читаем содержимое стратегии
-            with open(strategy_path, 'r', encoding='utf-8') as f:
-                strategy_content = f.read()
+            # ПРОВЕРКА 2: Файл не пустой
+            file_size = strategy_path.stat().st_size
+            if file_size == 0:
+                self.log_message(f"❌ Файл стратегии пустой: {strategy_name}", "#ff3b30")
+                self.log_message("   Автоматическое применение отменено", "#ff9500")
+                return False
 
+            # ПРОВЕРКА 3: Проверяем содержимое файла (должно содержать ключевые слова)
+            with open(strategy_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            if len(content.strip()) < 10:  # Минимальный размер конфига
+                self.log_message(f"❌ Слишком маленький файл стратегии: {strategy_name}", "#ff3b30")
+                self.log_message("   Автоматическое применение отменено", "#ff9500")
+                return False
+
+            # ПРОВЕРКА 4: Проверяем, что это валидный конфиг zapret
+            required_keywords = ['nfqws', '--dpi-desync', '--ssl-split']
+            has_required = any(keyword in content.lower() for keyword in required_keywords)
+
+            if not has_required:
+                self.log_message(f"⚠️  Предупреждение: Файл может не быть валидным конфигом zapret", "#ff9500")
+                self.log_message("   Но все равно применяем...", "#ff9500")
+
+            # Все проверки пройдены, применяем стратегию
             # Записываем в config.txt
             config_path = self.project_root / "config.txt"
             with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(strategy_content)
+                f.write(content)
 
             # Записываем имя стратегии в name_strategy.txt
             name_strategy_path = self.project_root / "utils" / "name_strategy.txt"
@@ -594,7 +708,21 @@ class StrategyTesterWindow:
             self.log_message(f"📝 Записана в: {config_path}", "#4fc3f7")
             self.log_message(f"📝 Имя стратегии сохранено в: {name_strategy_path}", "#4fc3f7")
 
+            # ПРОВЕРКА 5: Проверяем, что файлы были записаны корректно
+            if not config_path.exists() or config_path.stat().st_size == 0:
+                self.log_message(f"❌ Ошибка: config.txt не был записан", "#ff3b30")
+                return False
+
+            if not name_strategy_path.exists():
+                self.log_message(f"❌ Ошибка: name_strategy.txt не был записан", "#ff3b30")
+                return False
+
             return True
+
+        except PermissionError:
+            self.log_message(f"❌ Ошибка доступа к файлам", "#ff3b30")
+            self.log_message("   Недостаточно прав для записи конфигурационных файлов", "#ff3b30")
+            return False
 
         except Exception as e:
             self.log_message(f"❌ Ошибка применения стратегии: {str(e)}", "#ff3b30")
