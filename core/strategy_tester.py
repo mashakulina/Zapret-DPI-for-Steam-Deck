@@ -797,18 +797,29 @@ class StrategyTester:
         # Загружаем цели
         targets = self._load_targets(mode)
 
-        # Определяем обязательные цели
-        critical_targets = []
-        youtube_target = None
-        discord_target = None
+        # ОПРЕДЕЛЯЕМ КРИТИЧЕСКИЕ ЦЕЛИ ИЗ ЗАГРУЖЕННЫХ ТАРГЕТОВ
+        critical_targets = {
+            "youtube": [],
+            "discord": []
+        }
 
+        # Определяем критические тесты из загруженных целей
         for target in targets:
-            if "youtube" in target["name"].lower():
-                youtube_target = target
-                critical_targets.append(target)
-            elif "discord" in target["name"].lower():
-                discord_target = target
-                critical_targets.append(target)
+            target_name = target["name"]
+
+            if mode == "YouTube/Discord":
+                # Для YouTube/Discord режима - только критические тесты
+                # Берем названия критических тестов из загруженных целей
+                if "YouTubeWeb" == target_name or "YouTubeVideoRedirect" == target_name:
+                    critical_targets["youtube"].append(target_name)
+                elif "DiscordMain" == target_name or "DiscordGateway" == target_name:
+                    critical_targets["discord"].append(target_name)
+            else:
+                # Для стандартного режима - все YouTube/Discord цели
+                if "youtube" in target_name.lower():
+                    critical_targets["youtube"].append(target_name)
+                elif "discord" in target_name.lower():
+                    critical_targets["discord"].append(target_name)
 
         # Проверяем флаг остановки
         if self.stop_requested:
@@ -914,10 +925,6 @@ class StrategyTester:
             # 4. ТЕСТИРУЕМ ЦЕЛИ
             print(f"  Тестируем {len(targets)} целей...")
 
-            # Переменные для отслеживания статусов обязательных целей
-            youtube_passed = False
-            discord_passed = False
-
             target_results = []
             successful = 0
             failed = 0
@@ -937,11 +944,6 @@ class StrategyTester:
                 if target_result["success"]:
                     successful += 1
                     status = "✓ УСПЕХ"
-                    # Отмечаем успешные обязательные цели
-                    if "youtube" in target["name"].lower():
-                        youtube_passed = True
-                    elif "discord" in target["name"].lower():
-                        discord_passed = True
                 elif target_result["blocked"]:
                     blocked += 1
                     status = "✗ БЛОКИРОВКА"
@@ -949,12 +951,16 @@ class StrategyTester:
                     failed += 1
                     status = "✗ ОШИБКА"
 
-                print(f"    {status}: {target['name']} - {target_result['details']}")
+                # ВЕРНУЛИ ДЕТАЛЬНЫЙ ВЫВОД С ПРИЧИНОЙ
+                details = target_result.get('details', '')
+                if details:
+                    print(f"    {status}: {target['name']} - {details}")
+                else:
+                    print(f"    {status}: {target['name']}")
 
             # Проверяем, была ли остановка
             if self.stop_requested:
                 print(f"  ⏹️  Тестирование стратегии прервано")
-                # Возвращаем частичные результаты
 
         except Exception as e:
             print(f"  ❌ Ошибка тестирования: {e}")
@@ -962,7 +968,6 @@ class StrategyTester:
             traceback.print_exc()
             target_results = []
             successful = failed = blocked = 0
-            youtube_passed = discord_passed = False
 
         finally:
             # ВОССТАНАВЛИВАЕМ ОРИГИНАЛЬНОЕ СОСТОЯНИЕ
@@ -1000,84 +1005,171 @@ class StrategyTester:
             except Exception as e:
                 print(f"  ⚠️  Ошибка при восстановлении: {e}")
 
-        # Проверяем обязательные цели
-        critical_fail = False
-        critical_fail_reason = ""
+        # ТЕПЕРЬ ИЗМЕНЯЕМ ЛОГИКУ ОЦЕНКИ РЕЗУЛЬТАТОВ
+        # УБИРАЕМ ВЫВОД "Анализируем результаты..."
+        # Просто собираем данные без вывода
 
-        # Проверяем наличие обязательных целей в тесте
-        youtube_targets = [t for t in targets if "youtube" in t["name"].lower()]
-        discord_targets = [t for t in targets if "discord" in t["name"].lower()]
+        # Собираем результаты по критическим тестам
+        youtube_critical_results = []
+        discord_critical_results = []
 
-        # Проверяем результаты для YouTube
-        youtube_passed = False
-        if youtube_targets:
-            # Для YouTube критически важны: YouTubeWeb и YouTubeVideoRedirect
-            youtube_critical_names = ["YouTubeWeb", "YouTubeVideoRedirect"]
-            youtube_critical_targets = [t for t in youtube_targets if t["name"] in youtube_critical_names]
+        for target_result in target_results:
+            target_name = target_result.get("target_name", "")
 
-            if youtube_critical_targets:
-                # Проверяем результаты для критических целей
-                critical_success = True
-                for target in youtube_critical_targets:
-                    target_name = target["name"]
-                    # Ищем результат для этой цели
-                    for target_result in target_results:
-                        if target_result.get("target_name") == target_name:
-                            if not target_result.get("success", False):
-                                critical_success = False
-                                break
+            if mode == "YouTube/Discord":
+                # Для YouTube/Discord режима
+                if target_name in critical_targets["youtube"]:
+                    youtube_critical_results.append(target_result)
+                elif target_name in critical_targets["discord"]:
+                    discord_critical_results.append(target_result)
+            else:
+                # Для стандартного режима (старая логика)
+                if "youtube" in target_name.lower():
+                    youtube_critical_results.append(target_result)
+                elif "discord" in target_name.lower():
+                    discord_critical_results.append(target_result)
 
-                if critical_success:
-                    youtube_passed = True
-                    print(f"  ✅ YouTube: Оба критических теста пройдены (YouTubeWeb, YouTubeVideoRedirect)")
-                else:
-                    print(f"  ❌ YouTube: Не пройдены критические тесты")
+        # АНАЛИЗИРУЕМ РЕЗУЛЬТАТЫ в зависимости от режима
+        if mode == "YouTube/Discord":
+            # РЕЖИМ YouTube/Discord - ОЦЕНКА ТОЛЬКО ПО КРИТИЧЕСКИМ ТЕСТАМ
+            youtube_passed = True
+            discord_passed = True
+            critical_fail = False
+            critical_fail_reason = ""
 
-        # Проверяем результаты для Discord
-        discord_passed = False
-        if discord_targets:
-            # Для Discord критически важны: DiscordMain и DiscordGateway
-            discord_critical_names = ["DiscordMain", "DiscordGateway"]
-            discord_critical_targets = [t for t in discord_targets if t["name"] in discord_critical_names]
+            # Проверяем YouTube критические тесты
+            if critical_targets["youtube"]:
+                for target_name in critical_targets["youtube"]:
+                    # Ищем результат для этого теста
+                    found = False
+                    passed = False
+                    for result in youtube_critical_results:
+                        if result.get("target_name") == target_name:
+                            found = True
+                            if result.get("success", False):
+                                passed = True
+                            break
 
-            if discord_critical_targets:
-                # Проверяем результаты для критических целей
-                critical_success = True
-                for target in discord_critical_targets:
-                    target_name = target["name"]
-                    # Ищем результат для этой цели
-                    for target_result in target_results:
-                        if target_result.get("target_name") == target_name:
-                            if not target_result.get("success", False):
-                                critical_success = False
-                                break
+                    if found and not passed:
+                        youtube_passed = False
+            else:
+                # Нет YouTube тестов - считаем что не проверяли
+                youtube_passed = None  # None означает "не проверялось"
 
-                if critical_success:
-                    discord_passed = True
-                    print(f"  ✅ Discord: Оба критических теста пройдены (DiscordMain, DiscordGateway)")
-                else:
-                    print(f"  ❌ Discord: Не пройдены критические тесты")
+            # Проверяем Discord критические тесты
+            if critical_targets["discord"]:
+                for target_name in critical_targets["discord"]:
+                    # Ищем результат для этого теста
+                    found = False
+                    passed = False
+                    for result in discord_critical_results:
+                        if result.get("target_name") == target_name:
+                            found = True
+                            if result.get("success", False):
+                                passed = True
+                            break
 
-        # Определяем критическую ошибку
-        if youtube_targets and discord_targets:
-            if not youtube_passed and not discord_passed:
+                    if found and not passed:
+                        discord_passed = False
+            else:
+                # Нет Discord тестов - считаем что не проверяли
+                discord_passed = None  # None означает "не проверялось"
+
+            # Определяем статус стратегии на основе критических тестов
+            if youtube_passed is False and discord_passed is False:
                 critical_fail = True
                 critical_fail_reason = "YouTube и Discord не работают (критические тесты не пройдены)"
-            elif youtube_passed and not discord_passed:
+            elif youtube_passed is False and discord_passed is True:
                 critical_fail = True
-                critical_fail_reason = "YouTube работает, но Discord не работает"
-            elif not youtube_passed and discord_passed:
+                critical_fail_reason = "YouTube не работает, Discord работает"
+            elif youtube_passed is True and discord_passed is False:
                 critical_fail = True
-                critical_fail_reason = "Discord работает, но YouTube не работает"
-        elif youtube_targets and not youtube_passed:
-            critical_fail = True
-            critical_fail_reason = "YouTube не работает (критические тесты не пройдены)"
-        elif discord_targets and not discord_passed:
-            critical_fail = True
-            critical_fail_reason = "Discord не работает (критические тесты не пройдены)"
+                critical_fail_reason = "YouTube работает, Discord не работает"
+            elif youtube_passed is True and discord_passed is True:
+                critical_fail = False
+                critical_fail_reason = ""
+            else:
+                # Если какой-то сервис не проверялся
+                critical_fail = False
+                if youtube_passed is None and discord_passed is True:
+                    critical_fail_reason = "Discord работает, YouTube не проверялся"
+                elif youtube_passed is True and discord_passed is None:
+                    critical_fail_reason = "YouTube работает, Discord не проверялся"
+                elif youtube_passed is None and discord_passed is None:
+                    critical_fail_reason = "Ни один сервис не проверялся"
+                else:
+                    critical_fail_reason = ""
 
-        if critical_fail:
-            print(f"  ⚠️  КРИТИЧЕСКАЯ ОШИБКА: {critical_fail_reason}")
+        else:
+            # СТАНДАРТНЫЙ РЕЖИМ - СТАРАЯ ЛОГИКА
+            youtube_passed = False
+            discord_passed = False
+            critical_fail = False
+            critical_fail_reason = ""
+
+            # Проверяем наличие обязательных целей в тесте
+            youtube_targets = [t for t in targets if "youtube" in t["name"].lower()]
+            discord_targets = [t for t in targets if "discord" in t["name"].lower()]
+
+            # Проверяем результаты для YouTube
+            if youtube_targets:
+                # Для YouTube критически важны: YouTubeWeb и YouTubeVideoRedirect
+                youtube_critical_names = ["YouTubeWeb", "YouTubeVideoRedirect"]
+                youtube_critical_targets = [t for t in youtube_targets if t["name"] in youtube_critical_names]
+
+                if youtube_critical_targets:
+                    # Проверяем результаты для критических целей
+                    critical_success = True
+                    for target in youtube_critical_targets:
+                        target_name = target["name"]
+                        # Ищем результат для этой цели
+                        for target_result in target_results:
+                            if target_result.get("target_name") == target_name:
+                                if not target_result.get("success", False):
+                                    critical_success = False
+                                    break
+
+                    if critical_success:
+                        youtube_passed = True
+
+            # Проверяем результаты для Discord
+            if discord_targets:
+                # Для Discord критически важны: DiscordMain и DiscordGateway
+                discord_critical_names = ["DiscordMain", "DiscordGateway"]
+                discord_critical_targets = [t for t in discord_targets if t["name"] in discord_critical_names]
+
+                if discord_critical_targets:
+                    # Проверяем результаты для критических целей
+                    critical_success = True
+                    for target in discord_critical_targets:
+                        target_name = target["name"]
+                        # Ищем результат для этой цели
+                        for target_result in target_results:
+                            if target_result.get("target_name") == target_name:
+                                if not target_result.get("success", False):
+                                    critical_success = False
+                                    break
+
+                    if critical_success:
+                        discord_passed = True
+
+            # Определяем критическую ошибку
+            if youtube_targets and discord_targets:
+                if not youtube_passed and not discord_passed:
+                    critical_fail = True
+                    critical_fail_reason = "YouTube и Discord не работают (критические тесты не пройдены)"
+                elif youtube_passed and not discord_passed:
+                    critical_fail = True
+                    critical_fail_reason = "YouTube работает, но Discord не работает"
+                elif not youtube_passed and discord_passed:
+                    critical_fail = True
+                    critical_fail_reason = "Discord работает, но YouTube не работает"
+            elif youtube_targets and not youtube_passed:
+                critical_fail = True
+                critical_fail_reason = "YouTube не работает (критические тесты не пройдены)"
+            elif discord_targets and not discord_passed:
+                critical_fail = True
+                critical_fail_reason = "Discord не работает (критические тесты не пройдены)"
 
         # Собираем результаты
         results = {
@@ -1093,19 +1185,19 @@ class StrategyTester:
             "discord_passed": discord_passed,
             "critical_fail": critical_fail,
             "critical_fail_reason": critical_fail_reason,
-            "target_results": target_results
+            "target_results": target_results,
+            # Добавляем информацию о критических тестах
+            "youtube_critical_targets": critical_targets["youtube"],
+            "discord_critical_targets": critical_targets["discord"],
+            "youtube_critical_results": youtube_critical_results,
+            "discord_critical_results": discord_critical_results
         }
-
-        # Корректируем процент успеха при критической ошибке
-        if critical_fail:
-            print(f"  Итог: {successful}/{len(targets)} успешно, но КРИТИЧЕСКАЯ ОШИБКА: {critical_fail_reason}")
-        else:
-            print(f"  Итог: {successful}/{len(targets)} успешно ({results['success_rate']:.1f}%)")
 
         if self.stop_requested:
             print(f"  ⏹️  Тестирование стратегии остановлено досрочно")
 
         return results
+
     def check_service_status(self) -> bool:
         """
         Проверяет, запущена ли служба zapret перед тестом
@@ -1202,37 +1294,60 @@ class StrategyTester:
         non_working_strategies = []  # Не рабочие (<60% или оба сервиса не работают)
 
         for result in results:
-            success_rate = result.get('success_rate', 0)
-            youtube_passed = result.get('youtube_passed', False)
-            discord_passed = result.get('discord_passed', False)
+            success_rate = result.get('success_rate', 0)  # Получаем здесь, чтобы переменная всегда была определена
+            mode = result.get('mode', 'standard')
 
-            # Если процент успеха < 60% - сразу в нерабочие
-            if success_rate < 60:
-                non_working_strategies.append(result)
-                result["critical_fail"] = True
-                result["critical_fail_reason"] = f"YouTube и Discord не работает"
-                continue
+            if mode == "YouTube/Discord":
+                # РЕЖИМ YouTube/Discord - оценка только по критическим тестам
+                youtube_passed = result.get('youtube_passed', False)
+                discord_passed = result.get('discord_passed', False)
 
-            # Если процент успеха ≥ 60%, проверяем YouTube/Discord
-            youtube_working = youtube_passed is True
-            discord_working = discord_passed is True
-
-            if not youtube_working and not discord_working:
-                # Оба не работают при хорошем проценте - нерабочие
-                non_working_strategies.append(result)
-                result["critical_fail"] = True
-                result["critical_fail_reason"] = "YouTube и Discord не работают"
-            elif not youtube_working or not discord_working:
-                # Один не работает - частично рабочие
-                partially_working_strategies.append(result)
-                result["critical_fail"] = True
-                if not youtube_working and discord_working:
-                    result["critical_fail_reason"] = "Discord работает, но YouTube не работает"
-                elif youtube_working and not discord_working:
-                    result["critical_fail_reason"] = "YouTube работает, но Discord не работает"
+                if youtube_passed is True and discord_passed is True:
+                    working_strategies.append(result)
+                elif (youtube_passed is True and discord_passed is False) or \
+                    (youtube_passed is False and discord_passed is True):
+                    partially_working_strategies.append(result)
+                    result["critical_fail"] = True
+                    if youtube_passed and not discord_passed:
+                        result["critical_fail_reason"] = "YouTube работает, но Discord не работает"
+                    elif not youtube_passed and discord_passed:
+                        result["critical_fail_reason"] = "Discord работает, но YouTube не работает"
+                else:
+                    non_working_strategies.append(result)
+                    result["critical_fail"] = True
+                    result["critical_fail_reason"] = "YouTube и Discord не работают"
             else:
-                # Оба работают - рабочие
-                working_strategies.append(result)
+                # СТАНДАРТНЫЙ РЕЖИМ - старая логика
+                youtube_passed = result.get('youtube_passed', False)
+                discord_passed = result.get('discord_passed', False)
+
+                # Если процент успеха < 60% - сразу в нерабочие
+                if success_rate < 60:
+                    non_working_strategies.append(result)
+                    result["critical_fail"] = True
+                    result["critical_fail_reason"] = f"Низкая эффективность"
+                    continue
+
+                # Если процент успеха ≥ 60%, проверяем YouTube/Discord
+                youtube_working = youtube_passed is True
+                discord_working = discord_passed is True
+
+                if not youtube_working and not discord_working:
+                    # Оба не работают при хорошем проценте - нерабочие
+                    non_working_strategies.append(result)
+                    result["critical_fail"] = True
+                    result["critical_fail_reason"] = "YouTube и Discord не работают"
+                elif not youtube_working or not discord_working:
+                    # Один не работает - частично рабочие
+                    partially_working_strategies.append(result)
+                    result["critical_fail"] = True
+                    if not youtube_working and discord_working:
+                        result["critical_fail_reason"] = "Discord работает, но YouTube не работает"
+                    elif youtube_working and not discord_working:
+                        result["critical_fail_reason"] = "YouTube работает, но Discord не работает"
+                else:
+                    # Оба работают - рабочие
+                    working_strategies.append(result)
 
         html = f"""<!DOCTYPE html>
 <html lang="ru">
@@ -2026,8 +2141,8 @@ class StrategyTester:
         return html
 
     async def run_full_test(self, mode: str = "standard",
-                        strategies: Optional[List[str]] = None,
-                        stop_callback: Optional[callable] = None) -> List[Dict]:
+                            strategies: Optional[List[str]] = None,
+                            stop_callback: Optional[callable] = None) -> List[Dict]:
         """
         Выполняет полное тестирование всех стратегий
         """
@@ -2069,7 +2184,6 @@ class StrategyTester:
             print(f"\n[{i}/{len(strategies)}] Тестируем стратегию: {strategy}")
 
             try:
-                # Добавляем проверку флага в метод test_strategy (изменение ниже)
                 result = await self.test_strategy(strategy, mode)
 
                 if result.get('error') == 'Test stopped by user':
@@ -2079,19 +2193,61 @@ class StrategyTester:
 
                 all_results.append(result)
 
-                # Выводим краткий результат
-                success = result.get('successful', 0)
-                total = result.get('total_targets', 0)
-                success_rate = result.get('success_rate', 0)
+                # ВЫВОД ИТОГОВ В ЗАВИСИМОСТИ ОТ РЕЖИМА
+                if mode == "YouTube/Discord":
+                    # РЕЖИМ YouTube/Discord - оценка по критическим тестам
+                    youtube_passed = result.get('youtube_passed', False)
+                    discord_passed = result.get('discord_passed', False)
 
-                if success_rate >= 80:
-                    rating = "⭐ ОТЛИЧНО"
-                elif success_rate >= 60:
-                    rating = "⚠️  НОРМАЛЬНО"
+                    if youtube_passed is True and discord_passed is True:
+                        rating = "⭐ ОТЛИЧНО"
+                        print(f"   Результат: {rating} (YouTube: ✅, Discord: ✅)")
+                    elif youtube_passed is True and discord_passed is False:
+                        rating = "⚠️  ЧАСТИЧНО"
+                        print(f"   Результат: {rating} (YouTube: ✅, Discord: ❌)")
+                    elif youtube_passed is False and discord_passed is True:
+                        rating = "⚠️  ЧАСТИЧНО"
+                        print(f"   Результат: {rating} (YouTube: ❌, Discord: ✅)")
+                    elif youtube_passed is False and discord_passed is False:
+                        rating = "❌ ПЛОХО"
+                        print(f"   Результат: {rating} (YouTube: ❌, Discord: ❌)")
+                    else:
+                        rating = "❓ НЕИЗВЕСТНО"
+                        print(f"   Результат: {rating}")
+
+                elif mode == "dpi":
+                    # РЕЖИМ DPI - только техническая оценка
+                    success_rate = result.get('success_rate', 0)
+                    if success_rate >= 80:
+                        rating = "✅ ХОРОШО"
+                    elif success_rate >= 60:
+                        rating = "⚠️  НОРМАЛЬНО"
+                    else:
+                        rating = "❌ ПЛОХО"
+                    print(f"   Результат: {rating} ({success_rate:.1f}%)")
+
                 else:
-                    rating = "❌ ПЛОХО"
+                    # СТАНДАРТНЫЙ РЕЖИМ - старый подход с процентами
+                    success = result.get('successful', 0)
+                    total = result.get('total_targets', 0)
+                    success_rate = result.get('success_rate', 0)
+                    youtube_passed = result.get('youtube_passed', False)
+                    discord_passed = result.get('discord_passed', False)
 
-                print(f"   Результат: {rating} ({success}/{total} успешно, {success_rate:.1f}%)")
+                    if success_rate >= 80 and youtube_passed and discord_passed:
+                        rating = "⭐ ОТЛИЧНО"
+                    elif success_rate >= 60 and (youtube_passed or discord_passed):
+                        rating = "✅ ХОРОШО"
+                    elif success_rate >= 60:
+                        rating = "⚠️  НОРМАЛЬНО"
+                    else:
+                        rating = "❌ ПЛОХО"
+
+                    # Дополнительная информация для стандартного режима
+                    yt_status = "✅" if youtube_passed else "❌"
+                    dc_status = "✅" if discord_passed else "❌"
+                    print(f"   Результат: {rating} ({success}/{total} успешно, {success_rate:.1f}%)")
+                    print(f"              YouTube: {yt_status}, Discord: {dc_status}")
 
             except Exception as e:
                 print(f"   ❌ Ошибка тестирования: {e}")
@@ -2102,18 +2258,25 @@ class StrategyTester:
                 })
 
         if all_results and not self.stop_requested:
-            # Сохраняем список рабочих стратегий
+            # СОХРАНЯЕМ СПИСОК РАБОЧИХ СТРАТЕГИЙ В ЗАВИСИМОСТИ ОТ РЕЖИМА
             working_names = []
             for result in all_results:
                 success_rate = result.get('success_rate', 0)
                 youtube_passed = result.get('youtube_passed', False)
                 discord_passed = result.get('discord_passed', False)
 
-                # Критерии рабочей стратегии:
-                # 1. Успешность ≥ 60%
-                # 2. ОБА YouTube и Discord работают
-                if success_rate >= 60 and youtube_passed is True and discord_passed is True:
-                    working_names.append(result.get('strategy', ''))
+                if mode == "YouTube/Discord":
+                    # РЕЖИМ YouTube/Discord - оба сервиса должны работать
+                    if youtube_passed is True and discord_passed is True:
+                        working_names.append(result.get('strategy', ''))
+                elif mode == "dpi":
+                    # РЕЖИМ DPI - только по проценту
+                    if success_rate >= 70:  # Порог для DPI режима
+                        working_names.append(result.get('strategy', ''))
+                else:
+                    # СТАНДАРТНЫЙ РЕЖИМ - старая логика
+                    if success_rate >= 60 and youtube_passed is True and discord_passed is True:
+                        working_names.append(result.get('strategy', ''))
 
             if working_names:
                 try:
@@ -2123,12 +2286,30 @@ class StrategyTester:
                         for name in working_names:
                             if name:  # Проверяем что имя не пустое
                                 f.write(name + '\n')
-                    print(f"💾 Сохранено {len(working_names)} рабочих стратегий в файл")
+
+                    mode_label = "YouTube/Discord" if mode == "YouTube/Discord" else "DPI" if mode == "dpi" else "стандартный"
+                    print(f"\n💾 Сохранено {len(working_names)} рабочих стратегий для режима '{mode_label}'")
                 except Exception as e:
                     print(f"⚠️ Не удалось сохранить список рабочих стратегий: {e}")
 
-            report_path = self.generate_report(all_results)
-            print(f"\n✅ Тестирование завершено!")
+            # ГЕНЕРИРУЕМ ОТЧЕТ С УЧЕТОМ РЕЖИМА
+            report_filename = None
+            if mode == "YouTube/Discord":
+                report_filename = f"youtube_discord_test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            elif mode == "dpi":
+                report_filename = f"dpi_test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            else:
+                report_filename = f"standard_test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+
+            report_path = self.generate_report(all_results, report_filename)
+
+            if mode == "YouTube/Discord":
+                print(f"\n✅ Тестирование YouTube/Discord завершено!")
+            elif mode == "dpi":
+                print(f"\n✅ DPI тестирование завершено!")
+            else:
+                print(f"\n✅ Тестирование завершено!")
+
             print(f"📄 Отчет сохранен: {report_path}")
 
             # Открываем отчет в браузере
@@ -2137,16 +2318,22 @@ class StrategyTester:
                 webbrowser.open(f"file://{report_path}")
             except:
                 print("   ℹ️  Отчет можно открыть вручную")
+
         elif self.stop_requested:
             print(f"\n⏹️  Тестирование остановлено")
             print(f"   Протестировано стратегий: {len(all_results)}")
             # Можно сохранить частичный отчет
             if all_results:
-                report_path = self.generate_report(all_results, "partial_test_report.html")
+                report_filename = "partial_test_report.html"
+                if mode == "YouTube/Discord":
+                    report_filename = "partial_youtube_discord_report.html"
+                elif mode == "dpi":
+                    report_filename = "partial_dpi_report.html"
+
+                report_path = self.generate_report(all_results, report_filename)
                 print(f"📄 Частичный отчет сохранен: {report_path}")
 
         return all_results
-
 
 # Упрощенная функция для использования
 async def test_all_strategies(project_root: str, mode: str = "standard",

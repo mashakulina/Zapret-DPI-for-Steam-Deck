@@ -431,38 +431,77 @@ class StrategyTesterWindow:
             sys.stdout = old_stdout
 
             if results and len(results) > 0:
-                # Классифицируем стратегии
-                good_results = []      # Оба работают + ≥60%
-                partial_results = []   # Только один работает + ≥60%
-                bad_results = []       # Оба не работают или <60%
+                # Классифицируем стратегии в зависимости от режима
+                mode = self.mode_var.get()
 
-                for result in results:
-                    success_rate = result.get('success_rate', 0)
-                    youtube_passed = result.get('youtube_passed', False)
-                    discord_passed = result.get('discord_passed', False)
-                    critical_fail = result.get('critical_fail', False)
-                    critical_reason = result.get('critical_fail_reason', '')
+                if mode == "YouTube/Discord":
+                    # РЕЖИМ YouTube/Discord - классификация только по критическим тестам
+                    good_results = []      # Оба работают
+                    partial_results = []   # Только один работает
+                    bad_results = []       # Оба не работают
 
-                    if success_rate >= 60:
-                        if youtube_passed and discord_passed:
+                    for result in results:
+                        youtube_passed = result.get('youtube_passed', False)
+                        discord_passed = result.get('discord_passed', False)
+                        success_rate = result.get('success_rate', 0)
+
+                        if youtube_passed is True and discord_passed is True:
+                            # Оба работают - хорошая стратегия
                             good_results.append(result)
                             result["status"] = "good"
-                        elif youtube_passed or discord_passed:
+                        elif (youtube_passed is True and discord_passed is False) or \
+                            (youtube_passed is False and discord_passed is True):
+                            # Только один работает - частичная стратегия
                             partial_results.append(result)
                             result["status"] = "partial"
+
                             # Определяем причину частичной работы
                             if youtube_passed and not discord_passed:
                                 result["partial_reason"] = "YouTube работает, Discord нет"
                             elif not youtube_passed and discord_passed:
                                 result["partial_reason"] = "Discord работает, YouTube нет"
                         else:
+                            # Оба не работают или не проверялись - плохая стратегия
                             bad_results.append(result)
                             result["status"] = "bad"
-                            result["bad_reason"] = "YouTube и Discord не работают"
-                    else:
-                        bad_results.append(result)
-                        result["status"] = "bad"
-                        result["bad_reason"] = f"Низкая эффективность ({success_rate:.1f}% < 60%)"
+
+                            if youtube_passed is False and discord_passed is False:
+                                result["bad_reason"] = "YouTube и Discord не работают"
+                            else:
+                                result["bad_reason"] = "Не удалось определить статус"
+                else:
+                    # СТАНДАРТНЫЙ РЕЖИМ - старая логика
+                    good_results = []      # Оба работают + ≥60%
+                    partial_results = []   # Только один работает + ≥60%
+                    bad_results = []       # Оба не работают или <60%
+
+                    for result in results:
+                        success_rate = result.get('success_rate', 0)
+                        youtube_passed = result.get('youtube_passed', False)
+                        discord_passed = result.get('discord_passed', False)
+                        critical_fail = result.get('critical_fail', False)
+                        critical_reason = result.get('critical_fail_reason', '')
+
+                        if success_rate >= 60:
+                            if youtube_passed and discord_passed:
+                                good_results.append(result)
+                                result["status"] = "good"
+                            elif youtube_passed or discord_passed:
+                                partial_results.append(result)
+                                result["status"] = "partial"
+                                # Определяем причину частичной работы
+                                if youtube_passed and not discord_passed:
+                                    result["partial_reason"] = "YouTube работает, Discord нет"
+                                elif not youtube_passed and discord_passed:
+                                    result["partial_reason"] = "Discord работает, YouTube нет"
+                            else:
+                                bad_results.append(result)
+                                result["status"] = "bad"
+                                result["bad_reason"] = "YouTube и Discord не работают"
+                        else:
+                            bad_results.append(result)
+                            result["status"] = "bad"
+                            result["bad_reason"] = f"Низкая эффективность ({success_rate:.1f}% < 60%)"
 
                 # Анализируем результаты
                 successful_tests = sum(r.get('successful', 0) for r in results)
@@ -470,33 +509,40 @@ class StrategyTesterWindow:
 
                 self.log_message("\n" + "=" * 60, "#4fc3f7")
                 self.log_message("📊 ИТОГИ ТЕСТИРОВАНИЯ ВСЕХ СТРАТЕГИЙ", "#4fc3f7")
+                self.log_message(f"🎯 РЕЖИМ: {mode.upper()}", "#4fc3f7")
                 self.log_message("=" * 60, "#4fc3f7")
 
                 self.log_message(f"✅ Протестировано стратегий: {len(results)}", "#30d158")
 
                 # Показываем статистику по качеству стратегий
-                self.log_message(f"📊 Полностью рабочих: {len(good_results)}", "#30d158" if good_results else "#ff9500")
-                self.log_message(f"📊 Частично рабочих: {len(partial_results)}", "#ffb74d" if partial_results else "#8e8e93")
-                self.log_message(f"📊 Не рабочих: {len(bad_results)}", "#ff3b30" if bad_results else "#30d158")
+                if mode == "YouTube/Discord":
+                    self.log_message(f"📊 Полностью рабочих: {len(good_results)}", "#30d158" if good_results else "#ff9500")
+                    self.log_message(f"📊 Частично рабочих: {len(partial_results)}", "#ffb74d" if partial_results else "#8e8e93")
+                    self.log_message(f"📊 Не рабочих: {len(bad_results)}", "#ff3b30" if bad_results else "#30d158")
 
+                    # Показываем детали по частичным стратегиям
+                    if partial_results:
+                        self.log_message("\n📊 ЧАСТИЧНО РАБОЧИЕ СТРАТЕГИИ:", "#ffb74d")
+                        youtube_only = [r for r in partial_results if r.get('youtube_passed', False) and not r.get('discord_passed', False)]
+                        discord_only = [r for r in partial_results if not r.get('youtube_passed', False) and r.get('discord_passed', False)]
 
-                # Показываем анализ частичных стратегий
-                if partial_results:
-                    self.log_message("\n📊 ЧАСТИЧНО РАБОЧИЕ СТРАТЕГИИ:", "#ffb74d")
-                    youtube_only = [r for r in partial_results if r.get('youtube_passed', False) and not r.get('discord_passed', False)]
-                    discord_only = [r for r in partial_results if not r.get('youtube_passed', False) and r.get('discord_passed', False)]
+                        if youtube_only:
+                            best_youtube = max(youtube_only, key=lambda x: x.get('success_rate', 0))
+                            yt_name = best_youtube.get('strategy', 'Неизвестная')
+                            yt_rate = best_youtube.get('success_rate', 0)
+                            self.log_message(f"   Только YouTube: {yt_name} ({yt_rate:.1f}%)", "#ffb74d")
 
-                    if youtube_only:
-                        best_youtube = max(youtube_only, key=lambda x: x.get('success_rate', 0))
-                        yt_name = best_youtube.get('strategy', 'Неизвестная')
-                        yt_rate = best_youtube.get('success_rate', 0)
-                        self.log_message(f"   Только YouTube: {yt_name} ({yt_rate:.1f}%)", "#ffb74d")
+                        if discord_only:
+                            best_discord = max(discord_only, key=lambda x: x.get('success_rate', 0))
+                            dc_name = best_discord.get('strategy', 'Неизвестная')
+                            dc_rate = best_discord.get('success_rate', 0)
+                            self.log_message(f"   Только Discord: {dc_name} ({dc_rate:.1f}%)", "#ffb74d")
+                else:
+                    # Стандартный режим - старая статистика
+                    self.log_message(f"📊 Полностью рабочих: {len(good_results)}", "#30d158" if good_results else "#ff9500")
+                    self.log_message(f"📊 Частично рабочих: {len(partial_results)}", "#ffb74d" if partial_results else "#8e8e93")
+                    self.log_message(f"📊 Не рабочих: {len(bad_results)}", "#ff3b30" if bad_results else "#30d158")
 
-                    if discord_only:
-                        best_discord = max(discord_only, key=lambda x: x.get('success_rate', 0))
-                        dc_name = best_discord.get('strategy', 'Неизвестная')
-                        dc_rate = best_discord.get('success_rate', 0)
-                        self.log_message(f"   Только Discord: {dc_name} ({dc_rate:.1f}%)", "#ffb74d")
 
                 # Выбираем лучшую стратегию для применения (сначала из хороших, потом из частичных)
                 all_working = good_results + partial_results
