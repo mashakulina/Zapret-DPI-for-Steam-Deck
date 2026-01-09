@@ -2082,17 +2082,6 @@ class StrategyTester:
         return all_results
 
 
-# Упрощенная функция для использования
-async def test_all_strategies(project_root: str, mode: str = "standard",
-                            sudo_password: Optional[str] = None,
-                            stop_callback: Optional[callable] = None) -> List[Dict]:
-    """
-    Простая функция для тестирования всех стратегий
-    """
-    tester = StrategyTester(project_root, sudo_password)
-    return await tester.run_full_test(mode, stop_callback=stop_callback)
-
-
 if __name__ == "__main__":
     # Пример использования из командной строки
     import sys
