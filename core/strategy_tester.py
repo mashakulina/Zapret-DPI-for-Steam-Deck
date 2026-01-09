@@ -1005,22 +1005,76 @@ class StrategyTester:
         critical_fail_reason = ""
 
         # Проверяем наличие обязательных целей в тесте
-        if youtube_target and discord_target:
+        youtube_targets = [t for t in targets if "youtube" in t["name"].lower()]
+        discord_targets = [t for t in targets if "discord" in t["name"].lower()]
+
+        # Проверяем результаты для YouTube
+        youtube_passed = False
+        if youtube_targets:
+            # Для YouTube критически важны: YouTubeWeb и YouTubeVideoRedirect
+            youtube_critical_names = ["YouTubeWeb", "YouTubeVideoRedirect"]
+            youtube_critical_targets = [t for t in youtube_targets if t["name"] in youtube_critical_names]
+
+            if youtube_critical_targets:
+                # Проверяем результаты для критических целей
+                critical_success = True
+                for target in youtube_critical_targets:
+                    target_name = target["name"]
+                    # Ищем результат для этой цели
+                    for target_result in target_results:
+                        if target_result.get("target_name") == target_name:
+                            if not target_result.get("success", False):
+                                critical_success = False
+                                break
+
+                if critical_success:
+                    youtube_passed = True
+                    print(f"  ✅ YouTube: Оба критических теста пройдены (YouTubeWeb, YouTubeVideoRedirect)")
+                else:
+                    print(f"  ❌ YouTube: Не пройдены критические тесты")
+
+        # Проверяем результаты для Discord
+        discord_passed = False
+        if discord_targets:
+            # Для Discord критически важны: DiscordMain и DiscordGateway
+            discord_critical_names = ["DiscordMain", "DiscordGateway"]
+            discord_critical_targets = [t for t in discord_targets if t["name"] in discord_critical_names]
+
+            if discord_critical_targets:
+                # Проверяем результаты для критических целей
+                critical_success = True
+                for target in discord_critical_targets:
+                    target_name = target["name"]
+                    # Ищем результат для этой цели
+                    for target_result in target_results:
+                        if target_result.get("target_name") == target_name:
+                            if not target_result.get("success", False):
+                                critical_success = False
+                                break
+
+                if critical_success:
+                    discord_passed = True
+                    print(f"  ✅ Discord: Оба критических теста пройдены (DiscordMain, DiscordGateway)")
+                else:
+                    print(f"  ❌ Discord: Не пройдены критические тесты")
+
+        # Определяем критическую ошибку
+        if youtube_targets and discord_targets:
             if not youtube_passed and not discord_passed:
                 critical_fail = True
-                critical_fail_reason = "YouTube и Discord не работают"
+                critical_fail_reason = "YouTube и Discord не работают (критические тесты не пройдены)"
             elif youtube_passed and not discord_passed:
                 critical_fail = True
                 critical_fail_reason = "YouTube работает, но Discord не работает"
             elif not youtube_passed and discord_passed:
                 critical_fail = True
                 critical_fail_reason = "Discord работает, но YouTube не работает"
-        elif youtube_target and not youtube_passed:
+        elif youtube_targets and not youtube_passed:
             critical_fail = True
-            critical_fail_reason = "YouTube не работает"
-        elif discord_target and not discord_passed:
+            critical_fail_reason = "YouTube не работает (критические тесты не пройдены)"
+        elif discord_targets and not discord_passed:
             critical_fail = True
-            critical_fail_reason = "Discord не работает"
+            critical_fail_reason = "Discord не работает (критические тесты не пройдены)"
 
         if critical_fail:
             print(f"  ⚠️  КРИТИЧЕСКАЯ ОШИБКА: {critical_fail_reason}")
@@ -1795,12 +1849,24 @@ class StrategyTester:
         is_both_broken = False
 
         if critical_fail and critical_reason:
-            if "Эффективность ниже порога" in critical_reason:
-                is_low_percent = True
-            elif "YouTube и Discord не работают" in critical_reason:
+            if "YouTube и Discord не работают" in critical_reason:
                 is_both_broken = True
-            elif "работает, но" in critical_reason:
+                short_reason = "YouTube и Discord не работают"
+            elif "YouTube работает, но Discord не работает" in critical_reason:
                 is_partial = True
+                short_reason = "Discord не работает"
+            elif "Discord работает, но YouTube не работает" in critical_reason:
+                is_partial = True
+                short_reason = "YouTube не работает"
+            elif "YouTube не работает" in critical_reason:
+                is_both_broken = True  # Если только один сервис тестировался
+                short_reason = "YouTube не работает"
+            elif "Discord не работает" in critical_reason:
+                is_both_broken = True  # Если только один сервис тестировался
+                short_reason = "Discord не работает"
+            elif "Эффективность ниже порога" in critical_reason:
+                is_low_percent = True
+                short_reason = f"Эффективность {success_rate:.1f}% < 60%"
 
         # Определяем класс прогресс-бара
         progress_class = "progress-fill"
@@ -2080,6 +2146,17 @@ class StrategyTester:
                 print(f"📄 Частичный отчет сохранен: {report_path}")
 
         return all_results
+
+
+# Упрощенная функция для использования
+async def test_all_strategies(project_root: str, mode: str = "standard",
+                            sudo_password: Optional[str] = None,
+                            stop_callback: Optional[callable] = None) -> List[Dict]:
+    """
+    Простая функция для тестирования всех стратегий
+    """
+    tester = StrategyTester(project_root, sudo_password)
+    return await tester.run_full_test(mode, stop_callback=stop_callback)
 
 
 if __name__ == "__main__":
