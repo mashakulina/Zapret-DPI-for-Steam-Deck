@@ -40,6 +40,83 @@ class StrategyTester:
         # Результаты тестирования
         self.results = []
 
+    async def _smart_curl_check(self, url: str, method: str = "HEAD") -> Dict[str, any]:
+        """
+        Универсальная "умная" проверка URL, совместимая с zapret на Steam Deck.
+        Возвращает словарь с результатами.
+        """
+        # Базовые аргументы curl, как в предложенном решении
+        cmd = [
+            "curl",
+            "-s",                # Тихий режим
+            "-o", "/dev/null",   # Не выводить тело
+            "-I" if method.upper() == "HEAD" else "",  # Только заголовки для HEAD
+            "-L",                # Следовать редиректам
+            "-k",                # Игнорировать проблемы с SSL
+            "-4",                # ПРИНУДИТЕЛЬНО IPv4 (ключевой момент!)
+            "--connect-timeout", "1",
+            "--max-time", "3",
+            "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "-w", "%{http_code}::%{time_total}::%{num_redirects}",
+            url
+        ]
+        # Убираем возможные пустые строки из списка
+        cmd = [arg for arg in cmd if arg]
+
+        result = {
+            "success": False,
+            "blocked": False,
+            "http_code": 0,
+            "time_taken": "0",
+            "details": "",
+            "raw_output": ""
+        }
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            output = stdout.decode('utf-8', errors='ignore').strip()
+            error_output = stderr.decode('utf-8', errors='ignore').lower()
+            result["raw_output"] = output
+
+            if process.returncode == 0 and '::' in output:
+                parts = output.split('::')
+                http_code, time_taken = parts[0], parts[1]
+                result["http_code"] = int(http_code) if http_code.isdigit() else 0
+                result["time_taken"] = time_taken
+
+                # ЛОГИКА УСПЕХА
+                success_codes = {'200', '204', '301', '302', '303', '304', '307', '308', '403', '404', '405'}
+                if http_code in success_codes:
+                    result["success"] = True
+                    result["details"] = f"HTTP: код {http_code}, время {time_taken}с"
+                else:
+                    result["details"] = f"HTTP: код {http_code}"
+
+            # ЛОГИКА ОПРЕДЕЛЕНИЯ БЛОКИРОВКИ
+            elif 'ssl' in error_output or 'certificate' in error_output:
+                result["blocked"] = True
+                result["details"] = "SSL блокировка"
+            elif 'reset' in error_output or 'rst' in error_output:
+                result["blocked"] = True
+                result["details"] = "Сброс соединения (Connection Reset)"
+            elif 'could not resolve' in error_output:
+                result["details"] = "DNS ошибка"
+            elif 'timed out' in error_output:
+                result["details"] = "Таймаут"
+            else:
+                result["details"] = f"Ошибка curl: {process.returncode}"
+
+        except Exception as e:
+            result["details"] = f"Исключение: {str(e)}"
+
+        return result
+
     def stop_testing(self):
         """
         Устанавливает флаг остановки тестирования
@@ -233,158 +310,53 @@ class StrategyTester:
 
     async def _rutracker_test(self, target: Dict, result: Dict) -> Dict:
         """Специальный тест для Rutracker с проверкой заголовка Connection и 3 попытками"""
-        url = target["url"]
+        test_url = target["url"]
 
-        # Для Rutracker используем форумный URL для проверки
-        if "rutracker.org" in url and "/forum/index.php" not in url:
-            test_url = "http://rutracker.org/forum/index.php"
-        else:
-            test_url = url
+        # 1. Используем новую "умную" проверку как основу
+        curl_result = await self._smart_curl_check(test_url, method="HEAD")
 
-        result.update({
-            "protocol": "HTTP",
-            "success": False,
-            "blocked": False,
-            "details": "",
-            "attempts": []
-        })
-
-        # Параметры curl для получения заголовков
-        curl_cmd = [
-            'curl', '-k', '-I', '-s', '-m', '1',
-            '-L',  # Следуем редиректам
-            '-o', '/dev/null',
-            '-w', '%{http_code}::%{time_total}'
+        # 2. Получаем ЗАГОЛОВКИ для анализа Connection
+        headers_cmd = [
+            "curl", "-k", "-I", "-s", "-m", "5", "-L", "-4",
+            "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            test_url
         ]
 
-        # Выполняем 3 попытки
-        attempts_results = []
+        try:
+            proc_headers = await asyncio.create_subprocess_exec(
+                *headers_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout_headers, _ = await proc_headers.communicate()
+            headers_text = stdout_headers.decode('utf-8', errors='ignore')
 
-        for attempt in range(1, 4):
-            try:
-                # Создаем команду для этой попытки
-                attempt_cmd = curl_cmd.copy()
-                attempt_cmd.append(test_url)
-
-                # Запускаем процесс curl для получения заголовков
-                proc = await asyncio.create_subprocess_exec(
-                    *attempt_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-
-                stdout, stderr = await proc.communicate()
-                output = stdout.decode('utf-8', errors='ignore')
-
-                # Также получаем полные заголовки для анализа Connection
-                headers_cmd = ['curl', '-k', '-I', '-s', '-m', '1', '-L', test_url]
-                proc_headers = await asyncio.create_subprocess_exec(
-                    *headers_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-
-                stdout_headers, _ = await proc_headers.communicate()
-                headers_text = stdout_headers.decode('utf-8', errors='ignore')
-
-                # Анализируем результат попытки
-                attempt_result = {
-                    "attempt": attempt,
-                    "success": False,
-                    "http_code": None,
-                    "time_taken": None,
-                    "connection": "не определен",
-                    "raw_headers": headers_text[:200]
-                }
-
-                if proc.returncode == 0 and '::' in output:
-                    http_code, time_taken = output.split('::')
-                    attempt_result["http_code"] = http_code
-                    attempt_result["time_taken"] = time_taken
-
-                    # Ищем заголовок Connection
-                    connection_found = False
-                    for line in headers_text.split('\n'):
-                        if line.lower().startswith('connection:'):
-                            connection_value = line.split(':', 1)[1].strip().lower()
-                            attempt_result["connection"] = connection_value
-                            connection_found = True
-
-                            if connection_value == 'keep-alive':
-                                attempt_result["success"] = True
-                            else:
-                                # Любое другое значение Connection (close или что-то еще)
-                                attempt_result["success"] = False
-                            break
-
-                    # Если заголовок Connection не найден, ищем keep-alive в других заголовках
-                    if not connection_found:
-                        # Ищем keep-alive в любом месте заголовков
-                        if "keep-alive" in headers_text.lower() or "keepalive" in headers_text.lower():
-                            attempt_result["success"] = True
-                            attempt_result["connection"] = "keep-alive (обнаружено в заголовках)"
-                        else:
-                            # Нет keep-alive нигде
-                            attempt_result["connection"] = "нет keep-alive"
-                            attempt_result["success"] = False
-
-                attempts_results.append(attempt_result)
-
-                # Если удачная попытка (keep-alive найден), прерываем дальнейшие проверки
-                if attempt_result["success"]:
+            # 3. ОСНОВНАЯ ЛОГИКА: Ищем keep-alive
+            has_keep_alive = False
+            for line in headers_text.split('\n'):
+                if line.lower().startswith('connection:'):
+                    if 'keep-alive' in line.lower():
+                        has_keep_alive = True
                     break
 
-                # Добавляем минимальную задержку между попытками (0.3 секунды)
-                if attempt < 3:
-                    await asyncio.sleep(0.3)
+            # 4. ФИНАЛЬНОЕ РЕШЕНИЕ (как вы просили)
+            if has_keep_alive:
+                result["success"] = True
+                result["blocked"] = False
+                result["details"] = f"HTTP: код {curl_result.get('http_code', 'N/A')}, Connection: keep-alive"
+            else:
+                # Нет keep-alive = блокировка РКН
+                result["success"] = False
+                result["blocked"] = True
+                result["details"] = f"HTTP: код {curl_result.get('http_code', 'N/A')}, Connection: close или отсутствует (блокировка РКН)"
 
-            except Exception as e:
-                attempts_results.append({
-                    "attempt": attempt,
-                    "success": False,
-                    "error": str(e)[:80]
-                })
-
-                # Задержка после ошибки (0.2 секунды)
-                if attempt < 3:
-                    await asyncio.sleep(0.2)
-
-        # Сохраняем все попытки в результат
-        result["attempts"] = attempts_results
-
-        # ПРОСТАЯ ЛОГИКА: есть keep-alive = успех, нет keep-alive = блокировка
-        successful_attempts = sum(1 for a in attempts_results if a.get("success", False))
-
-        if successful_attempts > 0:
-            # ХОТЯ БЫ ОДНА УСПЕШНАЯ ПОПЫТКА С KEEP-ALIVE
-            result["success"] = True
-            result["blocked"] = False
-
-            # Используем данные из первой успешной попытки
-            successful_attempt = next((a for a in attempts_results if a.get("success", False)), None)
-            if successful_attempt:
-                time_display = successful_attempt['time_taken'] if successful_attempt['time_taken'] else 'N/A'
-                result["details"] = f"HTTP: код {successful_attempt['http_code']}, " \
-                                f"Connection: {successful_attempt['connection']}, " \
-                                f"время {time_display}с"
-        else:
-            # НИ ОДНОЙ УСПЕШНОЙ ПОПЫТКИ С KEEP-ALIVE = БЛОКИРОВКА
+        except Exception as e:
+            result["details"] = f"Ошибка проверки заголовков: {str(e)}"
             result["success"] = False
             result["blocked"] = True
 
-            # Используем данные из первой попытки для деталей
-            if attempts_results and attempts_results[0]:
-                first_attempt = attempts_results[0]
-                http_code = first_attempt.get('http_code', 'N/A')
-                connection = first_attempt.get('connection', 'нет данных')
-
-                result["details"] = f"HTTP: код {http_code}, " \
-                                f"Connection: {connection} (блокировка РКН)"
-            else:
-                result["details"] = "HTTP: все попытки завершились ошибкой (блокировка РКН)"
-
+        result["protocol"] = "HTTP"
         return result
-
     def _load_standard_targets(self) -> List[Dict]:
         """Загружает все стандартные цели"""
         targets = []
@@ -652,8 +624,7 @@ class StrategyTester:
         return False, ""
 
     async def _curl_request(self, url: str, protocol: str, args: List[str]) -> Dict:
-        """Выполняет один запрос через curl"""
-
+        """Выполняет HTTP тест через curl с "умными" параметрами"""
         # Пропускаем для Rutracker, так как у него свой тест
         if "rutracker.org" in url:
             return {
@@ -663,84 +634,12 @@ class StrategyTester:
                 "details": "Rutracker тестируется отдельным методом"
             }
 
-        curl_cmd = ['curl', '-I', '-s', '-L', '-m', '1',
-                '-o', '/dev/null', '-w', '%{http_code}::%{time_total}::%{size_download}']
-        curl_cmd.extend(args)
-        curl_cmd.append(url)
+        # Используем новую "умную" проверку
+        curl_result = await self._smart_curl_check(url, method="HEAD")
 
-        result = {
-            "protocol": protocol,
-            "success": False,
-            "blocked": False,
-            "details": ""
-        }
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *curl_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await proc.communicate()
-            output = stdout.decode('utf-8', errors='ignore').strip()
-            error_output = stderr.decode('utf-8', errors='ignore').lower()
-
-            if proc.returncode == 0 and '::' in output:
-                parts = output.split('::')
-                if len(parts) >= 2:
-                    http_code, time_taken = parts[0], parts[1]
-
-                    # Расширенный список успешных HTTP статусов
-                    success_codes = {
-                        '200',  # OK
-                        '301',  # Moved Permanently
-                        '302',  # Found (переадресация)
-                        '303',  # See Other
-                        '304',  # Not Modified
-                        '307',  # Temporary Redirect
-                        '308',  # Permanent Redirect
-                        '204',  # No Content (специально для generate_204)
-                        '404',  # Not Found (ожидаемое поведение для некоторых API)
-                        '405',  # Method Not Allowed (ожидаемое для API методов)
-                        '403',  # Forbidden (но доступ был)
-                    }
-
-                    # Дополнительно проверяем для специфичных URL
-                    url_lower = url.lower()
-
-                    if http_code in success_codes:
-                        result["success"] = True
-                        result["details"] = f"{protocol}: код {http_code}, время {time_taken}с"
-
-                        # Добавляем пояснение для специфичных кодов
-                        if http_code == '204':
-                            result["details"] = f"{protocol}: код 204 (No Content) ✓, время {time_taken}с"
-                        elif http_code == '404':
-                            result["details"] = f"{protocol}: код 404 (ожидаемо для API) ✓, время {time_taken}с"
-                        elif http_code == '405':
-                            result["details"] = f"{protocol}: код 405 (ожидаемо для API) ✓, время {time_taken}с"
-
-                    else:
-                        result["details"] = f"{protocol}: код {http_code}"
-
-            elif 'ssl' in error_output or 'certificate' in error_output:
-                result["blocked"] = True
-                result["details"] = f"{protocol}: SSL блокировка"
-            elif 'reset' in error_output or 'rst' in error_output:
-                result["blocked"] = True
-                result["details"] = f"{protocol}: сброс соединения"
-            elif 'timed out' in error_output or 'timeout' in error_output:
-                result["details"] = f"{protocol}: таймаут"
-            elif 'could not resolve' in error_output:
-                result["details"] = f"{protocol}: DNS ошибка"
-            else:
-                result["details"] = f"{protocol}: ошибка {proc.returncode}"
-
-        except Exception as e:
-            result["details"] = f"{protocol}: исключение {str(e)}"
-
-        return result
+        # Обогащаем результат информацией о протоколе
+        curl_result["protocol"] = protocol
+        return curl_result
 
     async def _json_request(self, url: str, protocol: str, args: List[str]) -> Dict:
         """Выполняет запрос и проверяет корректность JSON"""
