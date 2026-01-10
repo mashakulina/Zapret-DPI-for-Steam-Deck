@@ -193,28 +193,36 @@ class MainWindow:
         self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
         self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
 
-        # Иконка настроек (справа)
+        # Иконка настроек (шестеренка)
         self.settings_icon = tk.Label(icons_frame, text="⚙️", font=("Arial", 22),
                                     fg='#0a84ff', bg='#182030', cursor="hand2")
         self.settings_icon.pack(side=tk.LEFT, padx=(0, 10))
-        self.settings_icon.bind("<Enter>", lambda e: self.settings_icon.config(fg='#30d158'))
-        self.settings_icon.bind("<Leave>", lambda e: self.settings_icon.config(fg='#0a84ff'))
+        self.settings_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Открыть меню настроек"))
+        self.settings_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
         self.settings_icon.bind("<Button-1>", self.toggle_settings_menu)
+
+        # Иконка книги (руководство пользователя)
+        self.book_icon = tk.Label(icons_frame, text="📖", font=("Arial", 18),
+                                fg='#0a84ff', bg='#182030', cursor="hand2")
+        self.book_icon.pack(side=tk.LEFT, padx=(0, 10))
+        self.book_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Открыть руководство пользователя"))
+        self.book_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
+        self.book_icon.bind("<Button-1>", self.open_user_guide)
 
         # Иконка информации
         self.info_icon = tk.Label(icons_frame, text="🛈︎", font=("Arial", 16),
                                 fg='#0a84ff', bg='#182030', cursor="hand2")
         self.info_icon.pack(side=tk.LEFT, padx=(0, 10))
-        self.info_icon.bind("<Enter>", lambda e: self.info_icon.config(fg='#30d158'))
-        self.info_icon.bind("<Leave>", lambda e: self.info_icon.config(fg='#0a84ff'))
+        self.info_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Информация о программе"))
+        self.info_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
         self.info_icon.bind("<Button-1>", lambda e: show_info_dialog(self.root))
 
         # Иконка доната
         self.donate_icon = tk.Label(icons_frame, text="💸", font=("Arial", 14),
                                 fg='#ffcc00', bg='#182030', cursor="hand2")
         self.donate_icon.pack(side=tk.LEFT)
-        self.donate_icon.bind("<Enter>", lambda e: self.donate_icon.config(fg='#ffdd44'))
-        self.donate_icon.bind("<Leave>", lambda e: self.donate_icon.config(fg='#ffcc00'))
+        self.donate_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Поблагодарить разработчика"))
+        self.donate_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
         self.donate_icon.bind("<Button-1>", self.open_donate_link)
 
         # Вторая строка - заголовок
@@ -353,6 +361,19 @@ class MainWindow:
         donation_window = DonationWindow(self.root)
         donation_window.run()
 
+    def open_user_guide(self, event=None):
+        """Открывает руководство пользователя в браузере"""
+        import webbrowser
+        url = "https://telegra.ph/Rukovodstvo-polzovatelya-Zapret-DPI-Manager-20-dlya-Steam-Deck-01-04"
+
+        try:
+            webbrowser.open(url)
+            self.show_status_message("Открываю руководство пользователя...", success=True)
+        except Exception as e:
+            error_msg = f"Не удалось открыть руководство: {e}"
+            print(f"❌ {error_msg}")
+            self.show_status_message(error_msg, error=True)
+
     def show_status_tooltip(self, event=None):
         """Показывает всплывающее окошко со статусом службы"""
         if self.status_tooltip:
@@ -390,6 +411,47 @@ class MainWindow:
                         padx=10,
                         pady=5)
         label.pack()
+
+
+    def show_icon_tooltip(self, event, description):
+        """Показывает всплывающее окошко для иконки"""
+        if hasattr(self, 'icon_tooltip') and self.icon_tooltip:
+            self.hide_icon_tooltip()
+
+        # Определяем виджет-источник события
+        widget = event.widget
+
+        # Позиционируем подсказку рядом с иконкой
+        x = widget.winfo_rootx() - 20
+        y = widget.winfo_rooty() + widget.winfo_height() + 5
+
+        # Создаем всплывающее окно
+        self.icon_tooltip = tk.Toplevel(self.root)
+        self.icon_tooltip.wm_overrideredirect(True)
+        self.icon_tooltip.geometry(f"+{x}+{y}")
+        self.icon_tooltip.configure(bg='#15354D', relief=tk.SOLID, bd=1)
+
+        # Добавляем текст с заголовком и описанием
+        text_frame = tk.Frame(self.icon_tooltip, bg='#15354D')
+        text_frame.pack(padx=10, pady=5)
+
+        # Описание
+        desc_label = tk.Label(text_frame,
+                            text=description,
+                            font=("Arial", 9),
+                            fg='white',
+                            bg='#15354D',
+                            justify=tk.LEFT)
+        desc_label.pack(anchor=tk.W)
+
+    def hide_icon_tooltip(self, event=None):
+        """Скрывает всплывающее окошко для иконки"""
+        if hasattr(self, 'icon_tooltip') and self.icon_tooltip:
+            try:
+                self.icon_tooltip.destroy()
+            except:
+                pass  # Если окно уже уничтожено
+            self.icon_tooltip = None
 
     def hide_status_tooltip(self, event=None):
         """Скрывает всплывающее окошко со статусом"""
