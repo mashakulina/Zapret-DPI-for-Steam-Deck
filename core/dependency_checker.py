@@ -265,6 +265,8 @@ class DependencyChecker:
             "db_lock_check": 25,
             "keys": 30,
             "install": 60,
+            "download": 70,
+            "local_install": 80,
             "lock": 90
         }
         progress = progress_map.get(self.current_task, 0)
@@ -312,6 +314,238 @@ class DependencyChecker:
 
         self.log_debug("Проверка блокировочных файлов завершена")
         return True  # Всегда возвращаем True, так как это предварительная очистка
+
+    def download_ipset_from_github(self):
+        """Скачивает пакет ipset из GitHub репозитория с помощью curl"""
+        self.current_task = "download"
+        self.log_debug("Скачивание пакета ipset из GitHub с помощью curl...")
+
+        github_url = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/raw/main/ipset-7.23-1-x86_64.pkg.tar.zst"
+        temp_dir = tempfile.mkdtemp(prefix="ipset_install_")
+        local_file = os.path.join(temp_dir, "ipset-7.23-1-x86_64.pkg.tar.zst")
+
+        try:
+            if self.progress_window:
+                self.update_progress("Скачивание ipset из GitHub...", 70)
+
+            self.log_debug(f"Создана временная папка: {temp_dir}")
+            self.log_debug(f"Скачивание из: {github_url}")
+            self.log_debug(f"Сохранение в: {local_file}")
+
+            # Скачиваем файл с помощью curl
+            self.log_debug("Запуск curl для скачивания...")
+
+            # Используем curl с параметрами:
+            # -L: следовать редиректам
+            # -o: указать файл для сохранения
+            # --connect-timeout: таймаут соединения 30 секунд
+            # --max-time: максимальное время скачивания 300 секунд
+            curl_command = [
+                'curl', '-L',
+                '--connect-timeout', '30',
+                '--max-time', '300',
+                '-o', local_file,
+                github_url
+            ]
+
+            self.log_debug(f"Команда curl: {' '.join(curl_command)}")
+
+            result = subprocess.run(
+                curl_command,
+                capture_output=True,
+                text=True,
+                timeout=330  # Общий таймаут чуть больше max-time
+            )
+
+            if result.returncode == 0:
+                # Проверяем скачанный файл
+                if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
+                    file_size = os.path.getsize(local_file)
+                    self.log_debug(f"Файл успешно скачан: {local_file} (размер: {file_size} байт)")
+                    return local_file
+                else:
+                    self.log_debug("Файл создан, но пуст или не существует")
+                    return None
+            else:
+                self.log_debug(f"Ошибка curl: код={result.returncode}")
+                self.log_debug(f"stderr: {result.stderr}")
+                self.log_debug(f"stdout: {result.stdout}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            self.log_debug("Таймаут при скачивании через curl")
+            return None
+        except Exception as e:
+            self.log_debug(f"Неожиданная ошибка при скачивании через curl: {e}")
+            return None
+        finally:
+            # Удаляем временную папку если файл не скачан
+            if 'local_file' in locals() and (not os.path.exists(local_file) or os.path.getsize(local_file) == 0):
+                if os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                        self.log_debug(f"Временная папка удалена: {temp_dir}")
+                    except:
+                        pass
+
+    def install_ipset_from_local(self, package_path):
+        """Устанавливает ipset из локального файла пакета"""
+        self.current_task = "local_install"
+        self.log_debug(f"Установка ipset из локального файла: {package_path}")
+
+        if not package_path or not os.path.exists(package_path):
+            self.log_debug(f"Файл пакета не найден: {package_path}")
+            return False
+
+        try:
+            if self.progress_window:
+                self.update_progress("Установка ipset из локального файла...", 80)
+
+            # Устанавливаем пакет из локального файла
+            result = self.run_with_sudo(
+                ['pacman', '-U', '--noconfirm', package_path],
+                "Установка ipset из локального файла..."
+            )
+
+            if not result:
+                self.log_debug("Нет результата от установки из локального файла")
+                return False
+
+            if result['returncode'] == 0:
+                self.log_debug("ipset успешно установлен из локального файла")
+                return True
+            else:
+                self.log_debug(f"Ошибка установки из локального файла: код={result['returncode']}, ошибка={result['stderr']}")
+                return False
+
+        except Exception as e:
+            self.log_debug(f"Исключение при установке из локального файла: {e}")
+            return False
+        finally:
+            # Удаляем временный файл после установки
+            temp_dir = os.path.dirname(package_path)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                self.log_debug(f"Временная папка удалена: {temp_dir}")
+
+    def is_timeout_error(self, stderr):
+        """Проверяет, является ли ошибка ошибкой таймаута"""
+        timeout_indicators = [
+            "Operation too slow",
+            "Less than 1 bytes/sec",
+            "не удалось получить некоторые файлы",
+            "ошибка в библиотеке загрузки"
+        ]
+
+        stderr_lower = stderr.lower()
+        for indicator in timeout_indicators:
+            if indicator.lower() in stderr_lower:
+                self.log_debug(f"Обнаружена ошибка таймаута: {indicator}")
+                return True
+        return False
+
+    def is_dblock_error(self, stderr):
+        """Проверяет, связана ли ошибка с блокировкой базы данных"""
+        dblock_indicators = [
+            "could not lock database",
+            "failed to lock database",
+            "db.lck",
+            "блокировка базы данных"
+        ]
+
+        stderr_lower = stderr.lower()
+        for indicator in dblock_indicators:
+            if indicator in stderr_lower:
+                self.log_debug(f"Обнаружена ошибка блокировки БД: {indicator}")
+                return True
+        return False
+
+    def install_dependency_with_fallback(self, package_name, dep_num, total_deps):
+        """Устанавливает зависимость с fallback на локальный файл для ipset"""
+        self.current_task = "install"
+        self.log_debug(f"Установка зависимости: {package_name} ({dep_num}/{total_deps})")
+
+        # Расчет прогресса для этой зависимости
+        base_progress = 60
+        dep_progress = int(base_progress + (dep_num / total_deps * 40))
+        self.log_debug(f"Прогресс для {package_name}: {dep_progress}%")
+
+        try:
+            # Обновляем прогресс
+            if self.progress_window:
+                self.update_progress(
+                    f"Установка {package_name}...",
+                    dep_progress
+                )
+
+            self.log_debug(f"Запуск установки: pacman -S --noconfirm {package_name}")
+            result = self.run_with_sudo(
+                ['pacman', '-S', '--noconfirm', package_name],
+                f"Установка {package_name}..."
+            )
+
+            if not result:
+                self.log_debug(f"Нет результата от установки {package_name}")
+                return False
+
+            if result['returncode'] == 0:
+                self.log_debug(f"Пакет {package_name} успешно установлен")
+                return True
+
+            # Если ошибка, анализируем ее
+            error_msg = result['stderr']
+            self.log_debug(f"Ошибка установки {package_name}: код={result['returncode']}, ошибка={error_msg}")
+
+            # Для ipset пробуем fallback методы
+            if package_name == 'ipset':
+                # Проверяем ошибку блокировки БД
+                if self.is_dblock_error(error_msg):
+                    self.log_debug("Обнаружена ошибка блокировки БД, повторная попытка после очистки...")
+
+                    # Удаляем блокировочные файлы
+                    self.remove_pacman_db_lock()
+
+                    # Повторная попытка установки
+                    self.log_debug("Повторная попытка установки после удаления блокировочных файлов...")
+                    retry_result = self.run_with_sudo(
+                        ['pacman', '-S', '--noconfirm', package_name],
+                        f"Повторная установка {package_name}..."
+                    )
+
+                    if retry_result and retry_result['returncode'] == 0:
+                        self.log_debug(f"Пакет {package_name} успешно установлен после удаления блокировочных файлов")
+                        return True
+
+                # Проверяем ошибку таймаута/сети
+                if self.is_timeout_error(error_msg):
+                    self.log_debug("Обнаружена ошибка таймаута/сети, пробуем скачать с GitHub...")
+
+                    # Показываем информационное сообщение
+                    self.show_info("Проблемы с сетью",
+                                 f"Не удалось скачать {package_name} из официальных репозиториев.\n"
+                                 f"Пробуем альтернативный источник...")
+
+                    # Скачиваем из GitHub
+                    local_package = self.download_ipset_from_github()
+
+                    if local_package:
+                        self.log_debug(f"Пакет скачан успешно, устанавливаем из локального файла...")
+
+                        # Устанавливаем из локального файла
+                        if self.install_ipset_from_local(local_package):
+                            self.log_debug(f"Пакет {package_name} успешно установлен из локального файла")
+                            return True
+                        else:
+                            self.log_debug(f"Не удалось установить {package_name} из локального файла")
+                    else:
+                        self.log_debug(f"Не удалось скачать {package_name} с GitHub")
+
+            # Для других пакетов или если fallback не сработал
+            return False
+
+        except Exception as e:
+            self.log_debug(f"Исключение при установке {package_name}: {e}")
+            return False
 
     def unlock_readonly_system(self):
         """Разблокирует систему SteamOS"""
@@ -445,43 +679,8 @@ class DependencyChecker:
             return False
 
     def install_dependency(self, package_name, dep_num, total_deps):
-        """Устанавливает одну зависимость"""
-        self.current_task = "install"
-        self.log_debug(f"Установка зависимости: {package_name} ({dep_num}/{total_deps})")
-
-        # Расчет прогресса для этой зависимости
-        base_progress = 60
-        dep_progress = int(base_progress + (dep_num / total_deps * 40))
-        self.log_debug(f"Прогресс для {package_name}: {dep_progress}%")
-
-        try:
-            # Обновляем прогресс
-            if self.progress_window:
-                self.update_progress(
-                    f"Установка {package_name}...",
-                    dep_progress
-                )
-
-            self.log_debug(f"Запуск установки: pacman -S --noconfirm {package_name}")
-            result = self.run_with_sudo(
-                ['pacman', '-S', '--noconfirm', package_name],
-                f"Установка {package_name}..."
-            )
-
-            if not result:
-                self.log_debug(f"Нет результата от установки {package_name}")
-                return False
-
-            if result['returncode'] != 0:
-                self.log_debug(f"Ошибка установки {package_name}: код={result['returncode']}, ошибка={result['stderr']}")
-                return False
-
-            self.log_debug(f"Пакет {package_name} успешно установлен")
-            return True
-
-        except Exception as e:
-            self.log_debug(f"Исключение при установке {package_name}: {e}")
-            return False
+        """Устанавливает одну зависимость (старая версия для обратной совместимости)"""
+        return self.install_dependency_with_fallback(package_name, dep_num, total_deps)
 
     def check_and_install_dependencies(self):
         """Основная функция проверки и установки зависимостей"""
@@ -578,7 +777,7 @@ class DependencyChecker:
 
         for i, dep in enumerate(missing_deps, 1):
             self.log_debug(f"Установка зависимости {i}/{len(missing_deps)}: {dep}")
-            if self.install_dependency(dep, i, len(missing_deps)):
+            if self.install_dependency_with_fallback(dep, i, len(missing_deps)):
                 success_count += 1
                 self.log_debug(f"Зависимость {dep} установлена успешно")
             else:
