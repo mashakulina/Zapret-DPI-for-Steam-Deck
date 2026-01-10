@@ -92,7 +92,7 @@ class DonationWindow:
 
         # Текст под QR кодом
         qr_caption = tk.Label(main_frame,
-                             text="Отсканируйте QR-код для перевода",
+                             text="Отсканируйте QR-код для перевода в Вашем банке",
                              font=('Arial', 10),
                              bg='#182030',
                              fg='#5BA06A',
