@@ -163,22 +163,26 @@ class MainWindow:
         main_frame = tk.Frame(self.root, bg='#182030', padx=15, pady=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Первая строка - иконка настроек и статус службы (справа)
-        settings_row_frame = tk.Frame(main_frame, bg='#182030')
-        settings_row_frame.pack(fill=tk.X, pady=(0, 0))
+        # Первая строка - иконка настроек и статус службы (теперь разделены: статус слева, иконки справа)
+        top_row_frame = tk.Frame(main_frame, bg='#182030')
+        top_row_frame.pack(fill=tk.X, pady=(0, 0))
 
-        # Контейнер для элементов справа (статус и шестеренка)
-        icons_frame = tk.Frame(settings_row_frame, bg='#182030')
-        icons_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        # ЛЕВАЯ СТОРОНА - Статус службы
+        left_status_frame = tk.Frame(top_row_frame, bg='#182030')
+        left_status_frame.pack(side=tk.LEFT)
 
-        # Статус службы (кружок слева от шестеренки)
-        self.status_indicator = tk.Label(icons_frame, text="🔴", font=("Arial", 12),
+        # Индикатор статуса службы (кружок)
+        self.status_indicator = tk.Label(left_status_frame, text="🔴", font=("Arial", 12),
                                         fg='#ff3b30', bg='#182030', cursor='hand2')
-        self.status_indicator.pack(side=tk.LEFT, padx=(0, 10))
+        self.status_indicator.pack(side=tk.LEFT)
         self.status_indicator.bind("<Enter>", self.show_status_tooltip)
         self.status_indicator.bind("<Leave>", self.hide_status_tooltip)
 
-        # Иконка Game Filter (добавляем рядом):
+        # ПРАВАЯ СТОРОНА - Иконки настроек
+        icons_frame = tk.Frame(top_row_frame, bg='#182030')
+        icons_frame.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Иконка Game Filter
         self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
         self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
 
@@ -219,7 +223,7 @@ class MainWindow:
 
         # Заголовок
         title_label = tk.Label(title_row_frame, text="Zapret DPI Manager",
-                              font=("Arial", 18, "bold"), fg='white', bg='#182030')
+                            font=("Arial", 18, "bold"), fg='white', bg='#182030')
         title_label.pack()
 
         # Третья строка с информацией о стратегии
@@ -231,11 +235,11 @@ class MainWindow:
         strategy_frame.pack()
 
         strategy_label = tk.Label(strategy_frame, text="Стратегия:",
-                                 font=("Arial", 11), fg='#8e8e93', bg='#182030')
+                                font=("Arial", 11), fg='#8e8e93', bg='#182030')
         strategy_label.pack(side=tk.LEFT, padx=(0, 5))
 
         self.strategy_value = tk.Label(strategy_frame, text="Загрузка...",
-                                      font=("Arial", 11, "bold"), fg='#0a84ff', bg='#182030')
+                                    font=("Arial", 11, "bold"), fg='#0a84ff', bg='#182030')
         self.strategy_value.pack(side=tk.LEFT)
 
         # Стиль кнопок
