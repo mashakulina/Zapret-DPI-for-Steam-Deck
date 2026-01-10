@@ -16,6 +16,7 @@ class HostlistSettingsWindow:
         self.list_general_file = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
         self.other2_file = os.path.join(self.manager_dir, "files", "lists", "other2.txt")
         self.ignore_file = os.path.join(self.manager_dir, "files", "lists", "list-exclude.txt")
+        self.roblox_file = os.path.join(self.manager_dir, "utils", "roblox.txt")
 
         # Данные для предустановленных сервисов
         self.services = {
@@ -52,13 +53,17 @@ class HostlistSettingsWindow:
                 "raw.gitlab.com",
                 "snippets.gitlab.com",
                 "git.sr.ht"
-            ]
+            ],
+            # ДОБАВЛЕНО: Roblox
+            "Roblox": self.load_roblox_domains()  # Загружаем домены из файла
         }
 
         # Переменные для чекбоксов
         self.whatsapp_var = tk.BooleanVar()
         self.rockstar_var = tk.BooleanVar()
         self.github_var = tk.BooleanVar()
+        # ДОБАВЛЕНО: Переменная для чекбокса Roblox
+        self.roblox_var = tk.BooleanVar()
 
         # Переменные для текстовых полей вкладок
         self.blocked_text_input = None
@@ -66,6 +71,23 @@ class HostlistSettingsWindow:
 
         # Переменная для хранения существующих доменов
         self.existing_domains = []
+
+    def load_roblox_domains(self):
+        """Загружает домены Roblox из файла roblox.txt"""
+        domains = []
+        try:
+            if os.path.exists(self.roblox_file):
+                with open(self.roblox_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):  # Пропускаем пустые строки и комментарии
+                            domains.append(line)
+                print(f"Загружено {len(domains)} доменов Roblox из {self.roblox_file}")
+            else:
+                print(f"Файл {self.roblox_file} не найден")
+        except Exception as e:
+            print(f"Ошибка загрузки файла roblox.txt: {e}")
+        return domains
 
     def create_hover_button(self, parent, text, command, **kwargs):
         """Создает кнопку в стиле главного меню с эффектом наведения"""
@@ -125,6 +147,14 @@ class HostlistSettingsWindow:
                             github_selected = True
                             break
                     self.github_var.set(github_selected)
+
+                    # ДОБАВЛЕНО: Проверяем наличие доменов Roblox
+                    roblox_selected = False
+                    for domain in self.services["Roblox"]:
+                        if domain in self.existing_domains:
+                            roblox_selected = True
+                            break
+                    self.roblox_var.set(roblox_selected)
 
         except Exception as e:
             print(f"Ошибка загрузки файла list-general.txt: {e}")
@@ -245,7 +275,10 @@ class HostlistSettingsWindow:
                 current_domains = set(self.existing_domains)
 
             # Удаляем все домены сервисов (чтобы потом добавить только выбранные)
-            all_service_domains = set(self.services["WhatsApp"] + self.services["Rockstar/Epic Games"] + self.services["Github"])
+            all_service_domains = set(self.services["WhatsApp"] +
+                                      self.services["Rockstar/Epic Games"] +
+                                      self.services["Github"] +
+                                      self.services["Roblox"])  # ДОБАВЛЕНО: Roblox
             current_domains = current_domains - all_service_domains
 
             # Добавляем домены выбранных сервисов
@@ -257,6 +290,10 @@ class HostlistSettingsWindow:
 
             if self.github_var.get():
                 current_domains.update(self.services["Github"])
+
+            # ДОБАВЛЕНО: Добавляем домены Roblox, если выбран чекбокс
+            if self.roblox_var.get():
+                current_domains.update(self.services["Roblox"])
 
             # Сортируем и сохраняем в файл list-general.txt
             sorted_domains = sorted(current_domains)
@@ -273,15 +310,24 @@ class HostlistSettingsWindow:
                 selected_services.append("Rockstar/Epic Games")
             if self.github_var.get():
                 selected_services.append("Github")
+            # ДОБАВЛЕНО: Roblox в статистику
+            if self.roblox_var.get():
+                selected_services.append("Roblox")
 
             services_text = ", ".join(selected_services) if selected_services else "ни одного сервиса"
+
+            # ДОБАВЛЕНО: Информация о количестве доменов Roblox
+            roblox_count_info = ""
+            if self.roblox_var.get():
+                roblox_count_info = f"\nДоменов Roblox добавлено: {len(self.services['Roblox'])}"
 
             show_info(self.window, "Сохранение",
                      f"Данные успешно сохранены!\n\n"
                      f"Выбранные сервисы: {services_text}\n"
                      f"Всего доменов в list-general.txt: {len(sorted_domains)}\n"
                      f"Заблокированные домены: {blocked_count} (сохранено в other2.txt)\n"
-                     f"Незаблокированные домены: {unblocked_count} (сохранено в ignore.txt)")
+                     f"Незаблокированные домены: {unblocked_count} (сохранено в ignore.txt)"
+                     f"{roblox_count_info}")
 
         except Exception as e:
             show_info(self.window, "Ошибка", f"Не удалось сохранить файлы: {e}")
@@ -289,14 +335,6 @@ class HostlistSettingsWindow:
     def create_text_tab(self, parent, tab_name, description, examples, file_name):
         """Создает вкладку с текстовым полем для ввода доменов"""
         frame = tk.Frame(parent, bg='#182030')
-
-        # ЗАКОММЕНТИРОВАНО: Убрал заголовок вкладки
-        # title = tk.Label(frame,
-        #                 text=tab_name,
-        #                 font=("Arial", 12, "bold"),
-        #                 fg='#0a84ff',
-        #                 bg='#182030')
-        # title.pack(anchor=tk.W, pady=(0, 10))
 
         # Описание
         info = tk.Label(frame,
@@ -355,6 +393,7 @@ class HostlistSettingsWindow:
 
 
         return frame, text_input
+
     def create_window(self):
         """Создает окно настроек HOSTLIST"""
         self.window = tk.Toplevel(self.parent)
@@ -440,7 +479,7 @@ class HostlistSettingsWindow:
                                        activebackground='#182030',
                                        highlightthickness=0,
                                        activeforeground='white')
-        whatsapp_check.pack(anchor=tk.W, pady=(0, 10))
+        whatsapp_check.pack(anchor=tk.W, pady=(0, 5))
 
         # Чекбокс Rockstar/Epic Games
         rockstar_check = tk.Checkbutton(checkboxes_frame,
@@ -453,7 +492,7 @@ class HostlistSettingsWindow:
                                        activebackground='#182030',
                                        highlightthickness=0,
                                        activeforeground='white')
-        rockstar_check.pack(anchor=tk.W, pady=(0, 10))
+        rockstar_check.pack(anchor=tk.W, pady=(0, 5))
 
         # Чекбокс Github
         github_check = tk.Checkbutton(checkboxes_frame,
@@ -466,7 +505,20 @@ class HostlistSettingsWindow:
                                        activebackground='#182030',
                                        highlightthickness=0,
                                        activeforeground='white')
-        github_check.pack(anchor=tk.W, pady=(0, 10))
+        github_check.pack(anchor=tk.W, pady=(0, 5))
+
+        # Чекбокс Roblox
+        roblox_check = tk.Checkbutton(checkboxes_frame,
+                                       text="Roblox",
+                                       variable=self.roblox_var,
+                                       font=("Arial", 11),
+                                       fg='white',
+                                       bg='#182030',
+                                       selectcolor='#182030',
+                                       activebackground='#182030',
+                                       highlightthickness=0,
+                                       activeforeground='white')
+        roblox_check.pack(anchor=tk.W, pady=(0, 5))
 
 
         # ========== ПРАВАЯ КОЛОНКА ==========
