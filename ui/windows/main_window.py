@@ -10,7 +10,7 @@ from ui.windows.strategy_window import StrategyWindow
 from ui.windows.strategy_selector_window import StrategySelectorWindow
 from core.service_manager import ServiceManager
 from ui.windows.sudo_password_window import SudoPasswordWindow
-from ui.windows.ipset_settings_window import IpsetSettingsWindow
+from ui.windows.ipset_settings_window import IpsetMainWindow
 from ui.windows.hostlist_settings_window import HostlistSettingsWindow
 from ui.windows.service_unlock_window import ServiceUnlockWindow
 from ui.windows.dns_settings_window import DNSSettingsWindow
@@ -649,7 +649,7 @@ class MainWindow:
             ("Сменить стратегию", self.open_service_window),
             ("Проверка соединения", self.open_connection_check),
             ("Настройки Hostlist", self.open_hostlist_settings),
-            ("Настройки IPset", self.open_ipset_settings),
+            ("Настройки IPSet", self.open_ipset_settings),
             ("Настройки DNS", self.open_dns_settings),
             ("Разблокировать сервисы", self.open_service_unlock),
             ("Обвноить Zapret", self.open_update_settings),
@@ -730,8 +730,8 @@ class MainWindow:
     def open_ipset_settings(self):
         """Открывает окно настроек IPset"""
         self.close_settings_menu()  # Закрываем меню
-        ipset_window = IpsetSettingsWindow(self.root)
-        ipset_window.run()
+        ipset_main_window = IpsetMainWindow(self.root)
+        ipset_main_window.run()
 
     def open_dns_settings(self):
         """Открывает окно настроек DNS"""

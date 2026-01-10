@@ -167,9 +167,9 @@ class IpsetSettingsWindow:
         return create_hover_button(parent, text, command, **kwargs)
 
     def create_window(self):
-        """Создает окно настроек IPset"""
+        """Создает окно добавления пользовательских IP-адресов"""
         self.window = tk.Toplevel(self.parent)
-        self.window.title("Настройки IPSET")
+        self.window.title("Добавление пользовательских IP-адресов")
         self.window.geometry("460x530")
         self.window.configure(bg='#182030')
         self.window.resizable(True, True)
@@ -337,6 +337,417 @@ class IpsetSettingsWindow:
             self.window.after(3000, lambda: self.status_message.config(text=""))
 
     def run(self):
-        """Запускает окно настроек IPset"""
+        """Запускает окно добавления пользовательских IP-адресов"""
+        self.create_window()
+        self.window.wait_window()
+
+
+class IpsetFilterWindow:
+    """Окно настройки IPSet Filter"""
+
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = None
+
+        # Пути к файлам
+        self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
+        self.ipset_all_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
+        self.ipset_utils_file = os.path.join(self.manager_dir, "utils", "ipset-all.txt")
+
+        # Переменная для радиокнопок
+        self.filter_mode = tk.StringVar(value="none")
+
+    def create_hover_button(self, parent, text, command, **kwargs):
+        """Создает кнопку в стиле главного меню с эффектом наведения"""
+        from ui.components.button_styler import create_hover_button
+        return create_hover_button(parent, text, command, **kwargs)
+
+    def load_current_mode(self):
+        """Загружает текущий режим фильтрации из файла"""
+        try:
+            if os.path.exists(self.ipset_all_file):
+                with open(self.ipset_all_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+
+                # Проверяем размер файла
+                file_size = os.path.getsize(self.ipset_all_file)
+
+                # Если файл пустой - режим any
+                if file_size == 0 or not content:
+                    self.filter_mode.set("any")
+                    return
+
+                # Проверяем, содержит ли файл только одну строку 203.0.113.113/32
+                if content == "203.0.113.113/32":
+                    self.filter_mode.set("none")
+                    return
+
+                # Если файл содержит данные из utils/ipset-all.txt
+                # Загружаем данные из utils файла для сравнения
+                if os.path.exists(self.ipset_utils_file):
+                    with open(self.ipset_utils_file, 'r', encoding='utf-8') as f:
+                        utils_content = f.read().strip()
+
+                    # Сравниваем содержимое (игнорируем пустые строки)
+                    content_lines = [line.strip() for line in content.split('\n') if line.strip()]
+                    utils_lines = [line.strip() for line in utils_content.split('\n') if line.strip()]
+
+                    # Если содержимое совпадает - режим loaded
+                    if set(content_lines) == set(utils_lines):
+                        self.filter_mode.set("loaded")
+                        return
+
+                # Если ни одно из условий не подошло, ставим loaded по умолчанию
+                self.filter_mode.set("loaded")
+
+        except Exception as e:
+            print(f"Ошибка загрузки текущего режима: {e}")
+            # По умолчанию ставим none
+            self.filter_mode.set("none")
+
+    def apply_filter(self):
+        """Применяет выбранный режим фильтрации"""
+        mode = self.filter_mode.get()
+
+        try:
+            # Показываем сообщение о применении изменений
+            self.show_status_message("Применение изменений...", warning=False)
+            self.window.update()
+
+            # Создаем директорию, если она не существует
+            os.makedirs(os.path.dirname(self.ipset_all_file), exist_ok=True)
+
+            if mode == "any":
+                # Файл должен быть пустым
+                with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
+                    f.write("")
+                message = "Режим 'any' применен"
+
+            elif mode == "loaded":
+                # Копируем содержимое из utils/ipset-all.txt
+                if os.path.exists(self.ipset_utils_file):
+                    with open(self.ipset_utils_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+
+                    with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    message = "Режим 'loaded' применен"
+                else:
+                    show_info(self.window, "Ошибка",
+                             f"Файл {self.ipset_utils_file} не найден")
+                    return
+
+            elif mode == "none":
+                # Записываем только 203.0.113.113/32
+                with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
+                    f.write("203.0.113.113/32")
+                message = "Режим 'none' применен"
+
+            # Показываем сообщение об успехе
+            self.show_status_message(message, success=True)
+
+        except Exception as e:
+            error_msg = f"Ошибка применения режима: {e}"
+            print(f"❌ {error_msg}")
+            self.show_status_message(error_msg, error=True)
+
+    def create_window(self):
+        """Создает окно настройки IPSet Filter"""
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("Настройка IPSet Filter")
+        self.window.geometry("420x350")  # Увеличил высоту для статусной строки
+        self.window.configure(bg='#182030')
+
+        # Основной фрейм
+        main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Заголовок
+        title_label = tk.Label(main_frame,
+                               text="Настройка IPSet Filter",
+                               font=("Arial", 14, "bold"),
+                               fg='white',
+                               bg='#182030')
+        title_label.pack(anchor=tk.CENTER, pady=(0, 15))
+
+        # Примечание
+        note_frame = tk.Frame(main_frame, bg='#182030')
+        note_frame.pack(fill=tk.X, pady=(0, 10))
+
+        note_text = "Данная настройка полезна, если не работает ресурс, который без Zapret работает"
+        note_label = tk.Label(note_frame,
+                             text=note_text,
+                             font=("Arial", 10),
+                             fg='#ff9500',  # Оранжевый цвет для выделения
+                             bg='#182030',
+                             justify=tk.CENTER,
+                             wraplength=400)
+        note_label.pack()
+
+        # Фрейм для радиокнопок
+        radio_frame = tk.Frame(main_frame, bg='#182030')
+        radio_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Заголовок для радиокнопок
+        radio_title = tk.Label(radio_frame,
+                              text="Текущие статусы:",
+                              font=("Arial", 11, "bold"),
+                              fg='#0a84ff',
+                              bg='#182030')
+        radio_title.pack(anchor=tk.W, pady=(0, 10))
+
+        # Радиокнопка none
+        none_frame = tk.Frame(radio_frame, bg='#182030')
+        none_frame.pack(fill=tk.X, pady=(0, 8))
+
+        none_radio = tk.Radiobutton(none_frame,
+                                   text="none",
+                                   variable=self.filter_mode,
+                                   value="none",
+                                   font=("Arial", 11),
+                                   fg='white',
+                                   bg='#182030',
+                                   selectcolor='#182030',
+                                   activebackground='#182030',
+                                   activeforeground='white',
+                                   highlightthickness=0)
+        none_radio.pack(side=tk.LEFT)
+
+        none_desc = tk.Label(none_frame,
+                            text="    - никакие айпи не попадают под проверку",
+                            font=("Arial", 10),
+                            fg='#8e8e93',
+                            bg='#182030')
+        none_desc.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Радиокнопка loaded
+        loaded_frame = tk.Frame(radio_frame, bg='#182030')
+        loaded_frame.pack(fill=tk.X, pady=(0, 8))
+
+        loaded_radio = tk.Radiobutton(loaded_frame,
+                                     text="loaded",
+                                     variable=self.filter_mode,
+                                     value="loaded",
+                                     font=("Arial", 11),
+                                     fg='white',
+                                     bg='#182030',
+                                     selectcolor='#182030',
+                                     activebackground='#182030',
+                                     activeforeground='white',
+                                     highlightthickness=0)
+        loaded_radio.pack(side=tk.LEFT)
+
+        loaded_desc = tk.Label(loaded_frame,
+                              text="- айпи проверяется на вхождение в список",
+                              font=("Arial", 10),
+                              fg='#8e8e93',
+                              bg='#182030')
+        loaded_desc.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Радиокнопка any
+        any_frame = tk.Frame(radio_frame, bg='#182030')
+        any_frame.pack(fill=tk.X, pady=(0, 8))
+
+        any_radio = tk.Radiobutton(any_frame,
+                                  text="any",
+                                  variable=self.filter_mode,
+                                  value="any",
+                                  font=("Arial", 11),
+                                  fg='white',
+                                  bg='#182030',
+                                  selectcolor='#182030',
+                                  activebackground='#182030',
+                                  activeforeground='white',
+                                  highlightthickness=0)
+        any_radio.pack(side=tk.LEFT)
+
+        any_desc = tk.Label(any_frame,
+                           text="       - любой айпи попадает под фильтр",
+                           font=("Arial", 10),
+                           fg='#8e8e93',
+                           bg='#182030')
+        any_desc.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Фрейм для кнопок
+        buttons_frame = tk.Frame(main_frame, bg='#182030')
+        buttons_frame.pack(fill=tk.X, pady=(5, 0))
+
+        # Контейнер для центрирования кнопок
+        buttons_center_frame = tk.Frame(buttons_frame, bg='#182030')
+        buttons_center_frame.pack()
+
+        # Стиль кнопок
+        button_style = {
+            'font': ('Arial', 11),
+            'bg': '#15354D',
+            'fg': 'white',
+            'bd': 0,
+            'padx': 10,
+            'pady': 8,
+            'width': 12,
+            'highlightthickness': 0,
+            'cursor': 'hand2'
+        }
+
+        # Кнопка Применить
+        self.apply_button = self.create_hover_button(
+            buttons_center_frame,
+            text="Применить",
+            command=self.apply_filter,
+            **button_style
+        )
+        self.apply_button.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Кнопка Назад
+        self.back_button = self.create_hover_button(
+            buttons_center_frame,
+            text="Назад",
+            command=self.window.destroy,
+            **button_style
+        )
+        self.back_button.pack(side=tk.LEFT)
+
+        # Статусная строка (как в главном окне)
+        self.status_message = tk.Label(
+            main_frame,
+            text="",
+            font=("Arial", 10),
+            fg='#AAAAAA',
+            bg='#182030',
+            height=1
+        )
+        self.status_message.pack(fill=tk.X, pady=(15, 0))
+
+        # Загружаем текущий режим
+        self.load_current_mode()
+
+        # Показываем текущий статус при загрузке
+        current_mode = self.filter_mode.get()
+        if current_mode == "none":
+            self.show_status_message("Текущий режим: none (тестовый IP)", warning=False)
+        elif current_mode == "loaded":
+            self.show_status_message("Текущий режим: loaded (проверка по списку)", warning=False)
+        elif current_mode == "any":
+            self.show_status_message("Текущий режим: any (любой IP)", warning=False)
+
+        return self.window
+
+    def show_status_message(self, message, success=False, warning=False, error=False):
+        """Показывает сообщение в статусной строке"""
+        self.status_message.config(text=message)
+
+        if success:
+            self.status_message.config(fg='#30d158')  # Зеленый
+        elif warning:
+            self.status_message.config(fg='#ff9500')  # Оранжевый
+        elif error:
+            self.status_message.config(fg='#ff3b30')  # Красный
+        else:
+            self.status_message.config(fg='#AAAAAA')  # Серый
+
+        # Автоматически очищаем сообщение через 3 секунды (кроме ошибок)
+        if message and not error:
+            self.window.after(3000, lambda: self.status_message.config(text=""))
+
+    def run(self):
+        """Запускает окно настройки IPSet Filter"""
+        self.create_window()
+        self.window.wait_window()
+
+class IpsetMainWindow:
+    """Главное окно выбора настроек IPSet"""
+
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = None
+
+    def create_hover_button(self, parent, text, command, **kwargs):
+        """Создает кнопку в стиле главного меню с эффектом наведения"""
+        from ui.components.button_styler import create_hover_button
+        return create_hover_button(parent, text, command, **kwargs)
+
+    def open_filter_settings(self):
+        """Открывает окно настройки IPSet Filter"""
+        self.window.destroy()  # Закрываем текущее окно
+        filter_window = IpsetFilterWindow(self.parent)
+        filter_window.run()
+
+    def open_custom_ips(self):
+        """Открывает окно добавления пользовательских IP-адресов"""
+        self.window.destroy()  # Закрываем текущее окно
+        ip_window = IpsetSettingsWindow(self.parent)
+        ip_window.run()
+
+    def create_window(self):
+        """Создает главное окно выбора настроек IPSet"""
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("Настройки IPSet")
+        self.window.geometry("300x260")
+        self.window.configure(bg='#182030')
+
+        # Основной фрейм
+        main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Заголовок
+        title_label = tk.Label(main_frame,
+                               text="Настройки IPSet",
+                               font=("Arial", 14, "bold"),
+                               fg='white',
+                               bg='#182030')
+        title_label.pack(anchor=tk.CENTER, pady=(0, 30))
+
+        # Фрейм для кнопок
+        buttons_frame = tk.Frame(main_frame, bg='#182030')
+        buttons_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Стиль кнопок
+        button_style = {
+            'font': ('Arial', 11),
+            'bg': '#15354D',
+            'fg': 'white',
+            'bd': 0,
+            'padx': 10,
+            'pady': 8,
+            'width': 32,
+            'highlightthickness': 0,
+            'cursor': 'hand2'
+        }
+
+        # Кнопка "Настройка IPSet Filter"
+        filter_button = self.create_hover_button(
+            buttons_frame,
+            text="Настройка IPSet Filter",
+            command=self.open_filter_settings,
+            **button_style
+        )
+        filter_button.pack(pady=(0, 15))
+
+        # Кнопка "Добавление пользовательских IP-адресов" (в две строки)
+        ip_button = self.create_hover_button(
+            buttons_frame,
+            text="Добавление пользовательских\nIP-адресов",
+            command=self.open_custom_ips,
+            **button_style
+        )
+        ip_button.pack(pady=(0, 15))
+
+        # Кнопка "Назад"
+        back_button_style = button_style.copy()
+        back_button_style['width'] = 20
+        back_button_style['font'] = ('Arial', 11)
+
+        back_button = self.create_hover_button(
+            buttons_frame,
+            text="Назад",
+            command=self.window.destroy,
+            **back_button_style
+        )
+        back_button.pack(pady=(10, 0))
+
+        return self.window
+
+    def run(self):
+        """Запускает главное окно выбора настроек IPSet"""
         self.create_window()
         self.window.wait_window()
