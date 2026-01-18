@@ -520,11 +520,6 @@ class DependencyChecker:
                 if self.is_timeout_error(error_msg):
                     self.log_debug("Обнаружена ошибка таймаута/сети, пробуем скачать с GitHub...")
 
-                    # Показываем информационное сообщение
-                    self.show_info("Проблемы с сетью",
-                                 f"Не удалось скачать {package_name} из официальных репозиториев.\n"
-                                 f"Пробуем альтернативный источник...")
-
                     # Скачиваем из GitHub
                     local_package = self.download_ipset_from_github()
 
