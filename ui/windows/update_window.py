@@ -314,3 +314,379 @@ class UpdateWindow:
 def show_update_window(parent):
     window = UpdateWindow(parent)
     window.run()
+
+class UpdateProgressWindow:
+    def __init__(self, parent, update_tasks):
+        """
+        Окно прогресса обновления
+
+        Args:
+            parent: родительское окно
+            update_tasks: список задач обновления в формате:
+                [{
+                    'name': 'Zapret DPI Manager',
+                    'updater_class': 'ManagerUpdater',
+                    'download_url': 'url'
+                }, ...]
+        """
+        self.parent = parent
+        self.update_tasks = update_tasks
+        self.current_task_index = 0
+        self.window = None
+        self.is_updating = False
+        self.manager_updated = False  # Флаг, что менеджер был обновлен
+
+    def run(self):
+        """Запускает окно прогресса"""
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("Обновление")
+        self.window.geometry("400x200")
+        self.window.configure(bg='#182030')
+        self.window.transient(self.parent)
+        self.window.grab_set()
+
+        self.setup_ui()
+        self.start_update_process()
+
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.window.wait_window()
+
+    def setup_ui(self):
+        """Настраивает UI окна прогресса"""
+        main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Заголовок
+        title_label = tk.Label(
+            main_frame,
+            text="Обновление компонентов",
+            font=("Arial", 16, "bold"),
+            fg='white',
+            bg='#182030'
+        )
+        title_label.pack(pady=(0, 20))
+
+        # Текущая задача
+        self.task_label = tk.Label(
+            main_frame,
+            text="Подготовка к обновлению...",
+            font=("Arial", 12),
+            fg='#0a84ff',
+            bg='#182030',
+            justify=tk.LEFT
+        )
+        self.task_label.pack(anchor=tk.W, pady=(0, 10))
+
+        # Статус обновления
+        self.status_label = tk.Label(
+            main_frame,
+            text="",
+            font=("Arial", 11),
+            fg='#AAAAAA',
+            bg='#182030',
+            justify=tk.LEFT
+        )
+        self.status_label.pack(anchor=tk.W, pady=(0, 5))
+
+        # Прогресс-бар
+        progress_container = tk.Frame(main_frame, bg='#182030')
+        progress_container.pack(fill=tk.X, pady=(15, 20))
+
+        self.progress_bar = tk.Frame(progress_container, bg='#2c2c2e', height=10)
+        self.progress_bar.pack(fill=tk.X)
+        self.progress_bar.pack_propagate(False)
+
+        self.progress_fill = tk.Frame(self.progress_bar, bg='#0a84ff', width=0)
+        self.progress_fill.pack(side=tk.LEFT, fill=tk.Y)
+
+    def start_update_process(self):
+        """Запускает процесс обновления"""
+        self.is_updating = True
+        thread = threading.Thread(target=self._update_thread, daemon=True)
+        thread.start()
+
+    def _update_thread(self):
+        """Поток для выполнения обновлений"""
+        try:
+            total_tasks = len(self.update_tasks)
+
+            # Общий прогресс от 0 до 100
+            overall_progress = 0
+
+            for i, task in enumerate(self.update_tasks):
+                if not self.is_updating:
+                    break
+
+                self.current_task_index = i
+                task_name = task['name']
+                updater_class = task['updater_class']
+                download_url = task['download_url']
+
+                # Обновляем информацию о текущей задаче
+                self._update_task_info(f"Обновление {task_name} ({i+1}/{total_tasks})")
+                self._update_status(f"Начинаю обновление {task_name}...")
+                print(f"\n🔄 Начинаю обновление {task_name}...")
+
+                # Выполняем обновление в зависимости от типа
+                if updater_class == 'ManagerUpdater':
+                    success = self._update_manager(download_url, task_name, overall_progress, total_tasks, i)
+                    if success:
+                        self.manager_updated = True
+                elif updater_class == 'ZapretUpdater':
+                    success = self._update_zapret(download_url, task_name, overall_progress, total_tasks, i)
+                else:
+                    success = False
+                    print(f"❌ Неизвестный класс обновления: {updater_class}")
+
+                # Обновляем общий прогресс после завершения задачи
+                overall_progress = int((i + 1) / total_tasks * 100)
+                self._update_progress_bar(overall_progress)
+
+                if success:
+                    print(f"✅ {task_name} успешно обновлен!")
+                    self._update_status(f"{task_name} обновлен успешно")
+                else:
+                    print(f"❌ Не удалось обновить {task_name}")
+                    self._update_status(f"{task_name}: ошибка обновления")
+
+            # Завершаем обновление
+            if self.is_updating:
+                print(f"\n🎉 Обновление завершено!")
+                self._update_task_info("Обновление завершено")
+                self._update_status("Все компоненты успешно обновлены")
+
+                # Устанавливаем прогресс на 100%
+                self._update_progress_bar(100)
+
+                # Если обновлялся менеджер, показываем сообщение о перезапуске
+                if self.manager_updated:
+                    self._show_restart_message()
+                else:
+                    # Закрываем окно через 2 секунды
+                    self.window.after(2000, self.window.destroy)
+
+        except Exception as e:
+            print(f"\n❌ Ошибка при обновлении: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self._update_status(f"Ошибка: {str(e)}")
+
+    def _update_manager(self, download_url, task_name, base_progress, total_tasks, task_index):
+        """Обновляет менеджер"""
+        try:
+            from core.manager_updater import ManagerUpdater
+            manager_updater = ManagerUpdater()
+
+            # Словарь для маппинга сообщений в проценты
+            progress_map = {
+                "Сохранение конфигураций": 10,
+                "Очистка директории": 20,
+                "Скачивание обновления": 30,
+                "Распаковка": 50,
+                "Копирование файлов": 70,
+                "Восстановление конфигураций": 85,
+                "Настройка прав": 95,
+                "Обновление завершено": 100
+            }
+
+            def progress_callback(message, percent):
+                # Определяем процент для этого шага
+                step_progress = percent if percent is not None else 0
+
+                # Ищем ключевые слова в сообщении
+                for key, value in progress_map.items():
+                    if key in message:
+                        step_progress = value
+                        break
+
+                # Рассчитываем общий прогресс
+                # Прогресс внутри текущей задачи (0-100)
+                task_internal_progress = step_progress
+
+                # Общий прогресс = прогресс предыдущих задач + часть текущей задачи
+                # Каждая задача занимает 100/total_tasks процентов
+                task_weight = 100 / total_tasks
+                previous_tasks_progress = task_index * task_weight
+                current_task_progress = task_internal_progress * (task_weight / 100)
+
+                overall_progress = int(previous_tasks_progress + current_task_progress)
+
+                # Обновляем прогресс-бар
+                self.window.after(0, lambda p=overall_progress: self._update_progress_bar(p))
+
+                # Обновляем статус
+                self.window.after(0, lambda: self._update_progress_message(message, step_progress))
+
+            print(f"  📦 Скачивание обновления менеджера...")
+            success = manager_updater.update_manager(download_url, progress_callback)
+
+            if success:
+                print(f"  ✅ Менеджер успешно обновлен!")
+            else:
+                print(f"  ❌ Не удалось обновить менеджер")
+
+            return success
+
+        except Exception as e:
+            print(f"  ❌ Ошибка обновления менеджера: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _update_zapret(self, download_url, task_name, base_progress, total_tasks, task_index):
+        """Обновляет службу Zapret"""
+        try:
+            from core.zapret_updater import ZapretUpdater
+            zapret_updater = ZapretUpdater()
+
+            # Словарь для маппинга сообщений в проценты
+            progress_map = {
+                "Скачивание архива": 20,
+                "Извлечение архива": 40,
+                "Создание директории": 50,
+                "Копирование файлов": 60,
+                "Копирование бинарных файлов": 70,
+                "Настройка параметров": 75,
+                "Создание службы": 80,
+                "Обновление systemd": 85,
+                "Включение автозапуска": 90,
+                "Запуск службы": 95,
+                "Служба успешно запущена": 100
+            }
+
+            def progress_callback(message, percent):
+                # Определяем процент для этого шага
+                step_progress = percent if percent is not None else 0
+
+                # Ищем ключевые слова в сообщении
+                for key, value in progress_map.items():
+                    if key in message:
+                        step_progress = value
+                        break
+
+                # Рассчитываем общий прогресс
+                # Прогресс внутри текущей задачи (0-100)
+                task_internal_progress = step_progress
+
+                # Общий прогресс = прогресс предыдущих задач + часть текущей задачи
+                # Каждая задача занимает 100/total_tasks процентов
+                task_weight = 100 / total_tasks
+                previous_tasks_progress = task_index * task_weight
+                current_task_progress = task_internal_progress * (task_weight / 100)
+
+                overall_progress = int(previous_tasks_progress + current_task_progress)
+
+                # Обновляем прогресс-бар
+                self.window.after(0, lambda p=overall_progress: self._update_progress_bar(p))
+
+                # Обновляем статус
+                self.window.after(0, lambda: self._update_progress_message(message, step_progress))
+
+            print(f"  📦 Скачивание обновления службы Zapret...")
+            success = zapret_updater.update_zapret(download_url, self.window, progress_callback)
+
+            if success:
+                print(f"  ✅ Служба Zapret успешно обновлена!")
+            else:
+                print(f"  ❌ Не удалось обновить службу Zapret")
+
+            return success
+
+        except Exception as e:
+            print(f"  ❌ Ошибка обновления службы Zapret: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+    def _update_task_info(self, text):
+        """Обновляет информацию о текущей задаче"""
+        self.window.after(0, lambda: self.task_label.config(text=text))
+
+    def _update_status(self, text):
+        """Обновляет статус обновления"""
+        self.window.after(0, lambda: self.status_label.config(text=text))
+
+    def _update_progress_message(self, message, percent=None):
+        """Обновляет сообщение о прогрессе"""
+        if percent is not None:
+            text = f"[{percent}%] {message}"
+        else:
+            text = message
+
+        self.status_label.config(text=text)
+        print(f"    {message}")
+
+    def _update_progress_bar(self, percent):
+        """Обновляет прогресс-бар"""
+        # Принудительно обновляем окно для получения актуальных размеров
+        self.window.update_idletasks()
+
+        width = self.progress_bar.winfo_width()
+        if width <= 1:  # Если размер еще не определен
+            width = 350  # Используем примерную ширину
+
+        # Ограничиваем процент от 0 до 100
+        percent = max(0, min(100, percent))
+        fill_width = int(width * percent / 100)
+
+        self.progress_fill.config(width=fill_width)
+        self.progress_bar.update_idletasks()
+
+    def _show_restart_message(self):
+        """Показывает сообщение о необходимости перезапуска"""
+        self._update_task_info("Обновление завершено")
+        self._update_status("Перезапуск программы...")
+
+        # Показываем сообщение на 2 секунды, затем перезапускаем
+        self.window.after(2000, self._restart_manager)
+
+    def _restart_manager(self):
+        """Перезапускает менеджер"""
+        try:
+            from core.manager_updater import ManagerUpdater
+            manager_updater = ManagerUpdater()
+            print("🔄 Перезапускаю менеджер...")
+            manager_updater.restart_manager()
+
+            # Закрываем текущее окно и родительское
+            self.window.destroy()
+            if self.parent:
+                self.parent.destroy()
+
+        except Exception as e:
+            print(f"❌ Ошибка при перезапуске менеджера: {e}")
+            # В любом случае закрываем окно
+            self.window.destroy()
+
+    def cancel_update(self):
+        """Отменяет обновление"""
+        self.is_updating = False
+        print("\n⏹️ Обновление отменено пользователем")
+        self._update_task_info("Обновление отменено")
+        self._update_status("Операция прервана пользователем")
+
+        # Активируем кнопку "Закрыть"
+        self.window.after(0, lambda: self.close_button.config(state=tk.NORMAL))
+        # Скрываем кнопку "Отмена"
+        self.window.after(0, lambda: self.cancel_button.pack_forget())
+
+    def on_close(self):
+        """Обработчик закрытия окна"""
+        if self.is_updating:
+            # Если идет обновление, спрашиваем подтверждение
+            from ui.components.custom_messagebox import ask_yesno
+            if ask_yesno(self.window, "Отмена обновления",
+                         "Обновление еще не завершено. Вы уверены, что хотите отменить?"):
+                self.cancel_update()
+        else:
+            self.window.destroy()
+
+    def close_window(self):
+        """Закрывает окно"""
+        self.window.destroy()
+
+
+# Функция для создания окна прогресса обновления
+def show_update_progress_window(parent, update_tasks):
+    """Показывает окно прогресса обновления"""
+    window = UpdateProgressWindow(parent, update_tasks)
+    window.run()

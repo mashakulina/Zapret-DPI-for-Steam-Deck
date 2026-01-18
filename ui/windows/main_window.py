@@ -51,6 +51,7 @@ class MainWindow:
         self.check_service_status()  # Проверяем статус службы при запуске
         self.schedule_status_update()  # Запускаем периодическую проверку
         self.status_tooltip = None  # Всплывающее окошко для статуса
+        self.root.after(100, self.check_updates_on_startup)
 
         # Bind событий фокус
         self.root.bind("<FocusIn>", self.on_focus_in)
@@ -123,6 +124,435 @@ class MainWindow:
     #     print("=== КОНЕЦ ПРОВЕРКИ ФАЙЛОВ ===")
     #
     #     return files_ok
+
+    def check_updates_on_startup(self):
+        """Проверяет обновления при запуске программы"""
+        # Запускаем в отдельном потоке, чтобы не блокировать UI
+        thread = threading.Thread(target=self._check_updates_using_updater, daemon=True)
+        thread.start()
+
+    def _check_updates_using_updater(self):
+        """Проверяет обновления с использованием существующего Updater'а"""
+        try:
+            from core.manager_updater import ManagerUpdater
+            from core.zapret_updater import ZapretUpdater
+
+            manager_update_info = None
+            zapret_update_info = None
+
+            # Проверка обновления менеджера
+            try:
+                manager_updater = ManagerUpdater()
+                latest_version, update_info = manager_updater.check_for_updates()
+
+                if latest_version and update_info:
+                    manager_update_info = {
+                        'current': manager_updater.current_version,
+                        'available': latest_version,
+                        'name': 'менеджера'
+                    }
+                    print(f"🔄 Обновление менеджера найдено: {manager_updater.current_version} → {latest_version}")
+                else:
+                    print(f"✅ Версия менеджера актуальна: {manager_updater.current_version}")
+
+            except Exception as e:
+                print(f"⚠️ Не удалось проверить обновление менеджера: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # Проверка обновления службы Zapret
+            try:
+                zapret_updater = ZapretUpdater()
+                latest_version, update_info = zapret_updater.check_for_updates()
+
+                if latest_version and update_info:
+                    zapret_update_info = {
+                        'current': zapret_updater.current_version,
+                        'available': latest_version,
+                        'name': 'zapret службы'
+                    }
+                    print(f"🔄 Обновление службы Zapret найдено: {zapret_updater.current_version} → {latest_version}")
+                else:
+                    print(f"✅ Версия службы Zapret актуальна: {zapret_updater.current_version}")
+
+            except Exception as e:
+                print(f"⚠️ Не удалось проверить обновление службы Zapret: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # Показываем уведомление если есть обновления
+            if manager_update_info or zapret_update_info:
+                print(f"\n🎯 Найдены обновления! Показываю уведомление...")
+                self.root.after(0, lambda: self.show_update_notification(
+                    manager_update_info,
+                    zapret_update_info
+                ))
+            else:
+                print(f"\n✅ Все компоненты обновлены")
+
+        except Exception as e:
+            print(f"❌ Ошибка при проверке обновлений: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def show_update_notification(self, manager_update_info, zapret_update_info):
+        """Показывает окно уведомления об обновлениях с номерами версий"""
+        # Определяем размер окна в зависимости от количества обновлений
+        if manager_update_info and zapret_update_info:
+            height = 350
+            width = 370
+            title = "Доступны обновления"
+        elif manager_update_info:
+            height = 240
+            width = 400
+            title = "Доступно обновление менеджера"
+        else:
+            height = 240
+            width = 440
+            title = "Доступно обновление службы Zapret"
+
+        # Создаем окно уведомления
+        notification_window = tk.Toplevel(self.root)
+        notification_window.title(title)
+        notification_window.geometry(f"{width}x{height}")
+        notification_window.configure(bg='#182030')
+        notification_window.grab_set()  # Модальное окно
+
+        # Основной контейнер
+        main_frame = tk.Frame(notification_window, bg='#182030', padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Заголовок
+        title_label = tk.Label(
+            main_frame,
+            text=title,
+            font=("Arial", 16, "bold"),
+            fg='white',
+            bg='#182030'
+        )
+        title_label.pack(pady=(0, 20))
+
+        # Информационное сообщение
+        info_label = tk.Label(
+            main_frame,
+            text="Рекомендуется обновиться для получения\nновых функций и исправлений ошибок",
+            font=("Arial", 11),
+            fg='#AAAAAA',
+            bg='#182030',
+            justify=tk.CENTER
+        )
+        info_label.pack(pady=(0, 20))
+
+        # Фрейм для сообщений об обновлениях
+        updates_frame = tk.Frame(main_frame, bg='#182030')
+        updates_frame.pack(fill=tk.X, pady=(0, 0))
+
+        if manager_update_info and zapret_update_info:
+
+            manager_frame = tk.Frame(updates_frame, bg='#182030')
+            manager_frame.pack(fill=tk.X, pady=(0, 12))
+
+            # Иконка и название
+            header_frame = tk.Frame(manager_frame, bg='#182030')
+            header_frame.pack(fill=tk.X, pady=(0, 5))
+
+            manager_name = tk.Label(
+                header_frame,
+                text="Zapret DPI Manager",
+                font=("Arial", 12, "bold"),
+                fg='#0a84ff',
+                bg='#182030',
+            )
+            manager_name.pack(pady=(0, 0))
+
+            # Версии
+            versions_frame = tk.Frame(manager_frame, bg='#182030')
+            versions_frame.pack(fill=tk.X, pady=5)
+
+            # Создаем контейнер для центрирования
+            center_container = tk.Frame(versions_frame, bg='#182030')
+            center_container.pack(expand=True)  # Это центрирует содержимое
+
+            current_version_label = tk.Label(
+                center_container,
+                text=f"Текущая версия: {manager_update_info['current']}",
+                font=("Arial", 11),
+                fg='#AAAAAA',
+                bg='#182030'
+            )
+            current_version_label.pack(side=tk.LEFT, padx=(0, 10))
+
+            arrow_label = tk.Label(
+                center_container,
+                text="→",
+                font=("Arial", 11),
+                fg='white',
+                bg='#182030'
+            )
+            arrow_label.pack(side=tk.LEFT)
+
+            new_version_label = tk.Label(
+                center_container,
+                text=f"Новая версия: {manager_update_info['available']}",
+                font=("Arial", 11, "bold"),
+                fg='#30d158',
+                bg='#182030'
+            )
+            new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+
+            zapret_frame = tk.Frame(updates_frame, bg='#182030')
+            zapret_frame.pack(fill=tk.X, pady=(0, 12))
+
+            # Иконка и название
+            header_frame = tk.Frame(zapret_frame, bg='#182030')
+            header_frame.pack(fill=tk.X, pady=(0, 5))
+
+            zapret_name = tk.Label(
+                header_frame,
+                text="Служба Zapret",
+                font=("Arial", 12, "bold"),
+                fg='#0a84ff',
+                bg='#182030',
+            )
+            zapret_name.pack(pady=(0, 0))
+
+            # Версии
+            versions_frame = tk.Frame(zapret_frame, bg='#182030')
+            versions_frame.pack(fill=tk.X, pady=5)
+
+            # Создаем контейнер для центрирования
+            center_container = tk.Frame(versions_frame, bg='#182030')
+            center_container.pack(expand=True)  # Это центрирует содержимое
+
+            current_version_label = tk.Label(
+                center_container,
+                text=f"Текущая версия: {zapret_update_info['current']}",
+                font=("Arial", 11),
+                fg='#AAAAAA',
+                bg='#182030'
+            )
+            current_version_label.pack(side=tk.LEFT, padx=(0, 10))
+
+            arrow_label = tk.Label(
+                center_container,
+                text="→",
+                font=("Arial", 11),
+                fg='white',
+                bg='#182030'
+            )
+            arrow_label.pack(side=tk.LEFT)
+
+            new_version_label = tk.Label(
+                center_container,
+                text=f"Новая версия: {zapret_update_info['available']}",
+                font=("Arial", 11, "bold"),
+                fg='#30d158',
+                bg='#182030'
+            )
+            new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Сообщение об обновлениях с версиями
+        elif manager_update_info:
+            manager_frame = tk.Frame(updates_frame, bg='#182030')
+            manager_frame.pack(fill=tk.X, pady=(0, 12))
+
+            # Иконка и название
+            header_frame = tk.Frame(manager_frame, bg='#182030')
+            header_frame.pack(fill=tk.X, pady=(0, 5))
+
+            # Версии
+            versions_frame = tk.Frame(manager_frame, bg='#182030')
+            versions_frame.pack(fill=tk.X, pady=5)
+
+            # Создаем контейнер для центрирования
+            center_container = tk.Frame(versions_frame, bg='#182030')
+            center_container.pack(expand=True)  # Это центрирует содержимое
+
+            current_version_label = tk.Label(
+                center_container,
+                text=f"Текущая версия: {manager_update_info['current']}",
+                font=("Arial", 11),
+                fg='#AAAAAA',
+                bg='#182030'
+            )
+            current_version_label.pack(side=tk.LEFT, padx=(0, 10))
+
+            arrow_label = tk.Label(
+                center_container,
+                text="→",
+                font=("Arial", 11),
+                fg='white',
+                bg='#182030'
+            )
+            arrow_label.pack(side=tk.LEFT)
+
+            new_version_label = tk.Label(
+                center_container,
+                text=f"Новая версия: {manager_update_info['available']}",
+                font=("Arial", 11, "bold"),
+                fg='#30d158',
+                bg='#182030'
+            )
+            new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+
+        elif zapret_update_info:
+            zapret_frame = tk.Frame(updates_frame, bg='#182030')
+            zapret_frame.pack(fill=tk.X, pady=(0, 12))
+
+            # Иконка и название
+            header_frame = tk.Frame(zapret_frame, bg='#182030')
+            header_frame.pack(fill=tk.X, pady=(0, 5))
+
+            # Версии
+            versions_frame = tk.Frame(zapret_frame, bg='#182030')
+            versions_frame.pack(fill=tk.X, pady=5)
+
+            # Создаем контейнер для центрирования
+            center_container = tk.Frame(versions_frame, bg='#182030')
+            center_container.pack(expand=True)
+
+            current_version_label = tk.Label(
+                center_container,
+                text=f"Текущая версия: {zapret_update_info['current']}",
+                font=("Arial", 11),
+                fg='#AAAAAA',
+                bg='#182030'
+            )
+            current_version_label.pack(side=tk.LEFT, padx=(0, 10))
+
+            arrow_label = tk.Label(
+                center_container,
+                text="→",
+                font=("Arial", 11),
+                fg='white',
+                bg='#182030'
+            )
+            arrow_label.pack(side=tk.LEFT)
+
+            new_version_label = tk.Label(
+                center_container,
+                text=f"Новая версия: {zapret_update_info['available']}",
+                font=("Arial", 11, "bold"),
+                fg='#30d158',
+                bg='#182030'
+            )
+            new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Фрейм для кнопок по центру
+        buttons_frame = tk.Frame(main_frame, bg='#182030')
+        buttons_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Центральный контейнер для кнопок
+        center_frame = tk.Frame(buttons_frame, bg='#182030')
+        center_frame.pack(expand=True)
+
+        # Стиль кнопок
+        button_style = {
+            'font': ('Arial', 11),
+            'bg': '#15354D',
+            'fg': 'white',
+            'bd': 0,
+            'padx': 20,
+            'pady': 8,
+            'width': 14,
+            'highlightthickness': 0,
+            'cursor': 'hand2'
+        }
+
+        # Кнопка "Обновиться"
+        update_button = tk.Button(
+            center_frame,
+            text="Обновиться",
+            command=lambda: self.open_update_window(notification_window),
+            **button_style
+        )
+        update_button.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Добавляем эффект наведения для кнопки "Обновиться"
+        update_button.bind("<Enter>", lambda e: update_button.config(bg='#1e4a6a'))
+        update_button.bind("<Leave>", lambda e: update_button.config(bg='#15354D'))
+
+        # Кнопка "Пропустить"
+        skip_button = tk.Button(
+            center_frame,
+            text="Пропустить",
+            command=notification_window.destroy,
+            **button_style
+        )
+        skip_button.pack(side=tk.LEFT)
+
+        # Добавляем эффект наведения для кнопки "Пропустить"
+        skip_button.bind("<Enter>", lambda e: skip_button.config(bg='#1e4a6a'))
+        skip_button.bind("<Leave>", lambda e: skip_button.config(bg='#15354D'))
+
+        # Связываем закрытие окна с кнопкой пропустить
+        notification_window.protocol("WM_DELETE_WINDOW", notification_window.destroy)
+
+    def open_update_window(self, notification_window):
+        """Открывает окно обновления и закрывает уведомление"""
+        notification_window.destroy()
+
+        # Запускаем процесс обновления
+        thread = threading.Thread(target=self._prepare_and_show_updates, daemon=True)
+        thread.start()
+
+    def _prepare_and_show_updates(self):
+        """Подготавливает и показывает окно обновления"""
+        try:
+            from core.manager_updater import ManagerUpdater
+            from core.zapret_updater import ZapretUpdater
+            from ui.windows.update_window import show_update_progress_window
+
+            # Получаем информацию об обновлениях
+            update_tasks = []
+
+            # Проверяем обновление менеджера
+            try:
+                manager_updater = ManagerUpdater()
+                latest_manager_version, manager_update_info = manager_updater.check_for_updates()
+
+                if latest_manager_version and manager_update_info:
+                    update_tasks.append({
+                        'name': 'Zapret DPI Manager',
+                        'updater_class': 'ManagerUpdater',
+                        'download_url': manager_update_info.get('download_url')
+                    })
+                    print(f"🔄 Обновление менеджера доступно")
+
+            except Exception as e:
+                print(f"⚠️ Не удалось получить информацию об обновлении менеджера: {e}")
+
+            # Проверяем обновление службы Zapret
+            try:
+                zapret_updater = ZapretUpdater()
+                latest_zapret_version, zapret_update_info = zapret_updater.check_for_updates()
+
+                if latest_zapret_version and zapret_update_info:
+                    update_tasks.append({
+                        'name': 'Служба Zapret',
+                        'updater_class': 'ZapretUpdater',
+                        'download_url': zapret_update_info.get('download_url')
+                    })
+                    print(f"🔄 Обновление службы Zapret доступно")
+
+            except Exception as e:
+                print(f"⚠️ Не удалось получить информацию об обновлении службы Zapret: {e}")
+
+            if not update_tasks:
+                self.root.after(0, lambda: self.show_status_message("Нет доступных обновлений", warning=True))
+                return
+
+            # Показываем окно прогресса обновления
+            self.root.after(0, lambda: show_update_progress_window(self.root, update_tasks))
+
+            # После завершения обновления проверяем статус службы
+            self.root.after(2000, self.check_service_status)
+
+        except Exception as e:
+            print(f"❌ Ошибка при подготовке обновления: {e}")
+            import traceback
+            traceback.print_exc()
+            self.root.after(0, lambda: self.show_status_message(f"Ошибка обновления: {e}", error=True))
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
@@ -267,22 +697,22 @@ class MainWindow:
         buttons_frame = tk.Frame(main_frame, bg='#182030')
         buttons_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
 
-        # Первая строка кнопок
-        first_row_frame = tk.Frame(buttons_frame, bg='#182030')
-        first_row_frame.pack(fill=tk.X, pady=(0, 0))
+        # Центральный контейнер для кнопок
+        center_frame = tk.Frame(buttons_frame, bg='#182030')
+        center_frame.pack(expand=True)
 
-        # Кнопка Запуск/Остановка Zapret DPI
+        # Кнопка Запуск/Остановка службы Zapret DPI
         self.zapret_button = create_hover_button(
-            first_row_frame,
+            center_frame,
             text="Запустить Zapret DPI",
             command=self.toggle_zapret,
             **button_style
         )
         self.zapret_button.pack(side=tk.LEFT, padx=(0, 15))
 
-        # Кнопка Автозапуск
+        # Кнопка вкл/выкл Автозапуска службы Zapret
         self.autostart_button = create_hover_button(
-            first_row_frame,
+            center_frame,
             text="Включить автозапуск",
             command=self.toggle_autostart,
             **button_style
