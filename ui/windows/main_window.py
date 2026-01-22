@@ -34,6 +34,7 @@ class MainWindow:
         self.autostart_enabled = False
         self.service_running = False  # Статус службы
         self.settings_menu_open = False  # Флаг для меню настроек
+        self.restarting = False  # Флаг перезапуска службы
 
         self.service_manager = ServiceManager()
 
@@ -608,20 +609,28 @@ class MainWindow:
         self.status_indicator.bind("<Enter>", self.show_status_tooltip)
         self.status_indicator.bind("<Leave>", self.hide_status_tooltip)
 
+        # Иконка перезапуска службы
+        self.restart_icon = tk.Label(left_status_frame, text="↻", font=("Arial", 20),
+                                    fg='#0a84ff', bg='#182030', cursor='hand2')
+        self.restart_icon.pack(side=tk.LEFT, padx=(10, 0))
+        self.restart_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Перезапустить службу"))
+        self.restart_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
+        self.restart_icon.bind("<Button-1>", self.restart_zapret_service)
+
         # ПРАВАЯ СТОРОНА - Иконки настроек
         icons_frame = tk.Frame(top_row_frame, bg='#182030')
         icons_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Иконка Game Filter
-        self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
-        self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Обработчик клика
-        self.game_filter_icon.bind("<Button-1>", self.toggle_game_filter)
-
-        # Всплывающая подсказка при наведении
-        self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
-        self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
+        # # Иконка Game Filter
+        # self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
+        # self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
+        #
+        # # Обработчик клика
+        # self.game_filter_icon.bind("<Button-1>", self.toggle_game_filter)
+        #
+        # # Всплывающая подсказка при наведении
+        # self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
+        # self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
 
         # Иконка настроек (шестеренка)
         self.settings_icon = tk.Label(icons_frame, text="⚙️", font=("Arial", 22),
@@ -892,156 +901,218 @@ class MainWindow:
                 pass
             self.status_tooltip = None
 
-    def get_game_filter_icon(self):
-        """Получает иконку Game Filter"""
-        return "🎮🟢" if self.is_game_filter_enabled() else "🎮🔴"
-
-    def is_game_filter_enabled(self):
-        """Проверяет, включен ли Game Filter"""
-        return os.path.exists(self.game_filter_file)
-
-    def show_game_filter_tooltip(self, event=None):
-        """Показывает всплывающее окошко со статусом Game Filter"""
-        # Не показываем если уже есть
-        if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+    def restart_zapret_service(self, event=None):
+        """Запускает перезапуск службы Zapret"""
+        if self.restarting:
             return
 
-        # Определяем текст в зависимости от состояния
-        if self.is_game_filter_enabled():
-            status_text = "GameFilter включен\nНажмите для выключения"
-        else:
-            status_text = "GameFilter выключен\nНажмите для включения"
+        # Просто запускаем перезапуск без задержек - как в кнопке запуска
+        self._perform_restart()
 
-        # Позиционируем подсказку рядом с иконкой
-        x = self.game_filter_icon.winfo_rootx() - 20
-        y = self.game_filter_icon.winfo_rooty() + self.game_filter_icon.winfo_height() + 5
-
-        # Создаем всплывающее окно
-        self.game_filter_tooltip = tk.Toplevel(self.root)
-        self.game_filter_tooltip.wm_overrideredirect(True)
-        self.game_filter_tooltip.geometry(f"+{x}+{y}")
-        self.game_filter_tooltip.configure(bg='#15354D', relief=tk.SOLID, bd=1)
-
-        # Добавляем текст
-        label = tk.Label(self.game_filter_tooltip,
-                        text=status_text,
-                        font=("Arial", 10),
-                        fg='white',
-                        bg='#15354D',
-                        padx=10,
-                        pady=5,
-                        justify=tk.LEFT)
-        label.pack()
-
-    def hide_game_filter_tooltip(self, event=None):
-        """Скрывает всплывающее окошко Game Filter"""
-        if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
-            self.game_filter_tooltip.destroy()
-            self.game_filter_tooltip = None
-
-    def toggle_game_filter(self, event=None):
-        """Переключает Game Filter при клике на иконку"""
-        # Используем асинхронный подход через after с небольшой задержкой
-        self.root.after(100, self._toggle_game_filter_async)
-
-    def _toggle_game_filter_async(self):
-        """Асинхронное переключение Game Filter"""
+    def _perform_restart(self):
+        """Выполняет перезапуск службы"""
         try:
-            # Проверяем пароль sudo через стандартный метод
+            # Сначала блокируем UI
+            self.restarting = True
+            self.restart_icon.config(state=tk.DISABLED)
+
+            # Показываем сообщение
+            self.show_status_message("Перезапуск службы Zapret...")
+
+            # Обновляем окно чтобы оно было видимым
+            self.root.update_idletasks()
+            self.root.update()
+
+            # Проверяем пароль (как в toggle_zapret)
             if not self.ensure_sudo_password():
+                self.restarting = False
+                self.restart_icon.config(state=tk.NORMAL)
                 return
 
-            # Теперь выполняем переключение Game Filter
-            self._perform_game_filter_toggle()
+            # Запускаем в отдельном потоке
+            thread = threading.Thread(target=self._restart_zapret_thread, daemon=True)
+            thread.start()
 
         except Exception as e:
-            error_msg = f"Ошибка переключения Game Filter: {e}"
-            print(f"❌ {error_msg}")
-            self.show_status_message(error_msg, error=True)
+            print(f"Ошибка при запуске перезапуска: {e}")
+            self.show_status_message(f"Ошибка: {str(e)}", error=True)
+            self.restarting = False
+            self.restart_icon.config(state=tk.NORMAL)
 
-    def _perform_game_filter_toggle(self):
-        """Выполняет фактическое переключение Game Filter"""
+    def _restart_zapret_thread(self):
+        """Поток для перезапуска службы"""
         try:
-            # Получаем текущее состояние
-            was_enabled = self.is_game_filter_enabled()
+            # Запускаем перезапуск службы
+            success, message = self.service_manager.restart_service()
 
-            if was_enabled:
-                # Удаляем файл (выключаем)
-                os.remove(self.game_filter_file)
-                new_icon = "🎮🔴"
-                status_message = "Game Filter выключен"
-                print("🎮🟢 Game Filter выключен")
+            if success:
+                self.root.after(0, lambda: self.show_status_message(
+                    "Служба Zapret успешно перезапущена", success=True))
             else:
-                # Создаем файл (включаем)
-                # Сначала создаем директорию если не существует
-                directory = os.path.dirname(self.game_filter_file)
-                if directory and not os.path.exists(directory):
-                    os.makedirs(directory, exist_ok=True)
-
-                # Создаем файл
-                with open(self.game_filter_file, 'w') as f:
-                    pass  # Просто создаем пустой файл
-
-                new_icon = "🎮🟢"
-                status_message = "Game Filter включен"
-                print("🎮🟢 Game Filter включен")
-
-            # Меняем иконку
-            self.game_filter_icon.config(text=new_icon)
-
-            # Обновляем всплывающую подсказку
-            if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
-                self.hide_game_filter_tooltip()
-                self.show_game_filter_tooltip()
-
-            # Показываем сообщение о смене состояния
-            self.show_status_message(status_message, success=True)
-
-            # Перезапускаем службу zapret
-            self._restart_zapret_service(status_message)
+                self.root.after(0, lambda: self.show_status_message(
+                    f"Ошибка: {message}", error=True))
 
         except Exception as e:
-            error_msg = f"Ошибка переключения Game Filter: {e}"
-            print(f"❌ {error_msg}")
-            self.show_status_message(error_msg, error=True)
+            self.root.after(0, lambda: self.show_status_message(
+                f"Ошибка перезапуска службы: {e}", error=True))
+        finally:
+            # Восстанавливаем UI
+            self.root.after(0, lambda: self.restart_icon.config(state=tk.NORMAL))
+            self.restarting = False
 
-    def _restart_zapret_service(self, status_message):
-        """Перезапускает службу zapret после изменения Game Filter"""
-        # Блокируем UI
-        self.game_filter_icon.config(state=tk.DISABLED)
+            # Обновляем статус службы через 1 секунду
+            self.root.after(1000, self.check_service_status)
 
-        # Показываем анимацию загрузки
-        loading_icon = "🎮⚪"
-        self.game_filter_icon.config(text=loading_icon)
-        self.show_status_message(f"{status_message}, перезапуск службы...")
-        self.root.update()
+    # def get_game_filter_icon(self):
+    #     """Получает иконку Game Filter"""
+    #     return "🎮🟢" if self.is_game_filter_enabled() else "🎮🔴"
+    #
+    # def is_game_filter_enabled(self):
+    #     """Проверяет, включен ли Game Filter"""
+    #     return os.path.exists(self.game_filter_file)
+    #
+    # def show_game_filter_tooltip(self, event=None):
+    #     """Показывает всплывающее окошко со статусом Game Filter"""
+    #     # Не показываем если уже есть
+    #     if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+    #         return
+    #
+    #     # Определяем текст в зависимости от состояния
+    #     if self.is_game_filter_enabled():
+    #         status_text = "GameFilter включен\nНажмите для выключения"
+    #     else:
+    #         status_text = "GameFilter выключен\nНажмите для включения"
+    #
+    #     # Позиционируем подсказку рядом с иконкой
+    #     x = self.game_filter_icon.winfo_rootx() - 20
+    #     y = self.game_filter_icon.winfo_rooty() + self.game_filter_icon.winfo_height() + 5
+    #
+    #     # Создаем всплывающее окно
+    #     self.game_filter_tooltip = tk.Toplevel(self.root)
+    #     self.game_filter_tooltip.wm_overrideredirect(True)
+    #     self.game_filter_tooltip.geometry(f"+{x}+{y}")
+    #     self.game_filter_tooltip.configure(bg='#15354D', relief=tk.SOLID, bd=1)
+    #
+    #     # Добавляем текст
+    #     label = tk.Label(self.game_filter_tooltip,
+    #                     text=status_text,
+    #                     font=("Arial", 10),
+    #                     fg='white',
+    #                     bg='#15354D',
+    #                     padx=10,
+    #                     pady=5,
+    #                     justify=tk.LEFT)
+    #     label.pack()
+    #
+    # def hide_game_filter_tooltip(self, event=None):
+    #     """Скрывает всплывающее окошко Game Filter"""
+    #     if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+    #         self.game_filter_tooltip.destroy()
+    #         self.game_filter_tooltip = None
+    #
+    # def toggle_game_filter(self, event=None):
+    #     """Переключает Game Filter при клике на иконку"""
+    #     # Используем асинхронный подход через after с небольшой задержкой
+    #     self.root.after(100, self._toggle_game_filter_async)
+    #
+    # def _toggle_game_filter_async(self):
+    #     """Асинхронное переключение Game Filter"""
+    #     try:
+    #         # Проверяем пароль sudo через стандартный метод
+    #         if not self.ensure_sudo_password():
+    #             return
+    #
+    #         # Теперь выполняем переключение Game Filter
+    #         self._perform_game_filter_toggle()
+    #
+    #     except Exception as e:
+    #         error_msg = f"Ошибка переключения Game Filter: {e}"
+    #         print(f"❌ {error_msg}")
+    #         self.show_status_message(error_msg, error=True)
+    #
+    # def _perform_game_filter_toggle(self):
+    #     """Выполняет фактическое переключение Game Filter"""
+    #     try:
+    #         # Получаем текущее состояние
+    #         was_enabled = self.is_game_filter_enabled()
+    #
+    #         if was_enabled:
+    #             # Удаляем файл (выключаем)
+    #             os.remove(self.game_filter_file)
+    #             new_icon = "🎮🔴"
+    #             status_message = "Game Filter выключен"
+    #             print("🎮🟢 Game Filter выключен")
+    #         else:
+    #             # Создаем файл (включаем)
+    #             # Сначала создаем директорию если не существует
+    #             directory = os.path.dirname(self.game_filter_file)
+    #             if directory and not os.path.exists(directory):
+    #                 os.makedirs(directory, exist_ok=True)
+    #
+    #             # Создаем файл
+    #             with open(self.game_filter_file, 'w') as f:
+    #                 pass  # Просто создаем пустой файл
+    #
+    #             new_icon = "🎮🟢"
+    #             status_message = "Game Filter включен"
+    #             print("🎮🟢 Game Filter включен")
+    #
+    #         # Меняем иконку
+    #         self.game_filter_icon.config(text=new_icon)
+    #
+    #         # Обновляем всплывающую подсказку
+    #         if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+    #             self.hide_game_filter_tooltip()
+    #             self.show_game_filter_tooltip()
+    #
+    #         # Показываем сообщение о смене состояния
+    #         self.show_status_message(status_message, success=True)
+    #
+    #         # Перезапускаем службу zapret
+    #         self._restart_zapret_service(status_message)
+    #
+    #     except Exception as e:
+    #         error_msg = f"Ошибка переключения Game Filter: {e}"
+    #         print(f"❌ {error_msg}")
+    #         self.show_status_message(error_msg, error=True)
 
-        def restart_service_thread():
-            try:
-                # Запускаем перезапуск службы
-                success, message = self.service_manager.restart_service()
-
-                if success:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, служба перезапущена", success=True))
-                else:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, но служба не перезапущена: {message}", warning=True))
-
-            except Exception as e:
-                self.root.after(0, lambda: self.show_status_message(
-                    f"Ошибка перезапуска службы: {e}", error=True))
-            finally:
-                # Восстанавливаем UI
-                self.root.after(0, lambda: self.game_filter_icon.config(
-                    text=self.get_game_filter_icon(), state=tk.NORMAL))
-
-                # Обновляем статус службы через 1 секунду
-                self.root.after(1000, self.check_service_status)
-
-        # Запускаем в отдельном потоке
-        thread = threading.Thread(target=restart_service_thread, daemon=True)
-        thread.start()
+#     def _restart_zapret_service(self, status_message):
+#         """Перезапускает службу zapret после изменения Game Filter"""
+#         # Блокируем UI
+#         self.game_filter_icon.config(state=tk.DISABLED)
+#
+#         # Показываем анимацию загрузки
+#         loading_icon = "🎮⚪"
+#         self.game_filter_icon.config(text=loading_icon)
+#         self.show_status_message(f"{status_message}, перезапуск службы...")
+#         self.root.update()
+#
+#         def restart_service_thread():
+#             try:
+#                 # Запускаем перезапуск службы
+#                 success, message = self.service_manager.restart_service()
+#
+#                 if success:
+#                     self.root.after(0, lambda: self.show_status_message(
+#                         f"{status_message}, служба перезапущена", success=True))
+#                 else:
+#                     self.root.after(0, lambda: self.show_status_message(
+#                         f"{status_message}, но служба не перезапущена: {message}", warning=True))
+#
+#             except Exception as e:
+#                 self.root.after(0, lambda: self.show_status_message(
+#                     f"Ошибка перезапуска службы: {e}", error=True))
+#             finally:
+#                 # Восстанавливаем UI
+#                 self.root.after(0, lambda: self.game_filter_icon.config(
+#                     text=self.get_game_filter_icon(), state=tk.NORMAL))
+#
+#                 # Обновляем статус службы через 1 секунду
+#                 self.root.after(1000, self.check_service_status)
+#
+#         # Запускаем в отдельном потоке
+#         thread = threading.Thread(target=restart_service_thread, daemon=True)
+#         thread.start()
 
     def open_settings_menu(self):
         """Открывает меню настроек"""
@@ -1204,22 +1275,62 @@ class MainWindow:
             return False
 
         if not self.service_manager.sudo_password:
+            # Убедимся, что окно действительно видимо
+            self.root.update_idletasks()
+
+            # Проверяем видимость окна
+            if not self.root.winfo_viewable():
+                self.root.deiconify()  # Делаем окно видимым
+                self.root.update_idletasks()
+
+            # Даем время на отрисовку
+            import time
+            time.sleep(0.05)
+            self.root.update()
+
             # Показываем окно ввода пароля
             if SudoPasswordWindow:
-                password_window = SudoPasswordWindow(
-                    self.root,
-                    on_password_valid=lambda pwd: self.service_manager.set_sudo_password(pwd)
-                )
-                password = password_window.run()
+                try:
+                    password_window = SudoPasswordWindow(
+                        self.root,
+                        on_password_valid=lambda pwd: self.service_manager.set_sudo_password(pwd)
+                    )
+                    password = password_window.run()
 
-                if not password:
-                    self.show_status_message("Требуется пароль sudo", warning=True)
-                    return False
+                    if not password:
+                        self.show_status_message("Требуется пароль sudo", warning=True)
+                        return False
+                except tk.TclError as e:
+                    if "grab failed" in str(e):
+                        # Если все еще ошибка grab, пробуем без grab
+                        print("Ошибка grab, пробуем альтернативный метод...")
+                        return self._ask_password_simple()
+                    else:
+                        raise e
             else:
                 self.show_status_message("Модуль запроса пароля не найден", error=True)
                 return False
 
         return True
+
+    def _ask_password_simple(self):
+        """Альтернативный метод запроса пароля без сложных окон"""
+        import tkinter.simpledialog as simpledialog
+
+        # Прямой запрос пароля через simpledialog
+        password = simpledialog.askstring(
+            "Требуется пароль sudo",
+            "Введите пароль sudo для перезапуска службы:",
+            parent=self.root,
+            show='*'
+        )
+
+        if password:
+            self.service_manager.set_sudo_password(password)
+            return True
+        else:
+            self.show_status_message("Требуется пароль sudo", warning=True)
+            return False
 
     def check_service_status(self):
         """Проверяет статус службы Zapret"""
