@@ -34,17 +34,17 @@ echo "Using temp directory: $TEMP_DIR"
 echo "Copying files to temp directory..."
 cp -f "/home/deck/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null || true
 cp -f "/home/deck/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
-
-# ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
-GAME_FILTER_VALUE="12"  # значение по умолчанию
-GAME_FILTER_FILE="/home/deck/Zapret_DPI_Manager/utils/gamefilter.enable"
-
-if [ -f "$GAME_FILTER_FILE" ]; then
-    echo "Game filter enabled file found. Using game ports range."
-    GAME_FILTER_VALUE="27000-27100,3478,4379,4380,50101-60000"
-else
-    echo "Game filter enabled file not found. Using default value 12."
-fi
+#
+# # ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
+# GAME_FILTER_VALUE="12"  # значение по умолчанию
+# GAME_FILTER_FILE="/home/deck/Zapret_DPI_Manager/utils/gamefilter.enable"
+#
+# if [ -f "$GAME_FILTER_FILE" ]; then
+#     echo "Game filter enabled file found. Using game ports range."
+#     GAME_FILTER_VALUE="27000-27100,3478,4379,4380,50101-60000"
+# else
+#     echo "Game filter enabled file not found. Using default value 12."
+# fi
 
 # ДАЕМ ПРАВА НА ЧТЕНИЕ
 chmod -R a+r "$TEMP_DIR"
@@ -65,9 +65,9 @@ while IFS= read -r line; do
     line="${line//\{tlsgoogle\}/$TEMP_DIR/tls_clienthello_www_google_com.bin}"
     line="${line//\{tls4pda\}/$TEMP_DIR/tls_clienthello_4pda_to.bin}"
     line="${line//\{tlsmax\}/$TEMP_DIR/tls_clienthello_max_ru.bin}"
-
-    # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ НАЛИЧИЯ ФАЙЛА
-    line="${line//\{GameFilter\}/$GAME_FILTER_VALUE}"
+#
+#     # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ НАЛИЧИЯ ФАЙЛА
+#     line="${line//\{GameFilter\}/$GAME_FILTER_VALUE}"
 
     # УДАЛЯЕМ --wf-* ОПЦИИ
     line="$(echo "$line" | sed -E 's/--wf-(tcp|udp)=[^ ]+//g')"
