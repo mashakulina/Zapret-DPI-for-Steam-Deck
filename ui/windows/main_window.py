@@ -610,12 +610,23 @@ class MainWindow:
         self.status_indicator.bind("<Leave>", self.hide_status_tooltip)
 
         # Иконка перезапуска службы
-        self.restart_icon = tk.Label(left_status_frame, text="↻", font=("Arial", 20),
-                                    fg='#0a84ff', bg='#182030', cursor='hand2')
-        self.restart_icon.pack(side=tk.LEFT, padx=(10, 0))
+        self.restart_icon = tk.Button(
+            left_status_frame,
+            text="↻",
+            font=("Arial",20),
+            fg='#0a84ff',
+            bg='#182030',
+            bd=0,
+            activebackground='#182030',
+            activeforeground='#0a84ff',
+            cursor='hand2',
+            highlightthickness=0,
+            relief=tk.FLAT
+        )
+        self.restart_icon.pack(side=tk.LEFT, padx=(0, 0))
         self.restart_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Перезапустить службу"))
         self.restart_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
-        self.restart_icon.bind("<Button-1>", self.restart_zapret_service)
+        self.restart_icon.bind("<Button-1>", self.restart_zapret_service_properly)
 
         # ПРАВАЯ СТОРОНА - Иконки настроек
         icons_frame = tk.Frame(top_row_frame, bg='#182030')
@@ -901,12 +912,16 @@ class MainWindow:
                 pass
             self.status_tooltip = None
 
-    def restart_zapret_service(self, event=None):
-        """Запускает перезапуск службы Zapret"""
+    def restart_zapret_service_properly(self, event=None):
+        """Правильный перезапуск службы - использует тот же механизм что и другие кнопки"""
         if self.restarting:
             return
 
-        # Просто запускаем перезапуск без задержек - как в кнопке запуска
+        # 1. Проверяем пароль ЧЕРЕЗ ensure_sudo_password (как другие кнопки)
+        if not self.ensure_sudo_password():
+            return  # Если пароль не получен - выходим
+
+        # 2. Запускаем перезапуск
         self._perform_restart()
 
     def _perform_restart(self):
@@ -922,12 +937,6 @@ class MainWindow:
             # Обновляем окно чтобы оно было видимым
             self.root.update_idletasks()
             self.root.update()
-
-            # Проверяем пароль (как в toggle_zapret)
-            if not self.ensure_sudo_password():
-                self.restarting = False
-                self.restart_icon.config(state=tk.NORMAL)
-                return
 
             # Запускаем в отдельном потоке
             thread = threading.Thread(target=self._restart_zapret_thread, daemon=True)
@@ -1284,53 +1293,25 @@ class MainWindow:
                 self.root.update_idletasks()
 
             # Даем время на отрисовку
-            import time
-            time.sleep(0.05)
             self.root.update()
 
-            # Показываем окно ввода пароля
-            if SudoPasswordWindow:
-                try:
-                    password_window = SudoPasswordWindow(
-                        self.root,
-                        on_password_valid=lambda pwd: self.service_manager.set_sudo_password(pwd)
-                    )
-                    password = password_window.run()
+            # Маленькая задержка чтобы окно стало видимым
+            import time
+            time.sleep(0.1)
 
-                    if not password:
-                        self.show_status_message("Требуется пароль sudo", warning=True)
-                        return False
-                except tk.TclError as e:
-                    if "grab failed" in str(e):
-                        # Если все еще ошибка grab, пробуем без grab
-                        print("Ошибка grab, пробуем альтернативный метод...")
-                        return self._ask_password_simple()
-                    else:
-                        raise e
-            else:
-                self.show_status_message("Модуль запроса пароля не найден", error=True)
+            # Показываем окно ввода пароля
+            password_window = SudoPasswordWindow(
+                self.root,
+                on_password_valid=lambda pwd: self.service_manager.set_sudo_password(pwd)
+            )
+            password = password_window.run()
+
+            if not password:
+                self.show_status_message("Требуется пароль sudo", warning=True)
                 return False
 
         return True
 
-    def _ask_password_simple(self):
-        """Альтернативный метод запроса пароля без сложных окон"""
-        import tkinter.simpledialog as simpledialog
-
-        # Прямой запрос пароля через simpledialog
-        password = simpledialog.askstring(
-            "Требуется пароль sudo",
-            "Введите пароль sudo для перезапуска службы:",
-            parent=self.root,
-            show='*'
-        )
-
-        if password:
-            self.service_manager.set_sudo_password(password)
-            return True
-        else:
-            self.show_status_message("Требуется пароль sudo", warning=True)
-            return False
 
     def check_service_status(self):
         """Проверяет статус службы Zapret"""
