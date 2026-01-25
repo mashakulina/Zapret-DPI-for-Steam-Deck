@@ -45,4 +45,9 @@ betterttv.net
 7tv.app
 7tv.io
 cdn2.steamgriddb.com
-
+deckthemes.com
+api.cssloader.app
+cssloader.app
+backend.cssloader.app
+plugins.deckbrew.xyz/plugins
+ndp.ngni.us/plugins
