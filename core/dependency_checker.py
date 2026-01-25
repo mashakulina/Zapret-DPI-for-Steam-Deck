@@ -14,7 +14,7 @@ from tkinter import messagebox
 class DependencyChecker:
     def __init__(self, root_window=None):
         self.root = root_window
-        self.dependencies = ['curl', 'ipset', 'iptables']
+        self.dependencies = ['curl', 'nft', 'iptables']
         self.sudo_password = None
         self.progress_window = None
         self.current_task = ""
@@ -315,150 +315,150 @@ class DependencyChecker:
         self.log_debug("Проверка блокировочных файлов завершена")
         return True  # Всегда возвращаем True, так как это предварительная очистка
 
-    def download_ipset_from_github(self):
-        """Скачивает пакет ipset из GitHub репозитория с помощью curl"""
-        self.current_task = "download"
-        self.log_debug("Скачивание пакета ipset из GitHub с помощью curl...")
-
-        github_url = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/raw/main/ipset-7.23-1-x86_64.pkg.tar.zst"
-        temp_dir = tempfile.mkdtemp(prefix="ipset_install_")
-        local_file = os.path.join(temp_dir, "ipset-7.23-1-x86_64.pkg.tar.zst")
-
-        try:
-            if self.progress_window:
-                self.update_progress("Скачивание ipset из GitHub...", 70)
-
-            self.log_debug(f"Создана временная папка: {temp_dir}")
-            self.log_debug(f"Скачивание из: {github_url}")
-            self.log_debug(f"Сохранение в: {local_file}")
-
-            # Скачиваем файл с помощью curl
-            self.log_debug("Запуск curl для скачивания...")
-
-            # Используем curl с параметрами:
-            # -L: следовать редиректам
-            # -o: указать файл для сохранения
-            # --connect-timeout: таймаут соединения 30 секунд
-            # --max-time: максимальное время скачивания 300 секунд
-            curl_command = [
-                'curl', '-L',
-                '--connect-timeout', '30',
-                '--max-time', '300',
-                '-o', local_file,
-                github_url
-            ]
-
-            self.log_debug(f"Команда curl: {' '.join(curl_command)}")
-
-            result = subprocess.run(
-                curl_command,
-                capture_output=True,
-                text=True,
-                timeout=330  # Общий таймаут чуть больше max-time
-            )
-
-            if result.returncode == 0:
-                # Проверяем скачанный файл
-                if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
-                    file_size = os.path.getsize(local_file)
-                    self.log_debug(f"Файл успешно скачан: {local_file} (размер: {file_size} байт)")
-                    return local_file
-                else:
-                    self.log_debug("Файл создан, но пуст или не существует")
-                    return None
-            else:
-                self.log_debug(f"Ошибка curl: код={result.returncode}")
-                self.log_debug(f"stderr: {result.stderr}")
-                self.log_debug(f"stdout: {result.stdout}")
-                return None
-
-        except subprocess.TimeoutExpired:
-            self.log_debug("Таймаут при скачивании через curl")
-            return None
-        except Exception as e:
-            self.log_debug(f"Неожиданная ошибка при скачивании через curl: {e}")
-            return None
-        finally:
-            # Удаляем временную папку если файл не скачан
-            if 'local_file' in locals() and (not os.path.exists(local_file) or os.path.getsize(local_file) == 0):
-                if os.path.exists(temp_dir):
-                    try:
-                        shutil.rmtree(temp_dir)
-                        self.log_debug(f"Временная папка удалена: {temp_dir}")
-                    except:
-                        pass
-
-    def install_ipset_from_local(self, package_path):
-        """Устанавливает ipset из локального файла пакета"""
-        self.current_task = "local_install"
-        self.log_debug(f"Установка ipset из локального файла: {package_path}")
-
-        if not package_path or not os.path.exists(package_path):
-            self.log_debug(f"Файл пакета не найден: {package_path}")
-            return False
-
-        try:
-            if self.progress_window:
-                self.update_progress("Установка ipset из локального файла...", 80)
-
-            # Устанавливаем пакет из локального файла
-            result = self.run_with_sudo(
-                ['pacman', '-U', '--noconfirm', package_path],
-                "Установка ipset из локального файла..."
-            )
-
-            if not result:
-                self.log_debug("Нет результата от установки из локального файла")
-                return False
-
-            if result['returncode'] == 0:
-                self.log_debug("ipset успешно установлен из локального файла")
-                return True
-            else:
-                self.log_debug(f"Ошибка установки из локального файла: код={result['returncode']}, ошибка={result['stderr']}")
-                return False
-
-        except Exception as e:
-            self.log_debug(f"Исключение при установке из локального файла: {e}")
-            return False
-        finally:
-            # Удаляем временный файл после установки
-            temp_dir = os.path.dirname(package_path)
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-                self.log_debug(f"Временная папка удалена: {temp_dir}")
-
-    def is_timeout_error(self, stderr):
-        """Проверяет, является ли ошибка ошибкой таймаута"""
-        timeout_indicators = [
-            "Operation too slow",
-            "Less than 1 bytes/sec",
-            "не удалось получить некоторые файлы",
-            "ошибка в библиотеке загрузки"
-        ]
-
-        stderr_lower = stderr.lower()
-        for indicator in timeout_indicators:
-            if indicator.lower() in stderr_lower:
-                self.log_debug(f"Обнаружена ошибка таймаута: {indicator}")
-                return True
-        return False
-
-    def is_dblock_error(self, stderr):
-        """Проверяет, связана ли ошибка с блокировкой базы данных"""
-        dblock_indicators = [
-            "could not lock database",
-            "failed to lock database",
-            "db.lck",
-            "блокировка базы данных"
-        ]
-
-        stderr_lower = stderr.lower()
-        for indicator in dblock_indicators:
-            if indicator in stderr_lower:
-                self.log_debug(f"Обнаружена ошибка блокировки БД: {indicator}")
-                return True
-        return False
+    # def download_ipset_from_github(self):
+    #     """Скачивает пакет ipset из GitHub репозитория с помощью curl"""
+    #     self.current_task = "download"
+    #     self.log_debug("Скачивание пакета ipset из GitHub с помощью curl...")
+    #
+    #     github_url = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/raw/main/ipset-7.23-1-x86_64.pkg.tar.zst"
+    #     temp_dir = tempfile.mkdtemp(prefix="ipset_install_")
+    #     local_file = os.path.join(temp_dir, "ipset-7.23-1-x86_64.pkg.tar.zst")
+    #
+    #     try:
+    #         if self.progress_window:
+    #             self.update_progress("Скачивание ipset из GitHub...", 70)
+    #
+    #         self.log_debug(f"Создана временная папка: {temp_dir}")
+    #         self.log_debug(f"Скачивание из: {github_url}")
+    #         self.log_debug(f"Сохранение в: {local_file}")
+    #
+    #         # Скачиваем файл с помощью curl
+    #         self.log_debug("Запуск curl для скачивания...")
+    #
+    #         # Используем curl с параметрами:
+    #         # -L: следовать редиректам
+    #         # -o: указать файл для сохранения
+    #         # --connect-timeout: таймаут соединения 30 секунд
+    #         # --max-time: максимальное время скачивания 300 секунд
+    #         curl_command = [
+    #             'curl', '-L',
+    #             '--connect-timeout', '30',
+    #             '--max-time', '300',
+    #             '-o', local_file,
+    #             github_url
+    #         ]
+    #
+    #         self.log_debug(f"Команда curl: {' '.join(curl_command)}")
+    #
+    #         result = subprocess.run(
+    #             curl_command,
+    #             capture_output=True,
+    #             text=True,
+    #             timeout=330  # Общий таймаут чуть больше max-time
+    #         )
+    #
+    #         if result.returncode == 0:
+    #             # Проверяем скачанный файл
+    #             if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
+    #                 file_size = os.path.getsize(local_file)
+    #                 self.log_debug(f"Файл успешно скачан: {local_file} (размер: {file_size} байт)")
+    #                 return local_file
+    #             else:
+    #                 self.log_debug("Файл создан, но пуст или не существует")
+    #                 return None
+    #         else:
+    #             self.log_debug(f"Ошибка curl: код={result.returncode}")
+    #             self.log_debug(f"stderr: {result.stderr}")
+    #             self.log_debug(f"stdout: {result.stdout}")
+    #             return None
+    #
+    #     except subprocess.TimeoutExpired:
+    #         self.log_debug("Таймаут при скачивании через curl")
+    #         return None
+    #     except Exception as e:
+    #         self.log_debug(f"Неожиданная ошибка при скачивании через curl: {e}")
+    #         return None
+    #     finally:
+    #         # Удаляем временную папку если файл не скачан
+    #         if 'local_file' in locals() and (not os.path.exists(local_file) or os.path.getsize(local_file) == 0):
+    #             if os.path.exists(temp_dir):
+    #                 try:
+    #                     shutil.rmtree(temp_dir)
+    #                     self.log_debug(f"Временная папка удалена: {temp_dir}")
+    #                 except:
+    #                     pass
+    #
+    # def install_ipset_from_local(self, package_path):
+    #     """Устанавливает ipset из локального файла пакета"""
+    #     self.current_task = "local_install"
+    #     self.log_debug(f"Установка ipset из локального файла: {package_path}")
+    #
+    #     if not package_path or not os.path.exists(package_path):
+    #         self.log_debug(f"Файл пакета не найден: {package_path}")
+    #         return False
+    #
+    #     try:
+    #         if self.progress_window:
+    #             self.update_progress("Установка ipset из локального файла...", 80)
+    #
+    #         # Устанавливаем пакет из локального файла
+    #         result = self.run_with_sudo(
+    #             ['pacman', '-U', '--noconfirm', package_path],
+    #             "Установка ipset из локального файла..."
+    #         )
+    #
+    #         if not result:
+    #             self.log_debug("Нет результата от установки из локального файла")
+    #             return False
+    #
+    #         if result['returncode'] == 0:
+    #             self.log_debug("ipset успешно установлен из локального файла")
+    #             return True
+    #         else:
+    #             self.log_debug(f"Ошибка установки из локального файла: код={result['returncode']}, ошибка={result['stderr']}")
+    #             return False
+    #
+    #     except Exception as e:
+    #         self.log_debug(f"Исключение при установке из локального файла: {e}")
+    #         return False
+    #     finally:
+    #         # Удаляем временный файл после установки
+    #         temp_dir = os.path.dirname(package_path)
+    #         if os.path.exists(temp_dir):
+    #             shutil.rmtree(temp_dir)
+    #             self.log_debug(f"Временная папка удалена: {temp_dir}")
+    #
+    # def is_timeout_error(self, stderr):
+    #     """Проверяет, является ли ошибка ошибкой таймаута"""
+    #     timeout_indicators = [
+    #         "Operation too slow",
+    #         "Less than 1 bytes/sec",
+    #         "не удалось получить некоторые файлы",
+    #         "ошибка в библиотеке загрузки"
+    #     ]
+    #
+    #     stderr_lower = stderr.lower()
+    #     for indicator in timeout_indicators:
+    #         if indicator.lower() in stderr_lower:
+    #             self.log_debug(f"Обнаружена ошибка таймаута: {indicator}")
+    #             return True
+    #     return False
+    #
+    # def is_dblock_error(self, stderr):
+    #     """Проверяет, связана ли ошибка с блокировкой базы данных"""
+    #     dblock_indicators = [
+    #         "could not lock database",
+    #         "failed to lock database",
+    #         "db.lck",
+    #         "блокировка базы данных"
+    #     ]
+    #
+    #     stderr_lower = stderr.lower()
+    #     for indicator in dblock_indicators:
+    #         if indicator in stderr_lower:
+    #             self.log_debug(f"Обнаружена ошибка блокировки БД: {indicator}")
+    #             return True
+    #     return False
 
     def install_dependency_with_fallback(self, package_name, dep_num, total_deps):
         """Устанавливает зависимость с fallback на локальный файл для ipset"""
