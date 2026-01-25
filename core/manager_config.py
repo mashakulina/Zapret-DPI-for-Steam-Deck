@@ -17,5 +17,5 @@ ZAPRET_CONFIG = {
     # URL файла с версией zapret
     "version_url": f"{GITHUB_RAW_URL}/zapret_version.txt",
     # Текущая версия zapret
-    "current_version": "2.5"
+    "current_version": "2.6"
 }

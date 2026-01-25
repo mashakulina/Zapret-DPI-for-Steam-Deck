@@ -93,8 +93,21 @@ elif [ "$FWTYPE" = "nftables" ]; then
     UDP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | grep '^--filter-udp=' | sed 's/--filter-udp=//' | paste -sd, | sed 's/:/-/g')
 fi
 
-echo "Configuring iptables for TCP ports: $TCP_PORTS"
-echo "Configuring iptables for UDP ports: $UDP_PORTS"
+# Удаляем дубликаты портов
+TCP_PORTS=$(echo "$TCP_PORTS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+UDP_PORTS=$(echo "$UDP_PORTS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+
+# Преобразуем диапазоны обратно в нужный формат
+if [ "$FWTYPE" = "iptables" ]; then
+    TCP_PORTS=$(echo "$TCP_PORTS" | sed 's/-/:/g')
+    UDP_PORTS=$(echo "$UDP_PORTS" | sed 's/-/:/g')
+elif [ "$FWTYPE" = "nftables" ]; then
+    TCP_PORTS=$(echo "$TCP_PORTS" | sed 's/:/-/g')
+    UDP_PORTS=$(echo "$UDP_PORTS" | sed 's/:/-/g')
+fi
+
+echo "Configuring $FWTYPE for TCP ports: $TCP_PORTS"
+echo "Configuring $FWTYPE for UDP ports: $UDP_PORTS"
 
 if [ "$FWTYPE" = "iptables" ]; then
     iptables -t mangle -F PREROUTING
@@ -109,50 +122,72 @@ elif [ "$FWTYPE" = "nftables" ]; then
 fi
 
 if [ "$FWTYPE" = "iptables" ]; then
+    add_ipt_rule() {
+        local chain=$1
+        local iface_arg=$2
+        local iface_list=$3
+        local proto=$4
+        local ports=$5
+        local qnum=$6
+        local extra_flags=$7
+
+        if [ -z "$iface_list" ]; then
+             iptables -t mangle -I "$chain" -p "$proto" -m multiport --dports "$ports" \
+                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+             iptables -t mangle -I "$chain" -p "$proto" -m multiport --sports "$ports" \
+                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+             ip6tables -t mangle -I "$chain" -p "$proto" -m multiport --dports "$ports" \
+                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+             ip6tables -t mangle -I "$chain" -p "$proto" -m multiport --sports "$ports" \
+                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+        else
+            for iface in $iface_list; do
+                iptables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --dports "$ports" \
+                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+                iptables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --sports "$ports" \
+                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+                ip6tables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --dports "$ports" \
+                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+                ip6tables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --sports "$ports" \
+                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
+            done
+        fi
+    }
+
     if [ -n "$TCP_PORTS" ]; then
-        iptables -t mangle -I POSTROUTING -p tcp -m multiport --dports "$TCP_PORTS" \
-            -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        iptables -t mangle -I PREROUTING -p tcp -m multiport --sports "$TCP_PORTS" \
-            -m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        ip6tables -t mangle -I POSTROUTING -p tcp -m multiport --dports "$TCP_PORTS" \
-            -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        ip6tables -t mangle -I PREROUTING -p tcp -m multiport --sports "$TCP_PORTS" \
-            -m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
+        add_ipt_rule "POSTROUTING" "-o" "$IFACE_WAN" "tcp" "$TCP_PORTS" "200" "-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12"
+    fi
+    if [ -n "$UDP_PORTS" ]; then
+        add_ipt_rule "POSTROUTING" "-o" "$IFACE_WAN" "udp" "$UDP_PORTS" "200" "-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12"
     fi
 
-    if [ -n "$UDP_PORTS" ]; then
-        iptables -t mangle -I POSTROUTING -p udp -m multiport --dports "$UDP_PORTS" \
-            -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        iptables -t mangle -I PREROUTING -p udp -m multiport --sports "$UDP_PORTS" \
-            -m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        ip6tables -t mangle -I POSTROUTING -p udp -m multiport --dports "$UDP_PORTS" \
-            -m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
-        ip6tables -t mangle -I PREROUTING -p udp -m multiport --sports "$UDP_PORTS" \
-            -m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6 \
-            -j NFQUEUE --queue-num 200 --queue-bypass
+    if [ -n "$TCP_PORTS" ]; then
+        add_ipt_rule "PREROUTING" "-i" "$IFACE_LAN" "tcp" "$TCP_PORTS" "200" "-m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6"
     fi
+    if [ -n "$UDP_PORTS" ]; then
+        add_ipt_rule "PREROUTING" "-i" "$IFACE_LAN" "udp" "$UDP_PORTS" "200" "-m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6"
+    fi
+
 elif [ "$FWTYPE" = "nftables" ]; then
+
     if [ -n "$TCP_PORTS" ]; then
         nft add rule inet zapret postrouting tcp dport { $TCP_PORTS } ct original packets 1-12 queue num 200 bypass
         nft add rule inet zapret prerouting tcp sport { $TCP_PORTS } ct reply packets 1-6 queue num 200 bypass
     fi
 
     if [ -n "$UDP_PORTS" ]; then
-        nft add rule inet zapret postrouting udp dport { $TCP_PORTS } ct original packets 1-12 queue num 200 bypass
-        nft add rule inet zapret prerouting udp sport { $TCP_PORTS } ct reply packets 1-6 queue num 200 bypass
+        nft add rule inet zapret postrouting udp dport { $UDP_PORTS } ct original packets 1-12 queue num 200 bypass
+        nft add rule inet zapret prerouting udp sport { $UDP_PORTS } ct reply packets 1-6 queue num 200 bypass
     fi
 fi
 
 # ЗАПУСКАЕМ NFQWS С ВРЕМЕННЫМИ ФАЙЛАМИ
 echo "Starting nfqws with temp files..."
-/opt/zapret/nfqws --qnum=200 --uid=0:0 $ARGS &
+if [ "$1" = "--foreground" ]; then
+    /opt/zapret/nfqws --qnum=200 --uid=0:0 $ARGS
+else
+    /opt/zapret/nfqws --qnum=200 --uid=0:0 $ARGS &
+fi
 NFQWS_PID=$!
 
 # ПРОВЕРЯЕМ ЗАПУСК
