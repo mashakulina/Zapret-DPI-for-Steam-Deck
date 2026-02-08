@@ -308,11 +308,15 @@ class ZapretUpdater(BaseUpdater):
                 print("Файл manager_config.py не найден в архиве")
                 return
 
-            # Целевой путь
-            target_path = "/home/deck/Zapret_DPI_Manager/core/manager_config.py"
+            # Определяем домашнюю директорию текущего пользователя
+            home_dir = os.path.expanduser("~")
+
+            # Формируем путь к менеджеру (предполагаем, что он в Zapret_DPI_Manager в домашней директории)
+            target_dir = os.path.join(home_dir, "Zapret_DPI_Manager", "core")
+            target_path = os.path.join(target_dir, "manager_config.py")
 
             # Копируем файл
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            os.makedirs(target_dir, exist_ok=True)
             shutil.copy2(config_path, target_path)
 
             print(f"Файл конфигурации обновлен: {target_path}")
