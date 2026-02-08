@@ -5,6 +5,78 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Определяем пользователя, который установил Zapret DPI Manager
+DETECTED_USER=""
+CURRENT_HOME=""
+
+# Способ 1: Используем SUDO_USER (если скрипт запущен через sudo)
+if [ -n "$SUDO_USER" ]; then
+    DETECTED_USER="$SUDO_USER"
+    CURRENT_HOME=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+fi
+
+# Способ 2: Проверяем наличие конфигурации у текущего пользователя сессии
+if [ -z "$DETECTED_USER" ] || [ ! -f "$CURRENT_HOME/Zapret_DPI_Manager/config.txt" ]; then
+    # Пробуем определить реального пользователя
+    REAL_USER=$(logname 2>/dev/null || echo "")
+    if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+        home=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
+        if [ -n "$home" ] && [ -f "$home/Zapret_DPI_Manager/config.txt" ]; then
+            DETECTED_USER="$REAL_USER"
+            CURRENT_HOME="$home"
+        fi
+    fi
+fi
+
+# Способ 3: Ищем любого пользователя с установленной программой
+if [ -z "$DETECTED_USER" ] || [ ! -f "$CURRENT_HOME/Zapret_DPI_Manager/config.txt" ]; then
+    # Ищем пользователей с домашней директорией, где есть config.txt
+    while IFS=: read -r username _ uid _ _ home _; do
+        # Пропускаем системных пользователей
+        if [ "$uid" -ge 1000 ] || [ "$username" = "deck" ]; then
+            if [ -n "$home" ] && [ -f "$home/Zapret_DPI_Manager/config.txt" ]; then
+                DETECTED_USER="$username"
+                CURRENT_HOME="$home"
+                echo "Found Zapret installation for user: $username"
+                break
+            fi
+        fi
+    done < /etc/passwd
+fi
+
+# Способ 4: Используем первого не-root пользователя с home директорией
+if [ -z "$DETECTED_USER" ] || [ ! -f "$CURRENT_HOME/Zapret_DPI_Manager/config.txt" ]; then
+    # Находим первого не-root пользователя
+    while IFS=: read -r username _ uid _ _ home _; do
+        if [ "$uid" -ge 1000 ] && [ "$username" != "nobody" ] && [ -n "$home" ]; then
+            DETECTED_USER="$username"
+            CURRENT_HOME="$home"
+            echo "Using user: $username (first non-root user found)"
+            break
+        fi
+    done < /etc/passwd
+fi
+
+# Проверяем, что нашли пользователя
+if [ -z "$DETECTED_USER" ] || [ -z "$CURRENT_HOME" ]; then
+    echo "Error: Cannot determine user for Zapret DPI Manager"
+    echo "Please ensure the program is installed for a non-root user"
+    exit 1
+fi
+
+# Проверяем наличие конфигурационного файла
+CONFIG_FILE="$CURRENT_HOME/Zapret_DPI_Manager/config.txt"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Error: Config file not found at $CONFIG_FILE"
+    echo "Please ensure Zapret DPI Manager is properly installed"
+    echo "You can run the installer again or check the installation"
+    exit 1
+fi
+
+echo "Using Zapret DPI Manager installation for user: $DETECTED_USER"
+echo "Home directory: $CURRENT_HOME"
+echo "Config file: $CONFIG_FILE"
+
 if pidof "nfqws" > /dev/null; then
     echo "nfqws is already running."
     exit 0
@@ -32,12 +104,12 @@ echo "Using temp directory: $TEMP_DIR"
 
 # КОПИРУЕМ ВСЕ НЕОБХОДИМЫЕ ФАЙЛЫ
 echo "Copying files to temp directory..."
-cp -f "/home/deck/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null || true
-cp -f "/home/deck/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
+cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null || true
+cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
 #
 # # ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
 # GAME_FILTER_VALUE="12"  # значение по умолчанию
-# GAME_FILTER_FILE="/home/deck/Zapret_DPI_Manager/utils/gamefilter.enable"
+# GAME_FILTER_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.enable"
 #
 # if [ -f "$GAME_FILTER_FILE" ]; then
 #     echo "Game filter enabled file found. Using game ports range."
@@ -50,7 +122,14 @@ cp -f "/home/deck/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || tr
 chmod -R a+r "$TEMP_DIR"
 
 ARGS=""
-echo "Reading config from /home/deck/Zapret_DPI_Manager/config.txt"
+CONFIG_FILE="$CURRENT_HOME/Zapret_DPI_Manager/config.txt"
+echo "Reading config from $CONFIG_FILE"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Error: Config file not found at $CONFIG_FILE"
+    exit 1
+fi
+
 while IFS= read -r line; do
     # ЗАМЕНЯЕМ ПУТИ НА ВРЕМЕННЫЕ
     line="${line//\{list_general\}/$TEMP_DIR/list-general.txt}"
@@ -79,7 +158,7 @@ while IFS= read -r line; do
     if [ -n "$line" ]; then
         ARGS+=" $line"
     fi
-done < "/home/deck/Zapret_DPI_Manager/config.txt"
+done < "$CONFIG_FILE"
 
 echo "Final ARGS: $ARGS"
 
