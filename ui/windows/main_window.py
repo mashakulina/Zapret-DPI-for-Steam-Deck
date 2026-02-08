@@ -39,7 +39,8 @@ class MainWindow:
         self.service_manager = ServiceManager()
 
         # Путь к файлу gamefilter.enable
-        self.game_filter_file = "/home/deck/Zapret_DPI_Manager/utils/gamefilter.enable"
+        home_dir = os.path.expanduser("~")
+        self.game_filter_file = os.path.join(home_dir, "Zapret_DPI_Manager", "utils", "gamefilter.enable")
 
         self.setup_ui()
         # Сначала проверяем зависимости
@@ -632,16 +633,16 @@ class MainWindow:
         icons_frame = tk.Frame(top_row_frame, bg='#182030')
         icons_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # # Иконка Game Filter
-        # self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
-        # self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
-        #
-        # # Обработчик клика
-        # self.game_filter_icon.bind("<Button-1>", self.toggle_game_filter)
-        #
-        # # Всплывающая подсказка при наведении
-        # self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
-        # self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
+        # Иконка Game Filter
+        self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
+        self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Обработчик клика
+        self.game_filter_icon.bind("<Button-1>", self.toggle_game_filter)
+
+        # Всплывающая подсказка при наведении
+        self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
+        self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
 
         # Иконка настроек (шестеренка)
         self.settings_icon = tk.Label(icons_frame, text="⚙️", font=("Arial", 22),
@@ -972,156 +973,448 @@ class MainWindow:
             # Обновляем статус службы через 1 секунду
             self.root.after(1000, self.check_service_status)
 
-    # def get_game_filter_icon(self):
-    #     """Получает иконку Game Filter"""
-    #     return "🎮🟢" if self.is_game_filter_enabled() else "🎮🔴"
-    #
-    # def is_game_filter_enabled(self):
-    #     """Проверяет, включен ли Game Filter"""
-    #     return os.path.exists(self.game_filter_file)
-    #
-    # def show_game_filter_tooltip(self, event=None):
-    #     """Показывает всплывающее окошко со статусом Game Filter"""
-    #     # Не показываем если уже есть
-    #     if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
-    #         return
-    #
-    #     # Определяем текст в зависимости от состояния
-    #     if self.is_game_filter_enabled():
-    #         status_text = "GameFilter включен\nНажмите для выключения"
-    #     else:
-    #         status_text = "GameFilter выключен\nНажмите для включения"
-    #
-    #     # Позиционируем подсказку рядом с иконкой
-    #     x = self.game_filter_icon.winfo_rootx() - 20
-    #     y = self.game_filter_icon.winfo_rooty() + self.game_filter_icon.winfo_height() + 5
-    #
-    #     # Создаем всплывающее окно
-    #     self.game_filter_tooltip = tk.Toplevel(self.root)
-    #     self.game_filter_tooltip.wm_overrideredirect(True)
-    #     self.game_filter_tooltip.geometry(f"+{x}+{y}")
-    #     self.game_filter_tooltip.configure(bg='#15354D', relief=tk.SOLID, bd=1)
-    #
-    #     # Добавляем текст
-    #     label = tk.Label(self.game_filter_tooltip,
-    #                     text=status_text,
-    #                     font=("Arial", 10),
-    #                     fg='white',
-    #                     bg='#15354D',
-    #                     padx=10,
-    #                     pady=5,
-    #                     justify=tk.LEFT)
-    #     label.pack()
-    #
-    # def hide_game_filter_tooltip(self, event=None):
-    #     """Скрывает всплывающее окошко Game Filter"""
-    #     if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
-    #         self.game_filter_tooltip.destroy()
-    #         self.game_filter_tooltip = None
-    #
-    # def toggle_game_filter(self, event=None):
-    #     """Переключает Game Filter при клике на иконку"""
-    #     # Используем асинхронный подход через after с небольшой задержкой
-    #     self.root.after(100, self._toggle_game_filter_async)
-    #
-    # def _toggle_game_filter_async(self):
-    #     """Асинхронное переключение Game Filter"""
-    #     try:
-    #         # Проверяем пароль sudo через стандартный метод
-    #         if not self.ensure_sudo_password():
-    #             return
-    #
-    #         # Теперь выполняем переключение Game Filter
-    #         self._perform_game_filter_toggle()
-    #
-    #     except Exception as e:
-    #         error_msg = f"Ошибка переключения Game Filter: {e}"
-    #         print(f"❌ {error_msg}")
-    #         self.show_status_message(error_msg, error=True)
-    #
-    # def _perform_game_filter_toggle(self):
-    #     """Выполняет фактическое переключение Game Filter"""
-    #     try:
-    #         # Получаем текущее состояние
-    #         was_enabled = self.is_game_filter_enabled()
-    #
-    #         if was_enabled:
-    #             # Удаляем файл (выключаем)
-    #             os.remove(self.game_filter_file)
-    #             new_icon = "🎮🔴"
-    #             status_message = "Game Filter выключен"
-    #             print("🎮🟢 Game Filter выключен")
-    #         else:
-    #             # Создаем файл (включаем)
-    #             # Сначала создаем директорию если не существует
-    #             directory = os.path.dirname(self.game_filter_file)
-    #             if directory and not os.path.exists(directory):
-    #                 os.makedirs(directory, exist_ok=True)
-    #
-    #             # Создаем файл
-    #             with open(self.game_filter_file, 'w') as f:
-    #                 pass  # Просто создаем пустой файл
-    #
-    #             new_icon = "🎮🟢"
-    #             status_message = "Game Filter включен"
-    #             print("🎮🟢 Game Filter включен")
-    #
-    #         # Меняем иконку
-    #         self.game_filter_icon.config(text=new_icon)
-    #
-    #         # Обновляем всплывающую подсказку
-    #         if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
-    #             self.hide_game_filter_tooltip()
-    #             self.show_game_filter_tooltip()
-    #
-    #         # Показываем сообщение о смене состояния
-    #         self.show_status_message(status_message, success=True)
-    #
-    #         # Перезапускаем службу zapret
-    #         self._restart_zapret_service(status_message)
-    #
-    #     except Exception as e:
-    #         error_msg = f"Ошибка переключения Game Filter: {e}"
-    #         print(f"❌ {error_msg}")
-    #         self.show_status_message(error_msg, error=True)
+    def get_game_filter_icon(self):
+        """Получает иконку Game Filter"""
+        return "🎮🟢" if self.is_game_filter_enabled() else "🎮🔴"
 
-#     def _restart_zapret_service(self, status_message):
-#         """Перезапускает службу zapret после изменения Game Filter"""
-#         # Блокируем UI
-#         self.game_filter_icon.config(state=tk.DISABLED)
-#
-#         # Показываем анимацию загрузки
-#         loading_icon = "🎮⚪"
-#         self.game_filter_icon.config(text=loading_icon)
-#         self.show_status_message(f"{status_message}, перезапуск службы...")
-#         self.root.update()
-#
-#         def restart_service_thread():
-#             try:
-#                 # Запускаем перезапуск службы
-#                 success, message = self.service_manager.restart_service()
-#
-#                 if success:
-#                     self.root.after(0, lambda: self.show_status_message(
-#                         f"{status_message}, служба перезапущена", success=True))
-#                 else:
-#                     self.root.after(0, lambda: self.show_status_message(
-#                         f"{status_message}, но служба не перезапущена: {message}", warning=True))
-#
-#             except Exception as e:
-#                 self.root.after(0, lambda: self.show_status_message(
-#                     f"Ошибка перезапуска службы: {e}", error=True))
-#             finally:
-#                 # Восстанавливаем UI
-#                 self.root.after(0, lambda: self.game_filter_icon.config(
-#                     text=self.get_game_filter_icon(), state=tk.NORMAL))
-#
-#                 # Обновляем статус службы через 1 секунду
-#                 self.root.after(1000, self.check_service_status)
-#
-#         # Запускаем в отдельном потоке
-#         thread = threading.Thread(target=restart_service_thread, daemon=True)
-#         thread.start()
+    def is_game_filter_enabled(self):
+        """Проверяет, включен ли Game Filter"""
+        return os.path.exists(self.game_filter_file)
+
+    def show_game_filter_tooltip(self, event=None):
+        """Показывает всплывающее окошко со статусом Game Filter"""
+        # Не показываем если уже есть
+        if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+            return
+
+        # Определяем текст в зависимости от состояния
+        if self.is_game_filter_enabled():
+            status_text = "GameFilter включен\nНажмите для выключения"
+        else:
+            status_text = "GameFilter выключен\nНажмите для включения"
+
+        # Позиционируем подсказку рядом с иконкой
+        x = self.game_filter_icon.winfo_rootx() - 20
+        y = self.game_filter_icon.winfo_rooty() + self.game_filter_icon.winfo_height() + 5
+
+        # Создаем всплывающее окно
+        self.game_filter_tooltip = tk.Toplevel(self.root)
+        self.game_filter_tooltip.wm_overrideredirect(True)
+        self.game_filter_tooltip.geometry(f"+{x}+{y}")
+        self.game_filter_tooltip.configure(bg='#15354D', relief=tk.SOLID, bd=1)
+
+        # Добавляем текст
+        label = tk.Label(self.game_filter_tooltip,
+                        text=status_text,
+                        font=("Arial", 10),
+                        fg='white',
+                        bg='#15354D',
+                        padx=10,
+                        pady=5,
+                        justify=tk.LEFT)
+        label.pack()
+
+    def hide_game_filter_tooltip(self, event=None):
+        """Скрывает всплывающее окошко Game Filter"""
+        if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+            self.game_filter_tooltip.destroy()
+            self.game_filter_tooltip = None
+
+    def toggle_game_filter(self, event=None):
+        """Переключает Game Filter при клике на иконку"""
+        # Используем асинхронный подход через after с небольшой задержкой
+        self.root.after(100, self._toggle_game_filter_async)
+
+    def _toggle_game_filter_async(self):
+        """Асинхронное переключение Game Filter"""
+        try:
+            # Проверяем текущее состояние
+            was_enabled = self.is_game_filter_enabled()
+
+            # Если выключаем - просто выполняем без уведомления
+            if was_enabled:
+                # Проверяем пароль sudo через стандартный метод
+                if not self.ensure_sudo_password():
+                    return
+
+                # Выключаем Game Filter
+                self._perform_game_filter_toggle()
+            else:
+                # Если включаем - сначала показываем уведомление
+                self._show_game_filter_warning()
+
+        except Exception as e:
+            error_msg = f"Ошибка переключения Game Filter: {e}"
+            print(f"❌ {error_msg}")
+            self.show_status_message(error_msg, error=True)
+
+    def _show_game_filter_warning(self):
+        """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
+
+        # Закрываем все всплывающие подсказки перед показом окна
+        self.hide_game_filter_tooltip()
+        self.hide_icon_tooltip()
+        self.hide_status_tooltip()
+
+        # Сначала делаем главное окно видимым и поднимаем его
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+        # Создаем окно предупреждения
+        warning_window = tk.Toplevel(self.root)
+        warning_window.title("ВНИМАНИЕ!")
+        warning_window.configure(bg='#182030')
+
+        # Определяем функцию для проверки Steam Deck
+        def is_steamdeck():
+            """Проверяет, работает ли приложение на Steam Deck"""
+            try:
+                # Проверяем системные файлы Steam Deck
+                steamdeck_files = [
+                    "/sys/devices/platform/steamdeck_hwmon",
+                    "/sys/devices/virtual/dmi/id/product_name"
+                ]
+
+                # Проверяем наличие файлов Steam Deck
+                for file in steamdeck_files:
+                    if os.path.exists(file):
+                        with open(file, 'r') as f:
+                            content = f.read().lower()
+                            if 'steam' in content or 'deck' in content:
+                                return True
+
+                # Проверяем переменные окружения
+                if 'DECK' in os.path.environ.get('XDG_SESSION_DESKTOP', '').upper():
+                    return True
+
+                # Проверяем разрешение экрана (Steam Deck: 1280x800 или 1280x720)
+                try:
+                    screen_width = warning_window.winfo_screenwidth()
+                    screen_height = warning_window.winfo_screenheight()
+
+                    # Обычное разрешение Steam Deck
+                    if (screen_width == 1280 and screen_height == 800) or \
+                       (screen_width == 1280 and screen_height == 720):
+                        return True
+                except:
+                    pass
+
+                return False
+            except:
+                return False
+
+        # Получаем размеры экрана
+        screen_width = warning_window.winfo_screenwidth()
+        screen_height = warning_window.winfo_screenheight()
+
+        # Базовые размеры (оригинал)
+        base_width = 450
+        base_height = 310
+
+        # --- Учёт ориентации ---
+        if screen_height > screen_width:
+            # Портретная ориентация (например, у Steam Deck в вертикальном режиме)
+            screen_width, screen_height = screen_height, screen_width
+
+        # --- Подстройка под Steam Deck / SteamOS ---
+        on_steamdeck = is_steamdeck()
+
+        if on_steamdeck:
+            # На Steam Deck — размер окна меньше, чтобы точно влезало
+            width = min(base_width - 60, screen_width - 80)  # Еще меньше для надежности
+            height = min(base_height - 60, screen_height - 80)
+
+            # Для Steam Deck делаем позиционирование относительно главного окна
+            try:
+                # Позиционируем относительно главного окна
+                main_x = self.root.winfo_x()
+                main_y = self.root.winfo_y()
+                main_width = self.root.winfo_width()
+                main_height = self.root.winfo_height()
+
+                # Позиция по центру главного окна
+                x = main_x + (main_width - width) // 2
+                y = main_y + (main_height - height) // 2
+
+                # Убедимся, что окно не выходит за границы экрана
+                x = max(0, min(x, screen_width - width - 10))
+                y = max(0, min(y, screen_height - height - 10))
+
+                warning_window.geometry(f"{int(width)}x{int(height)}+{int(x)}+{int(y)}")
+            except:
+                # Если не удалось получить позицию главного окна
+                width = min(base_width - 60, screen_width - 80)
+                height = min(base_height - 60, screen_height - 80)
+                warning_window.geometry(f"{int(width)}x{int(height)}")
+
+            # Делаем более читаемым для Steam Deck
+            font_title = ("Arial", 14, "bold")
+            font_warning = ("Arial", 11)
+            font_problems = ("Arial", 9)
+            font_final = ("Arial", 10, "bold")
+            font_buttons = ("Arial", 10)
+            button_padx = 12
+            button_pady = 6
+            button_width = 10
+            padx_main = 15  # Меньше отступы
+            pady_main = 10
+        else:
+            # На обычных системах
+            width = base_width
+            height = base_height
+            font_title = ("Arial", 16, "bold")
+            font_warning = ("Arial", 12)
+            font_problems = ("Arial", 10)
+            font_final = ("Arial", 11, "bold")
+            font_buttons = ("Arial", 11)
+            button_padx = 20
+            button_pady = 8
+            button_width = 12
+            padx_main = 20
+            pady_main = 15
+
+        # Основной контейнер
+        main_frame = tk.Frame(warning_window, bg='#182030', padx=padx_main, pady=pady_main)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Заголовок
+        title_label = tk.Label(
+            main_frame,
+            text="ВНИМАНИЕ!",
+            font=font_title,
+            fg='#ff9500',
+            bg='#182030'
+        )
+        title_label.pack(pady=(0, 10))
+
+        # Основное предупреждение
+        warning_text = "Данный фильтр является экспериментальной функцией"
+        warning_label = tk.Label(
+            main_frame,
+            text=warning_text,
+            font=font_warning,
+            fg='white',
+            bg='#182030',
+            justify=tk.CENTER,
+            wraplength=width - padx_main * 2  # Автоперенос для Steam Deck
+        )
+        warning_label.pack(pady=(0, 15))
+
+        # Подробности о проблемах
+        problems_frame = tk.Frame(main_frame, bg='#182030')
+        problems_frame.pack(fill=tk.X, pady=(0, 20))
+
+        problems_title = tk.Label(
+            problems_frame,
+            text="Возможные проблемы:",
+            font=font_problems,
+            fg='#ff3b30',
+            bg='#182030',
+            anchor=tk.W
+        )
+        problems_title.pack(fill=tk.X, pady=(0, 5))
+
+        # Список проблем
+        problems = [
+            "• черный экран после перехода с рабочего стола в игровой режим. Лучше перезагрузиться",
+            "• долгая загрузка после включения/перезагрузки",
+            "• возможны другие нестабильности в работе"
+        ]
+
+        for problem in problems:
+            problem_label = tk.Label(
+                problems_frame,
+                text=problem,
+                font=font_problems,
+                fg='#AAAAAA',
+                bg='#182030',
+                anchor=tk.W,
+                justify=tk.LEFT,
+                wraplength=width - padx_main * 2  # Автоперенос
+            )
+            problem_label.pack(fill=tk.X, pady=2, anchor=tk.W)
+
+        # Финальное предупреждение
+        final_warning = tk.Label(
+            main_frame,
+            text="Пользоваться данной функцией на свой страх и риск",
+            font=font_final,
+            fg='#ff9500',
+            bg='#182030',
+            justify=tk.CENTER,
+            wraplength=width - padx_main * 2  # Автоперенос
+        )
+        final_warning.pack(pady=(0, 20))
+
+        # Фрейм для кнопок
+        buttons_frame = tk.Frame(main_frame, bg='#182030')
+        buttons_frame.pack(fill=tk.X)
+
+        buttons_center_frame = tk.Frame(buttons_frame, bg='#182030')
+        buttons_center_frame.pack()
+
+        # Стиль кнопок
+        button_style = {
+            'font': font_buttons,
+            'bg': '#15354D',
+            'fg': 'white',
+            'bd': 0,
+            'padx': button_padx,
+            'pady': button_pady,
+            'width': button_width,
+            'highlightthickness': 0,
+            'cursor': 'hand2'
+        }
+
+        # Кнопка "Включить"
+        enable_button = tk.Button(
+            buttons_center_frame,
+            text="Включить",
+            command=lambda: self._on_warning_accept(warning_window),
+            **button_style
+        )
+        enable_button.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Добавляем эффект наведения
+        enable_button.bind("<Enter>", lambda e: enable_button.config(bg='#1e4a6a'))
+        enable_button.bind("<Leave>", lambda e: enable_button.config(bg='#15354D'))
+
+        # Кнопка "Назад"
+        cancel_button = tk.Button(
+            buttons_center_frame,
+            text="Назад",
+            command=warning_window.destroy,
+            **button_style
+        )
+        cancel_button.pack(side=tk.LEFT)
+
+        # Добавляем эффект наведения
+        cancel_button.bind("<Enter>", lambda e: cancel_button.config(bg='#1e4a6a'))
+        cancel_button.bind("<Leave>", lambda e: cancel_button.config(bg='#15354D'))
+
+        # ОБЯЗАТЕЛЬНО для SteamOS/Wayland
+        warning_window.transient(self.root)  # Делаем окно дочерним
+        warning_window.grab_set()  # Делаем модальным
+
+        # Ждем немного чтобы окно успело отобразиться
+        warning_window.update_idletasks()
+        warning_window.update()
+
+        # Для Steam Deck делаем дополнительную проверку
+        if on_steamdeck:
+            # Поднимаем окно на самый верх
+            warning_window.attributes('-topmost', True)
+            warning_window.after(100, lambda: warning_window.attributes('-topmost', False))
+
+            # Фокусируем окно
+            warning_window.focus_force()
+
+            # Обновляем несколько раз для надежности
+            for _ in range(3):
+                warning_window.update()
+                time.sleep(0.05)
+
+        # Связываем закрытие окна с кнопкой отмена
+        warning_window.protocol("WM_DELETE_WINDOW", warning_window.destroy)
+
+        # Ждем завершения окна
+        self.root.wait_window(warning_window)
+
+    def _on_warning_accept(self, warning_window):
+        """Обработчик нажатия на кнопку 'Понятно, включить'"""
+        warning_window.destroy()
+
+        # Проверяем пароль sudo
+        if not self.ensure_sudo_password():
+            return
+
+        # Выполняем включение Game Filter
+        self._perform_game_filter_toggle()
+
+    def _perform_game_filter_toggle(self):
+        """Выполняет фактическое переключение Game Filter"""
+        try:
+            # Получаем текущее состояние
+            was_enabled = self.is_game_filter_enabled()
+
+            if was_enabled:
+                # Удаляем файл (выключаем)
+                os.remove(self.game_filter_file)
+                new_icon = "🎮🔴"
+                status_message = "Game Filter выключен"
+                print("🎮🔴 Game Filter выключен")
+            else:
+                # Создаем файл (включаем)
+                # Сначала создаем директорию если не существует
+                directory = os.path.dirname(self.game_filter_file)
+                if directory and not os.path.exists(directory):
+                    os.makedirs(directory, exist_ok=True)
+
+                # Создаем файл
+                with open(self.game_filter_file, 'w') as f:
+                    pass  # Просто создаем пустой файл
+
+                new_icon = "🎮🟢"
+                status_message = "Game Filter включен"
+                print("🎮🟢 Game Filter включен")
+
+            # Меняем иконку
+            self.game_filter_icon.config(text=new_icon)
+
+            # Обновляем всплывающую подсказку
+            if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+                self.hide_game_filter_tooltip()
+                self.show_game_filter_tooltip()
+
+            # Показываем сообщение о смене состояния
+            self.show_status_message(status_message, success=True)
+
+            # Перезапускаем службу zapret
+            self._restart_zapret_service(status_message)
+
+        except Exception as e:
+            error_msg = f"Ошибка переключения Game Filter: {e}"
+            print(f"❌ {error_msg}")
+            self.show_status_message(error_msg, error=True)
+
+    def _restart_zapret_service(self, status_message):
+        """Перезапускает службу zapret после изменения Game Filter"""
+        # Блокируем UI
+        self.game_filter_icon.config(state=tk.DISABLED)
+
+        # Показываем анимацию загрузки
+        loading_icon = "🎮⚪"
+        self.game_filter_icon.config(text=loading_icon)
+        self.show_status_message(f"{status_message}, перезапуск службы...")
+        self.root.update()
+
+        def restart_service_thread():
+            try:
+                # Запускаем перезапуск службы
+                success, message = self.service_manager.restart_service()
+
+                if success:
+                    self.root.after(0, lambda: self.show_status_message(
+                        f"{status_message}, служба перезапущена", success=True))
+                else:
+                    self.root.after(0, lambda: self.show_status_message(
+                        f"{status_message}, но служба не перезапущена: {message}", warning=True))
+
+            except Exception as e:
+                self.root.after(0, lambda: self.show_status_message(
+                    f"Ошибка перезапуска службы: {e}", error=True))
+            finally:
+                # Восстанавливаем UI
+                self.root.after(0, lambda: self.game_filter_icon.config(
+                    text=self.get_game_filter_icon(), state=tk.NORMAL))
+
+                # Обновляем статус службы через 1 секунду
+                self.root.after(1000, self.check_service_status)
+
+        # Запускаем в отдельном потоке
+        thread = threading.Thread(target=restart_service_thread, daemon=True)
+        thread.start()
 
     def open_settings_menu(self):
         """Открывает меню настроек"""
