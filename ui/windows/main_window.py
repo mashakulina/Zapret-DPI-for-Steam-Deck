@@ -1207,7 +1207,7 @@ class MainWindow:
 
         problems_title = tk.Label(
             problems_frame,
-            text="Возможные проблемы:",
+            text="Возможные проблемы на Steam Deck:",
             font=font_problems,
             fg='#ff3b30',
             bg='#182030',
