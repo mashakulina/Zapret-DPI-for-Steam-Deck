@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import asyncio
 import subprocess
 import json
@@ -9,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 import re
+import os
 
 class StrategyTester:
     """
@@ -16,12 +16,6 @@ class StrategyTester:
     """
 
     def __init__(self, project_root: str, sudo_password: Optional[str] = None):
-        """
-        Инициализация тестировщика
-
-        :param project_root: Путь к корню проекта (/home/deck/Zapret_DPI_Manager)
-        :param sudo_password: Пароль sudo
-        """
         self.project_root = Path(project_root)
         self.sudo_password = sudo_password
         self.config_path = self.project_root / "config.txt"
@@ -2352,7 +2346,8 @@ if __name__ == "__main__":
     import getpass
 
     async def main():
-        project_root = "/home/deck/Zapret_DPI_Manager"
+        home_dir = os.path.expanduser("~")
+        project_root = os.path.join(home_dir, "Zapret_DPI_Manager")
 
         if len(sys.argv) > 1:
             mode = sys.argv[1]

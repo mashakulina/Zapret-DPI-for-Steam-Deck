@@ -35,7 +35,9 @@ class OutputRedirector:
         return self.buffer.getvalue()
 
 class StrategyTesterWindow:
-    def __init__(self, parent, project_root="/home/deck/Zapret_DPI_Manager", strategies_to_test=None):
+    def __init__(self, parent, strategies_to_test=None):
+        home_dir = os.path.expanduser("~")
+        project_root = os.path.join(home_dir, "Zapret_DPI_Manager")
         self.parent = parent
         self.project_root = Path(project_root)
         self.strategies_to_test = strategies_to_test  # Сохраняем переданные стратегии
