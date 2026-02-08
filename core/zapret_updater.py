@@ -14,6 +14,42 @@ class ZapretUpdater(BaseUpdater):
             current_version=ZAPRET_CONFIG["current_version"],
             name="zapret службы"
         )
+        self.is_steamos = self.check_if_steamos()
+
+    def check_if_steamos(self):
+        """Проверяет, является ли система SteamOS"""
+        print("Проверка системы на SteamOS...")
+
+        # Способ 1: Проверка по наличию команды steamos-readonly
+        try:
+            result = subprocess.run(['which', 'steamos-readonly'],
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Найдена команда steamos-readonly")
+                return True
+        except:
+            pass
+
+        # Способ 2: Проверка по релизу системы
+        try:
+            with open('/etc/os-release', 'r') as f:
+                content = f.read().lower()
+                if 'steamos' in content or 'steamdeck' in content:
+                    print("Обнаружен SteamOS в /etc/os-release")
+                    return True
+        except:
+            pass
+
+        # Способ 3: Проверка по другим признакам
+        try:
+            if os.path.exists('/home/deck'):
+                print("Обнаружен пользователь deck")
+                return True
+        except:
+            pass
+
+        print("Система не является SteamOS")
+        return False
 
     def get_sudo_password(self, parent_window):
         """Получает sudo пароль через окно"""
@@ -83,12 +119,15 @@ class ZapretUpdater(BaseUpdater):
     def stop_and_remove_zapret(self, password, progress_callback=None):
         """Останавливает и удаляет старую версию zapret"""
         commands = [
-            (['steamos-readonly', 'disable'], "Отключение защиты SteamOS"),
             (['systemctl', 'stop', 'zapret'], "Остановка службы zapret"),
             (['systemctl', 'disable', 'zapret'], "Отключение автозапуска"),
             (['rm', '-f', '/usr/lib/systemd/system/zapret.service'], "Удаление файла службы"),
             (['rm', '-rf', '/opt/zapret/'], "Удаление директории zapret")
         ]
+
+        # Добавляем команду для разблокировки SteamOS только если это SteamOS
+        if self.is_steamos:
+            commands.insert(0, (['steamos-readonly', 'disable'], "Отключение защиты SteamOS"))
 
         for cmd, description in commands:
             if progress_callback:
@@ -112,8 +151,8 @@ class ZapretUpdater(BaseUpdater):
             # Скачиваем через curl
             result = self.run_with_sudo(
                 ['curl', '-L', '-o', archive_path, download_url],
-                "Скачивание архива Zapret...",
-                password
+                password,
+                "Скачивание архива Zapret..."
             )
 
             if not result or result['returncode'] != 0:
@@ -244,16 +283,6 @@ class ZapretUpdater(BaseUpdater):
                         )
                         if result and result['returncode'] == 0:
                             self.run_with_sudo(['chmod', '+x', '/opt/zapret/nfqws'], password)
-
-            # Создаем файл FWTYPE
-            if progress_callback:
-                progress_callback("Настройка параметров...", 75)
-
-            result = self.run_with_sudo(
-                ['bash', '-c', 'echo "iptables" > /opt/zapret/FWTYPE'],
-                password,
-                "Создание файла FWTYPE..."
-            )
 
             # Устанавливаем права на файлы
             self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
@@ -399,8 +428,31 @@ WantedBy=multi-user.target
             print(f"Ошибка при включении службы: {e}")
             return False
 
+    def lock_steamos_system(self, password):
+        """Блокирует файловую систему SteamOS (только для SteamOS)"""
+        if not self.is_steamos:
+            print("Пропускаем блокировку: система не SteamOS")
+            return True
+
+        print("Блокировка файловой системы SteamOS...")
+        result = self.run_with_sudo(
+            ['steamos-readonly', 'enable'],
+            password,
+            "Включение защиты SteamOS..."
+        )
+
+        if not result or result['returncode'] != 0:
+            print(f"Предупреждение: Не удалось заблокировать систему: {result['stderr'] if result else 'No result'}")
+            return True  # Возвращаем True, чтобы не прерывать процесс
+
+        print("Система успешно заблокирована")
+        return True
+
     def update_zapret(self, download_url, parent_window, progress_callback=None):
         """Выполняет обновление zapret службы"""
+        print(f"=== ЗАПУСК ОБНОВЛЕНИЯ ZAPRET ===")
+        print(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+
         password = self.get_sudo_password(parent_window)
         if not password:
             if progress_callback:
@@ -445,8 +497,8 @@ WantedBy=multi-user.target
                 shutil.rmtree(temp_dir)
                 return False
 
-            # Включаем защиту SteamOS
-            self.run_with_sudo(['steamos-readonly', 'enable'], password, "Включение защиты SteamOS...")
+            # Блокируем файловую систему SteamOS (только для SteamOS)
+            self.lock_steamos_system(password)
 
             # Очищаем временные файлы
             shutil.rmtree(temp_dir)
@@ -457,4 +509,12 @@ WantedBy=multi-user.target
             print(f"Ошибка обновления zapret: {e}")
             import traceback
             traceback.print_exc()
+
+            # Даже при ошибке пытаемся заблокировать систему SteamOS
+            try:
+                if password:
+                    self.lock_steamos_system(password)
+            except:
+                pass
+
             return False
