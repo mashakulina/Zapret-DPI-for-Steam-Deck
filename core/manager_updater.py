@@ -15,7 +15,9 @@ class ManagerUpdater(BaseUpdater):
             current_version=MANAGER_CONFIG["current_version"],
             name="менеджера"
         )
-        self.manager_dir = "/home/deck/Zapret_DPI_Manager"
+        home_dir = os.path.expanduser("~")
+        target_dir = os.path.join(home_dir, "Zapret_DPI_Manager")
+        self.manager_dir = target_dir
 
         # Файлы и папки, которые НЕ должны заменяться при обновлении
         self.exclude_from_update = [
