@@ -8,6 +8,7 @@ import threading
 import tarfile
 import shutil
 import time
+import getpass
 from pathlib import Path
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from core.manager_config import RELEASES_URL
@@ -22,6 +23,8 @@ class ZapretChecker:
         self.sudo_password = None
         self.debug_log = []  # Лог для дебага
         self.last_command_result = None  # Результат последней команды
+        self.home_dir = os.path.expanduser("~")  # Динамическое определение домашней директории
+        self.is_steamos = self.check_if_steamos()  # Проверка на SteamOS
 
         # Из manager_config.py
         self.zapret_archive_url = f"{RELEASES_URL}/zapret.tar.gz"
@@ -37,6 +40,41 @@ class ZapretChecker:
 
         # Путь к папке zapret
         self.zapret_dir = "/opt/zapret"
+
+    def check_if_steamos(self):
+        """Проверяет, является ли система SteamOS"""
+        self.log_debug("Проверка системы на SteamOS...")
+
+        # Способ 1: Проверка по наличию команды steamos-readonly
+        try:
+            result = subprocess.run(['which', 'steamos-readonly'],
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                self.log_debug("Найдена команда steamos-readonly")
+                return True
+        except:
+            pass
+
+        # Способ 2: Проверка по релизу системы
+        try:
+            with open('/etc/os-release', 'r') as f:
+                content = f.read().lower()
+                if 'steamos' in content or 'steamdeck' in content:
+                    self.log_debug("Обнаружен SteamOS в /etc/os-release")
+                    return True
+        except:
+            pass
+
+        # Способ 3: Проверка по другим признакам
+        try:
+            if os.path.exists('/home/deck'):
+                self.log_debug("Обнаружен пользователь deck")
+                return True
+        except:
+            pass
+
+        self.log_debug("Система не является SteamOS")
+        return False
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -288,7 +326,9 @@ class ZapretChecker:
 
     def get_current_progress(self):
         """Рассчитывает текущий прогресс на основе этапа"""
-        if self.current_task == "download":
+        if self.current_task == "unlock":
+            return 5
+        elif self.current_task == "download":
             return 20
         elif self.current_task == "extract":
             return 40
@@ -298,8 +338,53 @@ class ZapretChecker:
             return 80
         elif self.current_task == "enable_service":
             return 90
+        elif self.current_task == "lock":
+            return 95
         else:
             return 0
+
+    def unlock_readonly_system(self):
+        """Разблокирует систему SteamOS (только для SteamOS)"""
+        if not self.is_steamos:
+            self.log_debug("Пропускаем разблокировку: система не SteamOS")
+            return True
+
+        self.current_task = "unlock"
+        self.log_debug("Разблокировка файловой системы SteamOS...")
+
+        result = self.run_with_sudo(
+            ['steamos-readonly', 'disable'],
+            "Разблокировка системы SteamOS..."
+        )
+
+        if not result or result['returncode'] != 0:
+            self.log_debug(f"Ошибка разблокировки: {result['stderr'] if result else 'No result'}")
+            return False
+
+        self.log_debug("Система успешно разблокирована")
+        return True
+
+    def lock_readonly_system(self):
+        """Блокирует систему SteamOS (только для SteamOS)"""
+        if not self.is_steamos:
+            self.log_debug("Пропускаем блокировку: система не SteamOS")
+            return True
+
+        self.current_task = "lock"
+        self.log_debug("Блокировка файловой системы SteamOS...")
+
+        result = self.run_with_sudo(
+            ['steamos-readonly', 'enable'],
+            "Блокировка системы SteamOS..."
+        )
+
+        if not result or result['returncode'] != 0:
+            self.log_debug(f"Предупреждение: Не удалось заблокировать систему: {result['stderr'] if result else 'No result'}")
+            # Все равно продолжаем, но логируем предупреждение
+            return True  # Возвращаем True, чтобы не прерывать процесс
+
+        self.log_debug("Система успешно заблокирована")
+        return True
 
     def download_archive(self, temp_dir):
         """Скачивает архив zapret"""
@@ -553,44 +638,11 @@ WantedBy=multi-user.target
             print(f"Ошибка при включении службы: {e}")
             return False
 
-    def unlock_readonly_system(self):
-        """Разблокирует систему SteamOS"""
-        self.current_task = "unlock"
-        self.log_debug("Разблокировка файловой системы SteamOS...")
-
-        result = self.run_with_sudo(
-            ['steamos-readonly', 'disable'],
-            "Разблокировка системы SteamOS..."
-        )
-
-        if not result or result['returncode'] != 0:
-            self.log_debug(f"Ошибка разблокировки: {result['stderr'] if result else 'No result'}")
-            return False
-
-        self.log_debug("Система успешно разблокирована")
-        return True
-
-    def lock_readonly_system(self):
-        """Блокирует систему SteamOS"""
-        self.current_task = "lock"
-        self.log_debug("Блокировка файловой системы SteamOS...")
-
-        result = self.run_with_sudo(
-            ['steamos-readonly', 'enable'],
-            "Блокировка системы SteamOS..."
-        )
-
-        if not result or result['returncode'] != 0:
-            self.log_debug(f"Предупреждение: Не удалось заблокировать систему: {result['stderr'] if result else 'No result'}")
-            # Все равно продолжаем, но логируем предупреждение
-            return True  # Возвращаем True, чтобы не прерывать процесс
-
-        self.log_debug("Система успешно заблокирована")
-        return True
-
     def install_zapret(self):
         """Основная функция установки zapret"""
         self.log_debug("=== НАЧАЛО УСТАНОВКИ ZAPRET ===")
+        self.log_debug(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        self.log_debug(f"Текущий пользователь: {os.path.basename(self.home_dir)}")
 
         if self.root:
             self.root.update()
@@ -615,15 +667,18 @@ WantedBy=multi-user.target
         self.log_debug(f"Временная директория: {temp_dir}")
 
         try:
-            # 0. Разблокируем файловую систему SteamOS
+            # 0. Разблокируем файловую систему SteamOS (только для SteamOS)
             self.update_progress("Разблокировка системы...", 5)
             if not self.unlock_readonly_system():
-                self.log_debug("Не удалось разблокировать систему")
-                self.close_progress_window()
-                self.show_info("Ошибка разблокировки",
-                             "Не удалось разблокировать файловую систему SteamOS.\n"
-                             "Установка Zapret невозможна.")
-                return False
+                if self.is_steamos:
+                    self.log_debug("Не удалось разблокировать систему")
+                    self.close_progress_window()
+                    self.show_info("Ошибка разблокировки",
+                                 "Не удалось разблокировать файловую систему SteamOS.\n"
+                                 "Установка Zapret невозможна.")
+                    return False
+                else:
+                    self.log_debug("Пропускаем разблокировку на не-SteamOS системе")
 
             # 1. Скачиваем архив
             self.update_progress("Скачивание архива Zapret...", 10)
@@ -701,7 +756,7 @@ WantedBy=multi-user.target
                              "sudo systemctl start zapret")
                 return True  # Все равно считаем успешной установку
 
-            # 6. Блокируем файловую систему SteamOS обратно
+            # 6. Блокируем файловую систему SteamOS обратно (только для SteamOS)
             self.update_progress("Блокировка системы...", 95)
             self.lock_readonly_system()
 
