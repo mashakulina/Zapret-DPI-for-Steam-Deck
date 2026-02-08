@@ -5,6 +5,7 @@ import tkinter as tk
 import os
 import shutil
 import time
+import platform
 from tkinter import messagebox
 from ui.components.custom_messagebox import ask_yesno as custom_show_yesno
 from ui.components.custom_messagebox import show_info as custom_show_info
@@ -16,6 +17,43 @@ class ZapretUninstaller:
         self.progress_window = None
         self.current_task = ""
         self.debug_log = []
+        self.is_steamos = self.check_if_steamos()
+        self.uninstall_successful = False
+
+    def check_if_steamos(self):
+        """Проверяет, является ли система SteamOS"""
+        self.log_debug("Проверка системы на SteamOS...")
+
+        # Способ 1: Проверка по наличию команды steamos-readonly
+        try:
+            result = subprocess.run(['which', 'steamos-readonly'],
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                self.log_debug("Найдена команда steamos-readonly")
+                return True
+        except:
+            pass
+
+        # Способ 2: Проверка по релизу системы
+        try:
+            with open('/etc/os-release', 'r') as f:
+                content = f.read().lower()
+                if 'steamos' in content or 'steamdeck' in content:
+                    self.log_debug("Обнаружен SteamOS в /etc/os-release")
+                    return True
+        except:
+            pass
+
+        # Способ 3: Проверка по другим признакам
+        try:
+            if os.path.exists('/home/deck'):
+                self.log_debug("Обнаружен пользователь deck")
+                return True
+        except:
+            pass
+
+        self.log_debug("Система не является SteamOS")
+        return False
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -250,7 +288,11 @@ class ZapretUninstaller:
         return progress
 
     def unlock_readonly_system(self):
-        """Разблокирует систему SteamOS"""
+        """Разблокирует систему SteamOS (только для SteamOS)"""
+        if not self.is_steamos:
+            self.log_debug("Пропускаем разблокировку: система не SteamOS")
+            return True
+
         self.current_task = "unlock"
         self.log_debug("Разблокировка файловой системы SteamOS...")
 
@@ -267,7 +309,11 @@ class ZapretUninstaller:
         return True
 
     def lock_readonly_system(self):
-        """Блокирует систему SteamOS"""
+        """Блокирует систему SteamOS (только для SteamOS)"""
+        if not self.is_steamos:
+            self.log_debug("Пропускаем блокировку: система не SteamOS")
+            return True
+
         self.current_task = "lock"
         self.log_debug("Блокировка файловой системы SteamOS...")
 
@@ -524,6 +570,25 @@ class ZapretUninstaller:
 
         return True
 
+    def remove_sudo_cache(self):
+        """Удаляет файл кэша sudo пароля"""
+        self.current_task = "remove_sudo_cache"
+        self.log_debug("Удаление файла кэша sudo пароля...")
+
+        cache_path = os.path.expanduser("~/.zapret_sudo_cache")
+
+        if not os.path.exists(cache_path):
+            self.log_debug("Файл кэша sudo пароля не существует, пропускаем удаление")
+            return True
+
+        try:
+            os.remove(cache_path)
+            self.log_debug(f"Файл кэша sudo пароля успешно удален: {cache_path}")
+            return True
+        except Exception as e:
+            self.log_debug(f"Не удалось удалить файл кэша sudo пароля {cache_path}: {e}")
+            return False
+
     def reload_systemd(self):
         """Обновляет systemd"""
         self.log_debug("Обновление systemd...")
@@ -588,6 +653,7 @@ class ZapretUninstaller:
     def uninstall_zapret(self):
         """Основная функция удаления zapret"""
         self.log_debug("=== ЗАПУСК УДАЛЕНИЯ ZAPRET ===")
+        self.log_debug(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
 
         # Проверяем, установлен ли что-то для удаления
         if not self.is_zapret_installed():
@@ -626,15 +692,18 @@ class ZapretUninstaller:
             self.update_progress("Подготовка к удалению...", 0)
 
         try:
-            # 1. Разблокируем файловую систему
+            # 1. Разблокируем файловую систему (только для SteamOS)
             self.update_progress("Разблокировка системы...", 5)
             if not self.unlock_readonly_system():
-                self.log_debug("Не удалось разблокировать систему")
-                self.close_progress_window()
-                self.show_info("Ошибка разблокировки",
-                             "Не удалось разблокировать файловую систему SteamOS.\n"
-                             "Удаление Zapret невозможно.")
-                return False
+                if self.is_steamos:
+                    self.log_debug("Не удалось разблокировать систему")
+                    self.close_progress_window()
+                    self.show_info("Ошибка разблокировки",
+                                 "Не удалось разблокировать файловую систему SteamOS.\n"
+                                 "Удаление Zapret невозможно.")
+                    return False
+                else:
+                    self.log_debug("Пропускаем разблокировку на не-SteamOS системе")
 
             # 2. Останавливаем службу
             self.update_progress("Остановка службы...", 20)
@@ -670,15 +739,16 @@ class ZapretUninstaller:
                 self.log_debug("Предупреждение: не удалось восстановить pacman.conf, продолжаем...")
 
             # 9. Удаляем ярлыки
-            self.update_progress("Удаление ярлыков...", 87)
+            self.update_progress("Удаление ярлыков и кэш пароля...", 87)
             self.remove_desktop_shortcuts()
+            self.remove_sudo_cache()
 
             # 10. Удаляем зависимости
             self.update_progress("Удаление зависимостей...", 89)
             if not self.remove_dependencies():
                 self.log_debug("Предупреждение: не удалось удалить зависимости, продолжаем...")
 
-            # 11. Блокируем файловую систему
+            # 11. Блокируем файловую систему (только для SteamOS)
             self.update_progress("Блокировка системы...", 90)
             self.lock_readonly_system()
 
@@ -690,6 +760,7 @@ class ZapretUninstaller:
                 self.close_progress_window()
 
             self.log_debug("=== УДАЛЕНИЕ ZAPRET УСПЕШНО ЗАВЕРШЕНО ===")
+            self.uninstall_successful = True
             self.show_info("Удаление завершено",
                          "Zapret успешно удален с системы!\n\n"
                          "Удалены:\n"
@@ -722,10 +793,35 @@ class ZapretUninstaller:
                          f"Лог удаления:\n{error_log}")
             return False
 
+    def show_info(self, title, message):
+        """Показывает информационное сообщение и закрывает программу если это завершающее сообщение"""
+        self.log_debug(f"show_info: {title} - {message}")
+
+        if self.root and self.root.winfo_exists():
+            try:
+                custom_show_info(self.root, title, message)
+            except ImportError:
+                messagebox.showinfo(title, message, parent=self.root)
+
+            # Если это сообщение об успешном завершении и программа была успешно удалена,
+            # закрываем программу после нажатия OK
+            if title == "Удаление завершено" and self.uninstall_successful:
+                self.log_debug("Закрытие программы после успешного удаления...")
+                if self.root:
+                    self.root.quit()
+                    self.root.destroy()
+                sys.exit(0)
+        else:
+            print(f"{title}: {message}")
 
     def run_uninstall(self):
-        """Запускает процесс удаления"""
-        return self.uninstall_zapret()
+        """Запускает процесс удаления и возвращает True если нужно закрыть программу"""
+        result = self.uninstall_zapret()
+
+        # Если удаление успешно завершено, возвращаем специальный флаг
+        if result and self.uninstall_successful:
+            return "close_app"
+        return result
 
 def run_zapret_uninstall(root_window=None):
     """
