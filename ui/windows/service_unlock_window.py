@@ -53,6 +53,7 @@ class ServiceUnlockWindow:
                 "Grok": SERVICE_CATEGORIES["grok"],
             },
             "Соцсети": {
+                "Telegram": SERVICE_CATEGORIES["telegram"],
                 "Instagram": SERVICE_CATEGORIES["instagram"],
                 "Facebook": SERVICE_CATEGORIES["facebook"],
                 "TikTok": SERVICE_CATEGORIES["tiktok"],
@@ -534,13 +535,11 @@ class ServiceUnlockWindow:
         self.window.title("Разблокировка сервисов")
         self.window.geometry("450x500")
         self.window.configure(bg='#182030')
-        # ЭТИ СТРОКИ ДЛЯ УДАЛЕНИЯ ОБВОДКИ
         try:
             self.window.wm_overrideredirect(False)
             self.window.attributes('-toolwindow', True)
         except:
             pass
-        self.window.resizable(True, True)
 
         # Основной фрейм
         main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
