@@ -50,4 +50,8 @@ api.cssloader.app
 cssloader.app
 backend.cssloader.app
 plugins.deckbrew.xyz/plugins
+plugins.deckbrew.xyz
 ndp.ngni.us/plugins
+decky.xyz
+deckbrew.xyz
+cdn.tzatzikiweeb.moe
