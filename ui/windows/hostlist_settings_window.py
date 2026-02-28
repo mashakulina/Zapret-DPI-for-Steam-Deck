@@ -191,6 +191,57 @@ class HostlistSettingsWindow:
         else:
             return False, "Некорректный формат домена"
 
+    def clean_domain(self, domain_str):
+        """Очищает домен от протоколов и слешей в конце"""
+        if not domain_str or domain_str.strip().startswith('#'):
+            return domain_str
+
+        # Убираем пробелы по краям
+        cleaned = domain_str.strip()
+
+        # Удаляем протоколы http://, https://, ftp:// и т.д.
+        cleaned = re.sub(r'^[a-zA-Z]+://', '', cleaned)
+
+        # Удаляем все после первого слеша (пути и параметры)
+        cleaned = cleaned.split('/')[0]
+
+        # Удаляем порты если есть (например :8080)
+        cleaned = cleaned.split(':')[0]
+
+        return cleaned
+
+    def on_paste(self, text_widget, event=None):
+        """Обрабатывает вставку текста и очищает домены"""
+        try:
+            # Получаем текст из буфера обмена
+            clipboard_text = text_widget.clipboard_get()
+
+            # Разбиваем на строки и очищаем каждую
+            lines = clipboard_text.split('\n')
+            cleaned_lines = []
+
+            for line in lines:
+                if line.strip():
+                    # Очищаем каждую непустую строку
+                    cleaned_line = self.clean_domain(line)
+                    if cleaned_line:  # Добавляем только если не пусто
+                        cleaned_lines.append(cleaned_line)
+                else:
+                    # Сохраняем пустые строки для форматирования
+                    cleaned_lines.append('')
+
+            # Объединяем обратно
+            cleaned_text = '\n'.join(cleaned_lines)
+
+            # Вставляем очищенный текст
+            text_widget.insert(tk.INSERT, cleaned_text)
+
+            # Возвращаем "break", чтобы предотвратить стандартную вставку
+            return "break"
+        except:
+            # Если не удалось получить из буфера обмена, разрешаем стандартную вставку
+            return None
+
     def save_custom_domains(self, text_widget, file_path, domain_type):
         """Сохраняет пользовательские домены в указанный файл"""
         try:
@@ -200,6 +251,23 @@ class HostlistSettingsWindow:
             if custom_domains:
                 lines = custom_domains.split('\n')
                 error_lines = []
+
+                # Очищаем каждую строку перед проверкой
+                cleaned_lines = []
+                for line in lines:
+                    if line.strip() and not line.strip().startswith('#'):
+                        cleaned_line = self.clean_domain(line)
+                        cleaned_lines.append(cleaned_line)
+                    else:
+                        cleaned_lines.append(line)
+
+                # Обновляем текст в виджете (опционально)
+                if lines != cleaned_lines:
+                    text_widget.delete("1.0", tk.END)
+                    text_widget.insert("1.0", '\n'.join(cleaned_lines))
+
+                # Используем очищенные строки для проверки
+                lines = cleaned_lines
 
                 for i, line in enumerate(lines, 1):
                     line = line.strip()
@@ -390,6 +458,8 @@ class HostlistSettingsWindow:
                             wrap=tk.NONE,
                             height=6)
         text_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        text_input.bind('<Control-v>', lambda e: self.on_paste(text_input, e))
+
 
 
         return frame, text_input
