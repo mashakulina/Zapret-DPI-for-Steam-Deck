@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox
 import re
 import os
@@ -11,9 +12,14 @@ class IpsetSettingsWindow:
         self.parent = parent
         self.window = None
 
-        # Путь к файлу с IP-адресами
+
+        self.blocked_text_input = None
+        self.unblocked_text_input = None
+
+        # Пути к файлам
         self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
-        self.ipset_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
+        self.ipset_all_user_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
+        self.ipset_exclude_user_file = os.path.join(self.manager_dir, "files", "lists", "ipset-exclude_user.txt")
 
     def validate_ip_address(self, ip_str):
         """Проверяет корректность IP-адреса, диапазона или подсети"""
@@ -80,97 +86,159 @@ class IpsetSettingsWindow:
                 return False, "Некорректный формат или комментарий без #"
             return False, "Некорректный формат"
 
-    def validate_data(self):
-        """Проверяет введенные данные"""
-        data = self.text_input.get("1.0", tk.END).strip()
-        if not data:
-            show_info(self.window, "Проверка данных", "Нет данных для проверки")
-            return
-
-        lines = data.split('\n')
-        error_lines = []
-
-        for i, line in enumerate(lines, 1):
-            line = line.strip()
-            if not line:  # Пропускаем пустые строки
-                continue
-
-            is_valid, error_msg = self.validate_ip_address(line)
-            if not is_valid:
-                error_lines.append(f"Строка {i}: {line} - {error_msg}")
-
-        if error_lines:
-            error_text = "\n".join(error_lines)
-            show_info(self.window, "Ошибка в данных", f"Обнаружены ошибки:\n\n{error_text}")
-        else:
-            show_info(self.window, "Проверка данных", "Все данные введены корректно!")
-
     def save_data(self):
-        """Сохраняет данные в файл"""
-        data = self.text_input.get("1.0", tk.END).strip()
+        """Сохраняет данные в файлы"""
+        try:
+            # Сохраняем заблокированные IP
+            blocked_data = self.blocked_text_input.get("1.0", tk.END).strip()
 
-        # Проверяем данные перед сохранением
-        if data:  # Если есть данные, проверяем их
-            lines = data.split('\n')
-            error_lines = []
+            # Проверяем заблокированные IP
+            if blocked_data:
+                lines = blocked_data.split('\n')
+                error_lines = []
 
-            for i, line in enumerate(lines, 1):
-                line = line.strip()
-                if not line:  # Пропускаем пустые строки
-                    continue
+                for i, line in enumerate(lines, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                is_valid, error_msg = self.validate_ip_address(line)
-                if not is_valid:
-                    error_lines.append(f"Строка {i}: {line} - {error_msg}")
+                    is_valid, error_msg = self.validate_ip_address(line)
+                    if not is_valid:
+                        error_lines.append(f"Строка {i}: {line} - {error_msg}")
 
-            if error_lines:
-                error_text = "\n".join(error_lines)
-                # Просто показываем ошибки и не сохраняем
-                show_info(self.window, "Ошибка в данных",
-                        f"Обнаружены ошибки. Данные не сохранены:\n\n{error_text}")
-                return
+                if error_lines:
+                    error_text = "\n".join(error_lines)
+                    show_info(self.window, "Ошибка в данных",
+                            f"Обнаружены ошибки в заблокированных IP. Данные не сохранены:\n\n{error_text}")
+                    return
 
-        # Сохраняем данные (даже если файл пустой)
-        self.write_to_file(data)
+            # Сохраняем незаблокированные IP
+            unblocked_data = self.unblocked_text_input.get("1.0", tk.END).strip()
 
-    def write_to_file(self, data):
-        """Записывает данные в файл"""
+            # Проверяем незаблокированные IP
+            if unblocked_data:
+                lines = unblocked_data.split('\n')
+                error_lines = []
+
+                for i, line in enumerate(lines, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    is_valid, error_msg = self.validate_ip_address(line)
+                    if not is_valid:
+                        error_lines.append(f"Строка {i}: {line} - {error_msg}")
+
+                if error_lines:
+                    error_text = "\n".join(error_lines)
+                    show_info(self.window, "Ошибка в данных",
+                            f"Обнаружены ошибки в незаблокированных IP. Данные не сохранены:\n\n{error_text}")
+                    return
+
+            # Сохраняем данные
+            self.write_to_file(blocked_data, self.ipset_all_user_file)
+            self.write_to_file(unblocked_data, self.ipset_exclude_user_file)
+
+            # Считаем количество IP
+            blocked_count = len([line for line in blocked_data.split('\n') if line.strip() and not line.strip().startswith('#')]) if blocked_data else 0
+            unblocked_count = len([line for line in unblocked_data.split('\n') if line.strip() and not line.strip().startswith('#')]) if unblocked_data else 0
+
+            show_info(self.window, "Сохранение",
+                    f"Данные успешно сохранены!\n\n"
+                    f"Заблокированные IP: {blocked_count} (сохранено в ipset-all_user.txt)\n"
+                    f"Незаблокированные IP: {unblocked_count} (сохранено в ipset-exclude_user.txt)")
+
+        except Exception as e:
+            show_info(self.window, "Ошибка", f"Не удалось сохранить файлы: {e}")
+
+    def write_to_file(self, data, file_path):
+        """Записывает данные в указанный файл"""
         try:
             # Создаем директорию, если она не существует
-            os.makedirs(os.path.dirname(self.ipset_file), exist_ok=True)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-            with open(self.ipset_file, 'w', encoding='utf-8') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(data)
 
-            if data:
-                show_info(self.window, "Сохранение", "Данные успешно сохранены!")
-            else:
-                show_info(self.window, "Сохранение", "Файл очищен (сохранен как пустой)")
-
         except Exception as e:
-            show_info(self.window, "Ошибка", f"Не удалось сохранить файл: {e}")
+            raise Exception(f"Не удалось сохранить файл {file_path}: {e}")
 
     def load_existing_data(self):
-        """Загружает существующие данные из файла"""
+        """Загружает существующие данные из файлов"""
+        # Загружаем заблокированные IP из ipset-all_user.txt
         try:
-            if os.path.exists(self.ipset_file):
-                with open(self.ipset_file, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.ipset_all_user_file):
+                with open(self.ipset_all_user_file, 'r', encoding='utf-8') as f:
                     content = f.read()
-                    self.text_input.delete("1.0", tk.END)
-                    self.text_input.insert("1.0", content)
+                    if self.blocked_text_input:
+                        self.blocked_text_input.delete("1.0", tk.END)
+                        self.blocked_text_input.insert("1.0", content)
         except Exception as e:
-            print(f"Ошибка загрузки файла: {e}")
+            print(f"Ошибка загрузки файла ipset-all_user.txt: {e}")
+
+        # Загружаем незаблокированные IP из ipset-exclude_user.txt
+        try:
+            if os.path.exists(self.ipset_exclude_user_file):
+                with open(self.ipset_exclude_user_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if self.unblocked_text_input:
+                        self.unblocked_text_input.delete("1.0", tk.END)
+                        self.unblocked_text_input.insert("1.0", content)
+        except Exception as e:
+            print(f"Ошибка загрузки файла ipset-exclude_user.txt: {e}")
 
     def create_hover_button(self, parent, text, command, **kwargs):
         """Создает кнопку в стиле главного меню с эффектом наведения"""
         from ui.components.button_styler import create_hover_button
         return create_hover_button(parent, text, command, **kwargs)
 
+    def create_text_tab(self, parent, tab_name, description, file_name):
+        """Создает вкладку с текстовым полем для ввода IP-адресов"""
+        frame = tk.Frame(parent, bg='#182030')
+
+        # Описание
+        info = tk.Label(frame,
+                    text=description,
+                    font=("Arial", 10),
+                    fg='#8e8e93',
+                    bg='#182030',
+                    justify=tk.LEFT,
+                    wraplength=400)
+        info.pack(anchor=tk.W, pady=(0, 15))
+
+        # Фрейм для текстового поля
+        text_frame = tk.Frame(frame, bg='#182030')
+        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        # Метка для текстового поля
+        text_label = tk.Label(text_frame,
+                            text="Введите IP-адреса:",
+                            font=("Arial", 11),
+                            fg='#0a84ff',
+                            bg='#182030')
+        text_label.pack(anchor=tk.W, pady=(0, 5))
+
+        # Текстовое поле с прокруткой
+        text_container = tk.Frame(text_frame, bg='#182030')
+        text_container.pack(fill=tk.BOTH, expand=True)
+
+        # Текстовое поле
+        text_input = tk.Text(text_container,
+                            font=("Courier New", 10),
+                            bg='#1a1a2e',
+                            fg='#ffffff',
+                            insertbackground='white',
+                            wrap=tk.NONE,
+                            height=8)
+        text_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        return frame, text_input
+
     def create_window(self):
         """Создает окно добавления пользовательских IP-адресов"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Добавление пользовательских IP-адресов")
-        self.window.geometry("460x530")
+        self.window.geometry("460x560")
         self.window.configure(bg='#182030')
         self.window.resizable(True, True)
 
@@ -191,7 +259,6 @@ class IpsetSettingsWindow:
         info_frame.pack(fill=tk.X, pady=(0, 15))
 
         info_text = [
-            "Пользовательские IP-адреса будут сохраняться в файле ipset-all_user.txt",
             "Вводить адреса или диапазон нужно по одному на строку",
             "Примеры ввода адресов: 192.168.1.1, 10.0.0.0/8 или 172.16.0.0-172.31.255.255",
             "Чтобы оставить комментарий, нужно сначала поставить знак '#' и только после этого писать текст комментария"
@@ -207,81 +274,61 @@ class IpsetSettingsWindow:
                                  wraplength=400)
             info_label.pack(anchor=tk.W, pady=(0, 5))
 
-        # Фрейм для текстового поля
-        text_frame = tk.Frame(main_frame, bg='#182030')
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        # Создаем Notebook для вкладок
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Метка для текстового поля
-        text_label = tk.Label(text_frame,
-                             text="Введите IP-адреса:",
-                             font=("Arial", 11),
-                             fg='#0a84ff',
-                             bg='#182030')
-        text_label.pack(anchor=tk.W, pady=(0, 5))
+        # Стилизация Notebook
+        style = ttk.Style()
+        style.theme_use('default')
+        style.configure('TNotebook', background='#182030', borderwidth=0)
+        style.configure('TNotebook.Tab',
+                    background='#1a1a2e',
+                    foreground='#8e8e93',
+                    padding=[10, 5],
+                    font=('Arial', 10))
+        style.map('TNotebook.Tab',
+                background=[('selected', '#0a84ff')],
+                foreground=[('selected', 'white')])
 
-        # Текстовое поле с прокруткой
-        text_container = tk.Frame(text_frame, bg='#182030')
-        text_container.pack(fill=tk.BOTH, expand=True)
+        # Вкладка "Заблокированный"
+        blocked_frame, self.blocked_text_input = self.create_text_tab(
+            notebook,
+            "Заблокированный",
+            "Пользовательские IP-адреса сохраняются в файле ipset-all_user.txt.",
+            "ipset-all_user.txt"
+        )
+        notebook.add(blocked_frame, text="Заблокированный")
 
-        # Вертикальная прокрутка
-        scrollbar = tk.Scrollbar(text_container)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Текстовое поле
-        self.text_input = tk.Text(text_container,
-                                 font=("Courier New", 10),
-                                 bg='#1a1a2e',
-                                 fg='#ffffff',
-                                 insertbackground='white',
-                                 wrap=tk.NONE,
-                                 yscrollcommand=scrollbar.set,
-                                 height=8)
-        self.text_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar.config(command=self.text_input.yview)
+        # Вкладка "Незаблокированный"
+        unblocked_frame, self.unblocked_text_input = self.create_text_tab(
+            notebook,
+            "Незаблокированный",
+            "Пользовательские IP-адреса сохраняются в файле ipset-exclude_user.txt",
+            "ipset-exclude_user.txt"
+        )
+        notebook.add(unblocked_frame, text="Незаблокированный")
 
         # Фрейм для кнопок
         buttons_frame = tk.Frame(main_frame, bg='#182030')
-        buttons_frame.pack(fill=tk.X, pady=(10, 0))
+        buttons_frame.pack(fill=tk.X, pady=(0, 0))
 
         # Контейнер для центрирования кнопок
         buttons_center_frame = tk.Frame(buttons_frame, bg='#182030')
         buttons_center_frame.pack()
 
-        # Стиль кнопок для остальных
+        # Стиль кнопок
         button_style = {
             'font': ('Arial', 11),
             'bg': '#15354D',
             'fg': 'white',
             'bd': 0,
-            'padx': 10,
-            'pady': 8,
-            'width': 12,
-            'highlightthickness': 0,
-            'cursor': 'hand2'
-        }
-
-        # Стиль кнопки длч Проверить данные
-        button_style_1 = {
-            'font': ('Arial', 11),
-            'bg': '#15354D',
-            'fg': 'white',
-            'bd': 0,
             'padx': 25,
-            'pady': 8,
-            'width': 12,
+            'pady': 10,
+            'width': 15,
             'highlightthickness': 0,
             'cursor': 'hand2'
         }
-
-        # Кнопка проверки
-        self.check_button = self.create_hover_button(
-            buttons_center_frame,
-            text="Проверить данные",
-            command=self.validate_data,
-            **button_style_1
-        )
-        self.check_button.pack(side=tk.LEFT, padx=(0, 15))
 
         # Кнопка сохранения
         self.save_button = self.create_hover_button(
@@ -315,7 +362,8 @@ class IpsetSettingsWindow:
         self.load_existing_data()
 
         # Устанавливаем фокус на текстовое поле
-        self.text_input.focus_set()
+        if self.blocked_text_input:
+            self.blocked_text_input.focus_set()
 
         return self.window
 
@@ -353,6 +401,9 @@ class IpsetFilterWindow:
         self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
         self.ipset_all_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
         self.ipset_utils_file = os.path.join(self.manager_dir, "utils", "ipset-all.txt")
+
+        self.blocked_text_input = None
+        self.unblocked_text_input = None
 
         # Переменная для радиокнопок
         self.filter_mode = tk.StringVar(value="none")
