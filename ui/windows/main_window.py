@@ -48,6 +48,8 @@ class MainWindow:
         self.check_dependencies_on_startup()
         # Затем проверяем zapret
         self.check_zapret_on_startup()
+        # Проверка и создание обязательных файлов в files/lists/
+        self.ensure_lists_files()
         # Проверяем целостность файлов
         # self.check_files_on_startup()
         self.load_current_strategy()
@@ -105,6 +107,27 @@ class MainWindow:
         print("=== КОНЕЦ ПРОВЕРКИ ZAPRET ===")
 
         return zapret_ok
+
+    def ensure_lists_files(self):
+        """Проверяет наличие обязательных файлов в files/lists/ и создаёт их при отсутствии."""
+        manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
+        lists_dir = os.path.join(manager_dir, "files", "lists")
+        required_files = [
+            "ipset-all_user.txt",
+            "ipset-exclude_user.txt",
+            "list-exclude_user.txt",
+            "list-general_user.txt",
+        ]
+        if not os.path.isdir(lists_dir):
+            os.makedirs(lists_dir, exist_ok=True)
+        for filename in required_files:
+            path = os.path.join(lists_dir, filename)
+            if not os.path.isfile(path):
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        pass
+                except OSError as e:
+                    print(f"Не удалось создать {filename}: {e}")
 
     # def check_files_on_startup(self):
     #     """Проверяет наличие zapret при запуске программы"""
