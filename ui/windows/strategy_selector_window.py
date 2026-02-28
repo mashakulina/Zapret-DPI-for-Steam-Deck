@@ -410,14 +410,14 @@ class StrategySelectorWindow:
         )
         ready_button.pack(pady=(0, 10))
 
-        # Кнопка "Собрать свою стратегию"
-        custom_button = create_hover_button(
-            main_frame,
-            text="Собрать свой пресет",
-            command=self.open_custom_strategy,
-            **button_style
-        )
-        custom_button.pack(pady=(0, 10))
+        # # Кнопка "Собрать свою стратегию"
+        # custom_button = create_hover_button(
+        #     main_frame,
+        #     text="Собрать свой пресет",
+        #     command=self.open_custom_strategy,
+        #     **button_style
+        # )
+        # custom_button.pack(pady=(0, 10))
 
         # Кнопка "Назад"
         back_button = create_hover_button(
