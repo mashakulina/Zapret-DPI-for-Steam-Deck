@@ -452,15 +452,13 @@ class HostlistSettingsWindow:
         # Текстовое поле
         text_input = tk.Text(text_container,
                             font=("Courier New", 10),
-                            bg='#15354D',
+                            bg='#1a1a2e',
                             fg='#ffffff',
                             insertbackground='white',
                             wrap=tk.NONE,
                             height=6)
         text_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         text_input.bind('<Control-v>', lambda e: self.on_paste(text_input, e))
-
-
 
         return frame, text_input
 
