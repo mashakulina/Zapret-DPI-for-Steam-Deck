@@ -114,7 +114,7 @@ GAME_FILTER_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.enable"
 
 if [ -f "$GAME_FILTER_FILE" ]; then
     echo "Game filter enabled file found. Using game ports range."
-    GAME_FILTER_TCP_VALUE="27015,27036"
+    GAME_FILTER_TCP_VALUE="80,443,27015,27036"
     GAME_FILTER_UDP_VALUE="3000-3010,27015,27031-27036"
 else
     echo "Game filter enabled file not found. Using default value 12."
