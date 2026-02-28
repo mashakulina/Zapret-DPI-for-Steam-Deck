@@ -22,6 +22,7 @@ from core.zapret_checker import run_zapret_check
 from core.file_checker import run_file_check
 from core.zapret_uninstaller import run_zapret_uninstall
 from ui.windows.update_window import show_update_window
+from ui.windows.gamefilter_window import GameFilterWindow
 
 class MainWindow:
     def __init__(self):
@@ -1021,32 +1022,9 @@ class MainWindow:
             self.game_filter_tooltip = None
 
     def toggle_game_filter(self, event=None):
-        """Переключает Game Filter при клике на иконку"""
-        # Используем асинхронный подход через after с небольшой задержкой
-        self.root.after(100, self._toggle_game_filter_async)
-
-    def _toggle_game_filter_async(self):
-        """Асинхронное переключение Game Filter"""
-        try:
-            # Проверяем текущее состояние
-            was_enabled = self.is_game_filter_enabled()
-
-            # Если выключаем - просто выполняем без уведомления
-            if was_enabled:
-                # Проверяем пароль sudo через стандартный метод
-                if not self.ensure_sudo_password():
-                    return
-
-                # Выключаем Game Filter
-                self._perform_game_filter_toggle()
-            else:
-                # Если включаем - сначала показываем уведомление
-                self._show_game_filter_warning()
-
-        except Exception as e:
-            error_msg = f"Ошибка переключения Game Filter: {e}"
-            print(f"❌ {error_msg}")
-            self.show_status_message(error_msg, error=True)
+        """Открывает окно GameFilter при клике на иконку."""
+        gamefilter_window = GameFilterWindow(self.root, self)
+        gamefilter_window.run()
 
     def _show_game_filter_warning(self):
         """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
@@ -1415,6 +1393,29 @@ class MainWindow:
 
         # Запускаем в отдельном потоке
         thread = threading.Thread(target=restart_service_thread, daemon=True)
+        thread.start()
+
+    def restart_zapret_after_preset(self, status_message):
+        """Перезапускает службу zapret после изменения пресета (без изменения иконки GameFilter)."""
+        self.show_status_message(f"{status_message}, перезапуск службы...")
+        self.root.update()
+
+        def restart_thread():
+            try:
+                success, message = self.service_manager.restart_service()
+                if success:
+                    self.root.after(0, lambda: self.show_status_message(
+                        f"{status_message}, служба перезапущена", success=True))
+                else:
+                    self.root.after(0, lambda: self.show_status_message(
+                        f"{status_message}, но служба не перезапущена: {message}", warning=True))
+            except Exception as e:
+                self.root.after(0, lambda: self.show_status_message(
+                    f"Ошибка перезапуска службы: {e}", error=True))
+            finally:
+                self.root.after(1000, self.check_service_status)
+
+        thread = threading.Thread(target=restart_thread, daemon=True)
         thread.start()
 
     def open_settings_menu(self):
