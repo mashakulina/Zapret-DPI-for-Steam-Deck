@@ -13,7 +13,7 @@ class IpsetSettingsWindow:
 
         # Путь к файлу с IP-адресами
         self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
-        self.ipset_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all2.txt")
+        self.ipset_file = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
 
     def validate_ip_address(self, ip_str):
         """Проверяет корректность IP-адреса, диапазона или подсети"""
@@ -191,7 +191,7 @@ class IpsetSettingsWindow:
         info_frame.pack(fill=tk.X, pady=(0, 15))
 
         info_text = [
-            "Пользовательские IP-адреса будут сохраняться в файле ipset-all2.txt",
+            "Пользовательские IP-адреса будут сохраняться в файле ipset-all_user.txt",
             "Вводить адреса или диапазон нужно по одному на строку",
             "Примеры ввода адресов: 192.168.1.1, 10.0.0.0/8 или 172.16.0.0-172.31.255.255",
             "Чтобы оставить комментарий, нужно сначала поставить знак '#' и только после этого писать текст комментария"

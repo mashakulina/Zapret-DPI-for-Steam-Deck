@@ -108,12 +108,14 @@ cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null 
 cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
 
 # ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
-GAME_FILTER_VALUE="12"  # значение по умолчанию
+GAME_FILTER_TCP_VALUE="12"  # значение по умолчанию для TCP
+GAME_FILTER_UDP_VALUE="12"  # значение по умолчанию для UDP
 GAME_FILTER_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.enable"
 
 if [ -f "$GAME_FILTER_FILE" ]; then
     echo "Game filter enabled file found. Using game ports range."
-    GAME_FILTER_VALUE="27000-27100,3478,4379,4380,50101-52000,53001-60000"
+    GAME_FILTER_TCP_VALUE="27015,27036"
+    GAME_FILTER_UDP_VALUE="3000-3010,27015,27031-27036"
 else
     echo "Game filter enabled file not found. Using default value 12."
 fi
@@ -137,16 +139,24 @@ while IFS= read -r line; do
     line="${line//\{ipset_exclude\}/$TEMP_DIR/ipset-exclude.txt}"
     line="${line//\{list_google\}/$TEMP_DIR/list-google.txt}"
     line="${line//\{ipset_all\}/$TEMP_DIR/ipset-all.txt}"
-    line="${line//\{ipset_all2\}/$TEMP_DIR/ipset-all2.txt}"
+    line="${line//\{ipset_all_user\}/$TEMP_DIR/ipset-all_user.txt}"
+    line="${line//\{gw\}/$TEMP_DIR/gw.txt}"
     line="${line//\{other\}/$TEMP_DIR/other.txt}"
-    line="${line//\{other2\}/$TEMP_DIR/other2.txt}"
+    line="${line//\{list_general_user\}/$TEMP_DIR/list-general_user.txt}"
     line="${line//\{quicgoogle\}/$TEMP_DIR/quic_initial_www_google_com.bin}"
     line="${line//\{tlsgoogle\}/$TEMP_DIR/tls_clienthello_www_google_com.bin}"
     line="${line//\{tls4pda\}/$TEMP_DIR/tls_clienthello_4pda_to.bin}"
     line="${line//\{tlsmax\}/$TEMP_DIR/tls_clienthello_max_ru.bin}"
+    line="${line//\{stun\}/$TEMP_DIR/stun.bin}"
 
-    # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ НАЛИЧИЯ ФАЙЛА
-    line="${line//\{GameFilter\}/$GAME_FILTER_VALUE}"
+    # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ ПРОТОКОЛА
+    if [[ "$line" == *"--filter-tcp"* && "$line" == *"{GameFilter}"* ]]; then
+        # Для TCP строк используем TCP значение
+        line="${line//\{GameFilter\}/$GAME_FILTER_TCP_VALUE}"
+    elif [[ "$line" == *"--filter-udp"* && "$line" == *"{GameFilter}"* ]]; then
+        # Для UDP строк используем UDP значение
+        line="${line//\{GameFilter\}/$GAME_FILTER_UDP_VALUE}"
+    fi
 
     # УДАЛЯЕМ --wf-* ОПЦИИ
     line="$(echo "$line" | sed -E 's/--wf-(tcp|udp)=[^ ]+//g')"

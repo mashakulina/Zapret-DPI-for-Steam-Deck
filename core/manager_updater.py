@@ -25,8 +25,8 @@ class ManagerUpdater(BaseUpdater):
             "utils/chosen_strategies.txt",
             "utils/name_strategy.txt",
             "utils/working_strategies.txt",
-            "files/lists/ipset-all2.txt",
-            "files/lists/other2.txt"
+            "files/lists/ipset-all_user.txt",
+            "files/lists/list-general_user.txt"
         ]
 
         # Полные пути для удобства

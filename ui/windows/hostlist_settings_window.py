@@ -14,8 +14,8 @@ class HostlistSettingsWindow:
         # Путь к файлам
         self.manager_dir = os.path.expanduser("~/Zapret_DPI_Manager")
         self.list_general_file = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
-        self.other2_file = os.path.join(self.manager_dir, "files", "lists", "other2.txt")
-        self.ignore_file = os.path.join(self.manager_dir, "files", "lists", "list-exclude.txt")
+        self.list_general_user_file_file = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
+        self.list_exclude_file = os.path.join(self.manager_dir, "files", "lists", "list-exclude.txt")
         self.roblox_file = os.path.join(self.manager_dir, "utils", "roblox.txt")
 
         # Данные для предустановленных сервисов
@@ -96,27 +96,27 @@ class HostlistSettingsWindow:
 
     def load_existing_data(self):
         """Загружает существующие данные из файлов"""
-        # Загружаем пользовательские домены из other2.txt (заблокированные)
+        # Загружаем пользовательские домены из list-general_user_file.txt (заблокированные)
         try:
-            if os.path.exists(self.other2_file):
-                with open(self.other2_file, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.list_general_user_file_file):
+                with open(self.list_general_user_file_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     if self.blocked_text_input:
                         self.blocked_text_input.delete("1.0", tk.END)
                         self.blocked_text_input.insert("1.0", content)
         except Exception as e:
-            print(f"Ошибка загрузки файла other2.txt: {e}")
+            print(f"Ошибка загрузки файла list-general_user_file.txt: {e}")
 
-        # Загружаем пользовательские домены из ignore.txt (незаблокированные)
+        # Загружаем пользовательские домены из list-exclude.txt (незаблокированные)
         try:
-            if os.path.exists(self.ignore_file):
-                with open(self.ignore_file, 'r', encoding='utf-8') as f:
+            if os.path.exists(self.list_exclude_file):
+                with open(self.list_exclude_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     if self.unblocked_text_input:
                         self.unblocked_text_input.delete("1.0", tk.END)
                         self.unblocked_text_input.insert("1.0", content)
         except Exception as e:
-            print(f"Ошибка загрузки файла ignore.txt: {e}")
+            print(f"Ошибка загрузки файла list-exclude.txt: {e}")
 
         # Загружаем существующие домены из list-general.txt для проверки выбранных сервисов
         try:
@@ -249,7 +249,7 @@ class HostlistSettingsWindow:
             # Сохраняем заблокированные домены
             blocked_count = self.save_custom_domains(
                 self.blocked_text_input,
-                self.other2_file,
+                self.list_general_user_file_file,
                 "Заблокированные"
             )
             if blocked_count is None:  # Если была ошибка
@@ -258,7 +258,7 @@ class HostlistSettingsWindow:
             # Сохраняем незаблокированные домены
             unblocked_count = self.save_custom_domains(
                 self.unblocked_text_input,
-                self.ignore_file,
+                self.list_exclude_file,
                 "Незаблокированные"
             )
             if unblocked_count is None:  # Если была ошибка
@@ -325,8 +325,8 @@ class HostlistSettingsWindow:
                      f"Данные успешно сохранены!\n\n"
                      f"Выбранные сервисы: {services_text}\n"
                      f"Всего доменов в list-general.txt: {len(sorted_domains)}\n"
-                     f"Заблокированные домены: {blocked_count} (сохранено в other2.txt)\n"
-                     f"Незаблокированные домены: {unblocked_count} (сохранено в ignore.txt)"
+                     f"Заблокированные домены: {blocked_count} (сохранено в list-general_user_file.txt)\n"
+                     f"Незаблокированные домены: {unblocked_count} (сохранено в list-exclude.txt)"
                      f"{roblox_count_info}")
 
         except Exception as e:
@@ -543,11 +543,11 @@ class HostlistSettingsWindow:
         blocked_frame, self.blocked_text_input = self.create_text_tab(
             notebook,
             "Заблокированный",
-            "Пользовательские домены сохраняются в файл other2.txt.\n"
+            "Пользовательские домены сохраняются в файл list-general_user_file.txt.\n"
             "Вводить домены нужно по одному на строку.\n"
             "Чтобы оставить комментарий, поставьте знак '#' в начале строки",
             "example.com\n*.example.com\nsubdomain.example.com",
-            "other2.txt"
+            "list-general_user_file.txt"
         )
         notebook.add(blocked_frame, text="Заблокированный")
 
@@ -555,11 +555,11 @@ class HostlistSettingsWindow:
         unblocked_frame, self.unblocked_text_input = self.create_text_tab(
             notebook,
             "Незаблокированный",
-            "Пользовательские домены сохраняются в файл ignore.txt.\n"
+            "Пользовательские домены сохраняются в файл list-exclude.txt.\n"
             "Вводить домены нужно по одному на строку.\n"
             "Чтобы оставить комментарий, поставьте знак '#' в начале строки",
             "example.com\n*.example.com\nsubdomain.example.com",
-            "ignore.txt"
+            "list-exclude.txt"
         )
         notebook.add(unblocked_frame, text="Незаблокированный")
 
