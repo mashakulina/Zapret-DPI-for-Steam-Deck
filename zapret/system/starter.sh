@@ -140,6 +140,7 @@ while IFS= read -r line; do
     line="${line//\{list_google\}/$TEMP_DIR/list-google.txt}"
     line="${line//\{ipset_all\}/$TEMP_DIR/ipset-all.txt}"
     line="${line//\{ipset_all_user\}/$TEMP_DIR/ipset-all_user.txt}"
+    line="${line//\{ipset_exclude_user\}/$TEMP_DIR/ipset-exclude_user.txt}"
     line="${line//\{list_general_user\}/$TEMP_DIR/list-general_user.txt}"
     line="${line//\{list_exclude_user\}/$TEMP_DIR/list-exclude_user.txt}"
     line="${line//\{gw\}/$TEMP_DIR/gw.txt}"
