@@ -9,7 +9,7 @@ MANAGER_CONFIG = {
     # URL файла с версией менеджера
     "version_url": f"{GITHUB_RAW_URL}/manager_version.txt",
     # Текущая версия менеджера
-    "current_version": "2.7.6.2"
+    "current_version": "2.7.6.3"
 }
 
 # Конфигурация zapret службы
