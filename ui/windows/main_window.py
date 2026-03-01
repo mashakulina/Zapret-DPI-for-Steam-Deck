@@ -628,7 +628,7 @@ class MainWindow:
         left_status_frame.pack(side=tk.LEFT)
 
         # Индикатор статуса службы (кружок)
-        self.status_indicator = tk.Label(left_status_frame, text="🔴", font=("Arial", 12),
+        self.status_indicator = tk.Label(left_status_frame, text="⬤", font=("Arial", 12),
                                         fg='#ff3b30', bg='#182030', cursor='hand2')
         self.status_indicator.pack(side=tk.LEFT)
         self.status_indicator.bind("<Enter>", self.show_status_tooltip)
@@ -657,16 +657,20 @@ class MainWindow:
         icons_frame = tk.Frame(top_row_frame, bg='#182030')
         icons_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Иконка Game Filter
-        self.game_filter_icon = tk.Label(icons_frame, text=self.get_game_filter_icon(), font=("Arial", 12), fg='white', bg='#182030', cursor='hand2')
-        self.game_filter_icon.pack(side=tk.LEFT, padx=(0, 10))
+        # Иконка Game Filter с индикатором
+        game_filter_container = tk.Frame(icons_frame, bg='#182030')
+        game_filter_container.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Индикатор Game Filter
+        self.game_filter_indicator = tk.Label(game_filter_container, text="⌨", font=("Arial", 14),
+                                            fg='#ff3b30', bg='#182030', cursor='hand2')
+        self.game_filter_indicator.pack(side=tk.LEFT, padx=(0, 0))
 
         # Обработчик клика
-        self.game_filter_icon.bind("<Button-1>", self.toggle_game_filter)
-
+        self.game_filter_indicator.bind("<Button-1>", self.toggle_game_filter)
         # Всплывающая подсказка при наведении
-        self.game_filter_icon.bind("<Enter>", self.show_game_filter_tooltip)
-        self.game_filter_icon.bind("<Leave>", self.hide_game_filter_tooltip)
+        self.game_filter_indicator.bind("<Enter>", self.show_game_filter_tooltip)
+        self.game_filter_indicator.bind("<Leave>", self.hide_game_filter_tooltip)
 
         # Иконка настроек (шестеренка)
         self.settings_icon = tk.Label(icons_frame, text="⚙️", font=("Arial", 22),
@@ -677,7 +681,7 @@ class MainWindow:
         self.settings_icon.bind("<Button-1>", self.toggle_settings_menu)
 
         # Иконка книги (руководство пользователя)
-        self.book_icon = tk.Label(icons_frame, text="📖", font=("Arial", 18),
+        self.book_icon = tk.Label(icons_frame, text="🗏", font=("Arial", 18),
                                 fg='#0a84ff', bg='#182030', cursor="hand2")
         self.book_icon.pack(side=tk.LEFT, padx=(0, 10))
         self.book_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Открыть руководство пользователя"))
@@ -693,8 +697,8 @@ class MainWindow:
         self.info_icon.bind("<Button-1>", lambda e: show_info_dialog(self.root))
 
         # Иконка доната
-        self.donate_icon = tk.Label(icons_frame, text="💸", font=("Arial", 14),
-                                fg='#ffcc00', bg='#182030', cursor="hand2")
+        self.donate_icon = tk.Label(icons_frame, text="$", font=("Arial", 18),
+                                fg='#0a84ff', bg='#182030', cursor="hand2")
         self.donate_icon.pack(side=tk.LEFT)
         self.donate_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Поблагодарить разработчика"))
         self.donate_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
@@ -997,9 +1001,12 @@ class MainWindow:
             # Обновляем статус службы через 1 секунду
             self.root.after(1000, self.check_service_status)
 
-    def get_game_filter_icon(self):
-        """Получает иконку Game Filter"""
-        return "🎮🟢" if self.is_game_filter_enabled() else "🎮🔴"
+    def update_game_filter_indicator(self):
+        """Обновляет цвет индикатора Game Filter"""
+        if self.is_game_filter_enabled():
+            self.game_filter_indicator.config(fg='#30d158')  # Зеленый
+        else:
+            self.game_filter_indicator.config(fg='#ff3b30')  # Красный
 
     def is_game_filter_enabled(self):
         """Проверяет, включен ли Game Filter"""
@@ -1018,8 +1025,8 @@ class MainWindow:
             status_text = "GameFilter выключен\nНажмите для включения"
 
         # Позиционируем подсказку рядом с иконкой
-        x = self.game_filter_icon.winfo_rootx() - 20
-        y = self.game_filter_icon.winfo_rooty() + self.game_filter_icon.winfo_height() + 5
+        x = self.game_filter_indicator.winfo_rootx() - 20
+        y = self.game_filter_indicator.winfo_rooty() + self.game_filter_indicator.winfo_height() + 5
 
         # Создаем всплывающее окно
         self.game_filter_tooltip = tk.Toplevel(self.root)
@@ -1343,7 +1350,7 @@ class MainWindow:
             if was_enabled:
                 # Удаляем файл (выключаем)
                 os.remove(self.game_filter_file)
-                new_icon = "🎮🔴"
+                new_icon = "⌨"
                 status_message = "Game Filter выключен"
                 print("🎮🔴 Game Filter выключен")
             else:
@@ -1357,12 +1364,12 @@ class MainWindow:
                 with open(self.game_filter_file, 'w') as f:
                     pass  # Просто создаем пустой файл
 
-                new_icon = "🎮🟢"
+                new_icon = "⌨"
                 status_message = "Game Filter включен"
                 print("🎮🟢 Game Filter включен")
 
             # Меняем иконку
-            self.game_filter_icon.config(text=new_icon)
+            self.game_filter_indicator.config(text=new_icon)
 
             # Обновляем всплывающую подсказку
             if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
@@ -1383,11 +1390,10 @@ class MainWindow:
     def _restart_zapret_service(self, status_message):
         """Перезапускает службу zapret после изменения Game Filter"""
         # Блокируем UI
-        self.game_filter_icon.config(state=tk.DISABLED)
+        self.game_filter_indicator.config(state=tk.DISABLED)
 
-        # Показываем анимацию загрузки
-        loading_icon = "🎮⚪"
-        self.game_filter_icon.config(text=loading_icon)
+        # Показываем анимацию загрузки (меняем цвет индикатора на оранжевый)
+        self.game_filter_indicator.config(fg='#ff9500')
         self.show_status_message(f"{status_message}, перезапуск службы...")
         self.root.update()
 
@@ -1407,9 +1413,9 @@ class MainWindow:
                 self.root.after(0, lambda: self.show_status_message(
                     f"Ошибка перезапуска службы: {e}", error=True))
             finally:
-                # Восстанавливаем UI
-                self.root.after(0, lambda: self.game_filter_icon.config(
-                    text=self.get_game_filter_icon(), state=tk.NORMAL))
+                # Восстанавливаем UI и обновляем индикатор
+                self.root.after(0, lambda: self.game_filter_indicator.config(state=tk.NORMAL))
+                self.root.after(0, self.update_game_filter_indicator)
 
                 # Обновляем статус службы через 1 секунду
                 self.root.after(1000, self.check_service_status)
@@ -1646,21 +1652,21 @@ class MainWindow:
             if result.returncode == 0 and status_output == "active":
                 # Служба активна
                 self.service_running = True
-                self.status_indicator.config(text="🟢")
+                self.status_indicator.config(text="⬤", fg='#30d158')  # Зеленый круг
                 self.zapret_button.config(text="Остановить Zapret DPI")
             elif result.returncode == 3 and status_output == "inactive":
                 # Служба неактивна
                 self.service_running = False
-                self.status_indicator.config(text="🔴")
+                self.status_indicator.config(text="⬤", fg='#ff3b30')  # Красный круг
                 self.zapret_button.config(text="Запустить Zapret DPI")
             elif result.returncode == 4:  # Код возврата 4 означает "неактивен" или "не существует"
                 self.service_running = False
-                self.status_indicator.config(text="🔴")
+                self.status_indicator.config(text="⬤", fg='#ff3b30')  # Красный круг
                 self.zapret_button.config(text="Запустить Zapret DPI")
             else:
                 # Неизвестный статус
                 self.service_running = False
-                self.status_indicator.config(text="🟠")
+                self.status_indicator.config(text="⬤", fg='#ff9500')  # Оранжевый круг
                 self.zapret_button.config(text="Запустить Zapret DPI")
 
             # Теперь проверяем автозапуск ОТДЕЛЬНО
@@ -1669,7 +1675,7 @@ class MainWindow:
         except Exception as e:
             print(f"Ошибка проверки статуса службы: {e}")
             self.service_running = False
-            self.status_indicator.config(text="🟠")
+            self.status_indicator.config(text="⬤", fg='#ff9500')  # Оранжевый круг
             # Все равно проверяем автозапуск
             self.check_autostart_status()
 
