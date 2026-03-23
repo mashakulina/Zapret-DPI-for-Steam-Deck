@@ -1486,7 +1486,7 @@ class MainWindow:
             ("Настройки IPSet", self.open_ipset_settings),
             ("Настройки DNS", self.open_dns_settings),
             ("Разблокировать сервисы", self.open_service_unlock),
-            ("Обновимть Zapret", self.open_update_settings),
+            ("Обновить Zapret", self.open_update_settings),
             ("Удалить Zapret", self.uninstall_zapret)
         ]
 
