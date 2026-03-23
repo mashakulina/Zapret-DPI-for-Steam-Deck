@@ -22,7 +22,7 @@ CSS_Loader              = "https://deckthemes.com"
 
 ### Decky loader
 Decky_loader_official   = "https://plugins.deckbrew.xyz/plugins"
-Decky_loader_unofficial = "https://ndp.ngni.us/plugins"
+Decky_loader_unofficial = "https://ndp.ngram.ca/plugins"
 
 ### ProtonDB
 ProtonDB                = "https://www.protondb.com"
