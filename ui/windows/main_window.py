@@ -4,7 +4,9 @@ import subprocess
 import threading
 import os
 import platform
+import shlex
 from tkinter import messagebox
+from ui.components.custom_messagebox import ask_yesno, show_error, show_info
 from ui.components.button_styler import create_hover_button
 from ui.windows.strategy_window import StrategyWindow
 from ui.windows.strategy_selector_window import StrategySelectorWindow
@@ -24,6 +26,12 @@ from core.zapret_uninstaller import run_zapret_uninstall
 from ui.windows.update_window import show_update_window
 from ui.windows.gamefilter_window import GameFilterWindow
 
+# Выполняется под root через sudo -S; скрипт сам вызывает sudo (systemctl, cp в plugins).
+ZAPRET_DPI_PLUGIN_INSTALL_CMD = (
+    "bash <(curl -fsSL https://raw.githubusercontent.com/mashakulina/DeckyZapretDPI/main/InstallPlugin.sh)"
+)
+
+
 class MainWindow:
     def __init__(self):
         self.root = tk.Tk()
@@ -42,6 +50,9 @@ class MainWindow:
         # Путь к файлу gamefilter.enable
         home_dir = os.path.expanduser("~")
         self.game_filter_file = os.path.join(home_dir, "Zapret_DPI_Manager", "utils", "gamefilter.enable")
+
+        self.decky_plugin_path = os.path.join(home_dir, "homebrew", "plugins", "DeckyZapretDPI")
+        self.decky_plugin_installed = os.path.isdir(self.decky_plugin_path)
 
         self.setup_ui()
         # Сначала проверяем зависимости
@@ -1460,7 +1471,7 @@ class MainWindow:
 
         self.settings_menu = tk.Toplevel(self.root)
         self.settings_menu.wm_overrideredirect(True)
-        self.settings_menu.geometry(f"200x340+{menu_x}+{menu_y}")
+        self.settings_menu.geometry(f"240x385+{menu_x}+{menu_y}")
         self.settings_menu.configure(bg='#15354D', relief=tk.RAISED, bd=1)
 
         # Стиль для кнопок меню
@@ -1478,6 +1489,10 @@ class MainWindow:
             'cursor': 'hand2'
         }
 
+        installed = self.is_decky_zapret_plugin_installed()
+        plugin_label = "Удалить плагин Zapret DPI" if installed else "Установить плагин Zapret DPI"
+        plugin_command = self.remove_decky_plugin if installed else self.install_decky_plugin
+
         # Кнопки меню
         menu_items = [
             ("Сменить стратегию", self.open_service_window),
@@ -1486,6 +1501,7 @@ class MainWindow:
             ("Настройки IPSet", self.open_ipset_settings),
             ("Настройки DNS", self.open_dns_settings),
             ("Разблокировать сервисы", self.open_service_unlock),
+            (plugin_label, plugin_command),
             ("Обновить Zapret", self.open_update_settings),
             ("Удалить Zapret", self.uninstall_zapret)
         ]
@@ -1582,6 +1598,130 @@ class MainWindow:
         """Открывает окно обновления Zapret"""
         update_window = show_update_window(self.root)
         update_window.run()
+
+    def is_decky_zapret_plugin_installed(self):
+        """Плагин Zapret DPI (Decky) лежит в ~/homebrew/plugins/DeckyZapretDPI."""
+        return os.path.isdir(self.decky_plugin_path)
+
+    def install_decky_plugin(self):
+        """Устанавливает плагин Zapret DPI для Decky через официальный скрипт (нужен sudo)."""
+        self.close_settings_menu()
+        if self.is_decky_zapret_plugin_installed():
+            show_info(self.root, "Плагин Zapret DPI", "Плагин Zapret DPI уже установлен.")
+            return
+
+        if not self.ensure_sudo_password():
+            return
+
+        sudo_pwd = self.service_manager.sudo_password
+        self.show_status_message("Установка плагина Zapret DPI...")
+
+        def worker():
+            try:
+                result = subprocess.run(
+                    ["sudo", "-S", "bash", "-c", ZAPRET_DPI_PLUGIN_INSTALL_CMD],
+                    input=(sudo_pwd + "\n") if sudo_pwd else None,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    env=os.environ.copy(),
+                )
+                ok = result.returncode == 0 and self.is_decky_zapret_plugin_installed()
+
+                def done():
+                    self.decky_plugin_installed = self.is_decky_zapret_plugin_installed()
+                    if ok:
+                        self.show_status_message("Плагин Zapret DPI установлен", success=True)
+                        show_info(
+                            self.root,
+                            "Плагин Zapret DPI",
+                            "Плагин установлен. При необходимости перезапустите Decky Loader или Steam, "
+                            "чтобы плагин появился в меню.",
+                        )
+                    else:
+                        err_tail = (result.stderr or result.stdout or "").strip()
+                        if len(err_tail) > 800:
+                            err_tail = err_tail[-800:]
+                        msg = "Не удалось установить плагин."
+                        if err_tail:
+                            msg += f"\n\n{err_tail}"
+                        self.show_status_message("Ошибка установки плагина Zapret DPI", error=True)
+                        show_error(self.root, "Установка плагина Zapret DPI", msg)
+
+                self.root.after(0, done)
+            except subprocess.TimeoutExpired:
+                self.root.after(0, lambda: (
+                    self.show_status_message("Таймаут установки плагина Zapret DPI", error=True),
+                    show_error(
+                        self.root,
+                        "Установка плагина Zapret DPI",
+                        "Превышено время ожидания. Проверьте соединение и попробуйте снова.",
+                    ),
+                ))
+            except Exception as e:
+                err = str(e)
+
+                def show_ex():
+                    self.show_status_message(f"Ошибка установки плагина: {err}", error=True)
+                    show_error(self.root, "Установка плагина Zapret DPI", err)
+
+                self.root.after(0, show_ex)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def remove_decky_plugin(self):
+        """Удаляет каталог плагина Zapret DPI из ~/homebrew/plugins/ (через sudo)."""
+        self.close_settings_menu()
+        if not self.is_decky_zapret_plugin_installed():
+            show_info(self.root, "Плагин Zapret DPI", "Плагин Zapret DPI не найден.")
+            self.decky_plugin_installed = False
+            return
+
+        if not ask_yesno(
+            self.root,
+            "Удаление плагина Zapret DPI",
+            "Удалить плагин Zapret DPI из папки homebrew/plugins?"
+        ):
+            return
+
+        if not self.ensure_sudo_password():
+            return
+
+        self.show_status_message("Удаление плагина Zapret DPI...")
+
+        def worker():
+            try:
+                rm_target = shlex.quote(self.decky_plugin_path)
+                success, out = self.service_manager._run_sudo_command(f"rm -rf {rm_target}")
+
+                def done():
+                    if success and not self.is_decky_zapret_plugin_installed():
+                        self._on_decky_plugin_removed_ok()
+                    elif success:
+                        self._on_decky_plugin_removed_err(
+                            "Каталог всё ещё существует после удаления."
+                        )
+                    else:
+                        self._on_decky_plugin_removed_err(out or "Не удалось удалить каталог.")
+
+                self.root.after(0, done)
+            except Exception as e:
+                self.root.after(0, lambda err=str(e): self._on_decky_plugin_removed_err(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_decky_plugin_removed_ok(self):
+        self.decky_plugin_installed = False
+        self.show_status_message("Плагин Zapret DPI удалён", success=True)
+        show_info(
+            self.root,
+            "Плагин Zapret DPI",
+            "Каталог плагина удалён. Перезапустите Decky Loader при необходимости.",
+        )
+
+    def _on_decky_plugin_removed_err(self, err):
+        self.show_status_message("Не удалось удалить плагин Zapret DPI", error=True)
+        show_error(self.root, "Удаление плагина Zapret DPI", err)
 
     def uninstall_zapret(self):
         """Запускает удаление Zapret"""
