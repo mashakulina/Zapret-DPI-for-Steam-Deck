@@ -17,6 +17,12 @@ GAME_PRESETS = {
             "--filter-tcp=6112 --ipset={gw} --dpi-desync=fake --dpi-desync-fake-unknown={tlsmax} --dpi-desync-any-protocol --dpi-desync-fooling=badseq --dpi-desync-repeats=1 --dpi-desync-cutoff=d3 --new",
         ],
     },
+    "mainecraft": {
+        "name": "Minecrat Hypixel и PikaNetwork",
+        "lines": [
+            "--filter-tcp=25500-25600 --dpi-desync-any-protocol=1 --dpi-desync-cutoff=n5 --dpi-desync=multisplit --dpi-desync-split-seqovl=582 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={tls4pda} --new",
+        ],
+    },
 }
 
 def get_manager_dir():
