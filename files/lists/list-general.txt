@@ -56,3 +56,4 @@ ndp.ngram.ca/plugins
 ndp.ngram.ca
 plugins.deckbrew.xyz
 plugins.deckbrew.xyz/plugins
+steam.live.bhvrdbd.com
