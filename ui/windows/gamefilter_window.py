@@ -11,6 +11,8 @@ from core.game_presets import (
     clear_active_preset,
     remove_preset_lines_from_config,
     get_manager_dir,
+    substitute_gamefilter_in_config,
+    restore_gamefilter_for_preset,
 )
 
 
@@ -240,6 +242,7 @@ class GamePresetWindow:
             active_before = get_active_preset_id(self.manager_dir)
             if active_before:
                 remove_preset_lines_from_config(active_before, self.manager_dir)
+                restore_gamefilter_for_preset(active_before, self.manager_dir)
             clear_active_preset(self.manager_dir)
             show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
             if hasattr(self.main_window, "show_status_message"):
@@ -254,26 +257,37 @@ class GamePresetWindow:
             return
 
         preset = GAME_PRESETS[preset_id]
-        lines = preset["lines"]
+        lines = preset.get("lines") or []
+        tcp = preset.get("game_filter_tcp")
+        udp = preset.get("game_filter_udp")
         name = preset["name"]
+
+        active_before = get_active_preset_id(self.manager_dir)
+        if active_before and active_before != preset_id:
+            remove_preset_lines_from_config(active_before, self.manager_dir)
+            restore_gamefilter_for_preset(active_before, self.manager_dir)
 
         set_active_preset(preset_id, self.manager_dir)
 
+        if tcp is not None and udp is not None:
+            substitute_gamefilter_in_config(tcp, udp, self.manager_dir)
+
         config_path = self.get_config_path()
         try:
-            existing = ""
-            if os.path.exists(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    existing = f.read()
-            new_content = "\n".join(lines) + "\n" + existing
-            with open(config_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
+            if lines:
+                existing = ""
+                if os.path.exists(config_path):
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        existing = f.read()
+                new_content = "\n".join(lines) + "\n" + existing
+                with open(config_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
             if hasattr(self.main_window, "show_status_message"):
-                self.main_window.show_status_message(f"Пресет {name} добавлен в config.txt", success=True)
-            show_info(self.root, "Готово", f"Пресет {name} добавлен в начало config.txt.")
+                self.main_window.show_status_message(f"Был выбран пресет для {name}", success=True)
+            show_info(self.root, "Пресет", f"Был выбран пресет для {name}.")
             self.main_window.restart_zapret_after_preset(f"Пресет {name} применён")
         except Exception as e:
-            show_error(self.root, "Ошибка", f"Не удалось записать config.txt: {e}")
+            show_error(self.root, "Ошибка", f"Не удалось применить пресет: {e}")
             return
         self.close_window()
 
