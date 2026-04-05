@@ -1,12 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Пресеты игр для GameFilter: строки для добавления в начало config.txt."""
+"""
+Пресеты игр для GameFilter.
+
+1) Поля game_filter_tcp / game_filter_udp: прямо в config.txt заменяются фрагменты
+   --filter-tcp={GameFilter} и --filter-udp={GameFilter} на конкретные порты (любая стратегия).
+   При смене/снятии пресета плейсхолдеры возвращаются.
+
+2) Поле lines: дополнительные строки в начало config.txt (Guild Wars 2 и т.п.).
+"""
 
 import os
+
+GAMEFILTER_PLACEHOLDER_TCP = "--filter-tcp={GameFilter}"
+GAMEFILTER_PLACEHOLDER_UDP = "--filter-udp={GameFilter}"
 
 # Префикс файла-маркера в utils: наличие utils/game_preset_{preset_id} = пресет применён
 PRESET_FILE_PREFIX = "game_preset_"
 
-# Ключ — идентификатор пресета, значение — список строк для config.txt
+# Ключ — идентификатор пресета
 GAME_PRESETS = {
     "guild_wars_2": {
         "name": "Guild Wars 2",
@@ -22,6 +33,11 @@ GAME_PRESETS = {
         "lines": [
             "--filter-tcp=25500-25600 --dpi-desync-any-protocol=1 --dpi-desync-cutoff=n5 --dpi-desync=multisplit --dpi-desync-split-seqovl=582 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern={tls4pda} --new",
         ],
+    },
+    "dead_by_daylight": {
+        "name": "Dead by Daylight",
+        "game_filter_tcp": "27015,27036",
+        "game_filter_udp": "27015,27031-27036",
     },
 }
 
@@ -80,6 +96,53 @@ def clear_active_preset(manager_dir=None):
                 pass
 
 
+def _config_txt_path(manager_dir):
+    return os.path.join(manager_dir, "config.txt")
+
+
+def substitute_gamefilter_in_config(tcp_ports, udp_ports, manager_dir=None):
+    """В config.txt подставляет порты вместо --filter-tcp={GameFilter} и --filter-udp={GameFilter}."""
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+    path = _config_txt_path(manager_dir)
+    if not os.path.isfile(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    new_content = content.replace(GAMEFILTER_PLACEHOLDER_TCP, f"--filter-tcp={tcp_ports}")
+    new_content = new_content.replace(GAMEFILTER_PLACEHOLDER_UDP, f"--filter-udp={udp_ports}")
+    if new_content != content:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+
+def restore_gamefilter_in_config(tcp_ports, udp_ports, manager_dir=None):
+    """Возвращает в config.txt плейсхолдеры {GameFilter} для заданных портов пресета."""
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+    path = _config_txt_path(manager_dir)
+    if not os.path.isfile(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    new_content = content.replace(f"--filter-tcp={tcp_ports}", GAMEFILTER_PLACEHOLDER_TCP)
+    new_content = new_content.replace(f"--filter-udp={udp_ports}", GAMEFILTER_PLACEHOLDER_UDP)
+    if new_content != content:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+
+def restore_gamefilter_for_preset(preset_id, manager_dir=None):
+    """Снимает подстановку портов пресета с game_filter_tcp/udp в config.txt."""
+    if preset_id not in GAME_PRESETS:
+        return
+    tcp = GAME_PRESETS[preset_id].get("game_filter_tcp")
+    udp = GAME_PRESETS[preset_id].get("game_filter_udp")
+    if tcp is None or udp is None:
+        return
+    restore_gamefilter_in_config(tcp, udp, manager_dir)
+
+
 def remove_preset_lines_from_config(preset_id, manager_dir=None):
     """Удаляет строки пресета из начала config.txt (блок, добавленный при применении)."""
     if preset_id not in GAME_PRESETS:
@@ -89,7 +152,8 @@ def remove_preset_lines_from_config(preset_id, manager_dir=None):
     config_path = os.path.join(manager_dir, "config.txt")
     if not os.path.isfile(config_path):
         return
-    preset_lines = [line.strip() for line in GAME_PRESETS[preset_id]["lines"]]
+    raw_lines = GAME_PRESETS[preset_id].get("lines") or []
+    preset_lines = [line.strip() for line in raw_lines]
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
     config_lines = content.splitlines()
