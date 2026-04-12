@@ -5,7 +5,11 @@ from core.manager_updater import ManagerUpdater
 from core.zapret_updater import ZapretUpdater
 from ui.components.button_styler import create_hover_button
 from ui.components.custom_messagebox import ask_yesno
-from core.dpi_utils import center_toplevel_on_parent, set_window_size_to_fit_content
+from core.dpi_utils import (
+    center_toplevel_on_parent,
+    place_toplevel_centered_on_parent,
+    set_window_size_to_fit_content,
+)
 
 class UpdateWindow:
     def __init__(self, parent):
@@ -639,7 +643,7 @@ class UpdateProgressWindow:
 
         width = self.progress_bar.winfo_width()
         if width <= 1:  # Если размер еще не определен
-            width = 350  # Используем примерную ширину
+            width = 350
 
         # Ограничиваем процент от 0 до 100
         percent = max(0, min(100, percent))
