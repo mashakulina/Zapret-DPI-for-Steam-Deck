@@ -128,3 +128,15 @@ def warning_dialog_scale(root: tk.Misc) -> float:
         if 0.5 <= val <= 4.0:
             f = max(f, float(val))
     return max(0.85, min(4.0, f))
+
+
+def dampened_hi_dpi_factor(f: float) -> float:
+    """Уменьшает множитель выше 100 %, чтобы окна на 125/150 % не казались перераздутыми.
+
+    Линейно сжимает только «хвост» над 1.0; при f ≤ 1.0 возвращает f без изменений.
+    """
+    f = float(f)
+    if f <= 1.0:
+        return f
+    # ~32 % слабее роста над 100 %: 1.25 → ~1.16, 1.5 → ~1.33
+    return 1.0 + (f - 1.0) * 0.68
