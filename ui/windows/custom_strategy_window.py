@@ -4,6 +4,7 @@ from ui.components.button_styler import create_hover_button
 from core.strategy_data import STRATEGY_OPTIONS, save_strategy_names, load_strategy_names, get_strategy_command
 from core.service_manager import ServiceManager
 from ui.windows.sudo_password_window import SudoPasswordWindow
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class CustomStrategyWindow:
     def __init__(self, parent):
@@ -35,10 +36,12 @@ class CustomStrategyWindow:
         self.root.title("Сборка своей стратегии")
         self.setup_ui()
         self.load_saved_strategies()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=560, min_height=480, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("650x550")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()

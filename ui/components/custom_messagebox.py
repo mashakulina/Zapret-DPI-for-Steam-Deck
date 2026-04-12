@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import tkinter as tk
-from tkinter import ttk
 
 def show_info(parent, title, message):
     """Показывает информационное сообщение в стиле приложения"""
@@ -22,12 +21,31 @@ def ask_yesnocancel(parent, title, message):
     """Показывает диалог с вопросом Да/Нет/Отмена в стиле приложения"""
     return _show_question_cancel(parent, title, message)
 
+
+def _attach_resizing_message_wrap(dialog, message_label, horizontal_pad=60):
+    """Обновляет wraplength текста сообщения при изменении ширины диалога."""
+    def _sync(_event=None):
+        try:
+            if not dialog.winfo_exists():
+                return
+            w = dialog.winfo_width()
+            if w <= 1:
+                return
+            message_label.config(wraplength=max(120, w - horizontal_pad))
+        except tk.TclError:
+            pass
+
+    dialog.resizable(True, False)
+    dialog.minsize(280, 120)
+    dialog.bind("<Configure>", lambda _e: _sync())
+    dialog.after_idle(_sync)
+
+
 def _show_dialog(parent, title, message, dialog_type):
     """Базовый метод для показа диалогового окна"""
     dialog = tk.Toplevel(parent)
     dialog.title(title)
     dialog.configure(bg='#182030')
-    dialog.resizable(False, False)
 
     # Центрируем окно
     dialog.transient(parent)
@@ -46,7 +64,7 @@ def _show_dialog(parent, title, message, dialog_type):
 
     # Основной фрейм
     main_frame = tk.Frame(dialog, bg='#182030', padx=30, pady=25)
-    main_frame.pack()
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
     # Заголовок
     title_label = tk.Label(main_frame,
@@ -64,7 +82,8 @@ def _show_dialog(parent, title, message, dialog_type):
                             bg='#182030',
                             justify=tk.LEFT,
                             wraplength=400)
-    message_label.pack(pady=(0, 25))
+    message_label.pack(pady=(0, 25), fill=tk.X)
+    _attach_resizing_message_wrap(dialog, message_label)
 
     # Кнопка
     button_frame = tk.Frame(main_frame, bg='#182030')
@@ -112,7 +131,6 @@ def _show_question(parent, title, message):
     dialog = tk.Toplevel(parent)
     dialog.title(title)
     dialog.configure(bg='#182030')
-    dialog.resizable(False, False)
 
     # Центрируем окно
     dialog.transient(parent)
@@ -120,7 +138,7 @@ def _show_question(parent, title, message):
 
     # Основной фрейм
     main_frame = tk.Frame(dialog, bg='#182030', padx=30, pady=25)
-    main_frame.pack()
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
     # Заголовок
     title_label = tk.Label(main_frame,
@@ -138,7 +156,8 @@ def _show_question(parent, title, message):
                             bg='#182030',
                             justify=tk.LEFT,
                             wraplength=400)
-    message_label.pack(pady=(0, 25))
+    message_label.pack(pady=(0, 25), fill=tk.X)
+    _attach_resizing_message_wrap(dialog, message_label)
 
     # Кнопки
     button_frame = tk.Frame(main_frame, bg='#182030')
@@ -213,7 +232,6 @@ def _show_question_cancel(parent, title, message):
     dialog = tk.Toplevel(parent)
     dialog.title(title)
     dialog.configure(bg='#182030')
-    dialog.resizable(False, False)
 
     # Центрируем окно
     dialog.transient(parent)
@@ -221,13 +239,13 @@ def _show_question_cancel(parent, title, message):
 
     # Основной фрейм
     main_frame = tk.Frame(dialog, bg='#182030', padx=30, pady=25)
-    main_frame.pack()
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
     # Заголовок
     title_label = tk.Label(main_frame,
                           text=title,
                           font=("Arial", 14, "bold"),
-                          fg='#white',  # Синий для вопросов
+                          fg='white',
                           bg='#182030')
     title_label.pack(pady=(0, 15))
 
@@ -239,7 +257,8 @@ def _show_question_cancel(parent, title, message):
                             bg='#182030',
                             justify=tk.LEFT,
                             wraplength=400)
-    message_label.pack(pady=(0, 25))
+    message_label.pack(pady=(0, 25), fill=tk.X)
+    _attach_resizing_message_wrap(dialog, message_label)
 
     # Кнопки
     button_frame = tk.Frame(main_frame, bg='#182030')

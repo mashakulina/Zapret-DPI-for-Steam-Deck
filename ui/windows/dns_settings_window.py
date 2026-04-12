@@ -5,6 +5,7 @@ import re
 from ui.components.custom_messagebox import show_info, show_error, ask_yesno
 from ui.components.button_styler import create_hover_button
 from ui.windows.sudo_password_window import SudoPasswordWindow
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class DNSSettingsWindow:
     def __init__(self, parent):
@@ -333,9 +334,11 @@ class DNSSettingsWindow:
         # Проверяем активное подключение
         self.find_active_wifi()
         if not self.active_connection:
-            show_error(self.window, "Ошибка",
-                    "Не найдено активное подключение Wi-Fi\n"
-                    "Убедитесь, что Wi-Fi включен")
+            show_error(
+                self.window,
+                "Ошибка",
+                "Не найдено активное подключение Wi-Fi. Убедитесь, что Wi-Fi включен.",
+            )
             return
 
         # Получаем значения из полей ввода
@@ -392,10 +395,14 @@ class DNSSettingsWindow:
             def on_password_valid(password):
                 """Callback функция, вызываемая после успешного ввода пароля"""
                 if self.set_custom_dns(dns_servers, password):
-                    show_info(self.window, "Успех",
-                            f"Пользовательские DNS успешно применены\n"
-                            f"Подключение: {self.active_connection}\n"
-                            f"DNS: {dns_servers}")
+                    show_info(
+                        self.window,
+                        "Успех",
+                        (
+                            f"Пользовательские DNS успешно применены. "
+                            f"Подключение: {self.active_connection}. DNS: {dns_servers}"
+                        ),
+                    )
                     # Закрываем окно после успешного применения
                     self.window.destroy()
 
@@ -409,10 +416,14 @@ class DNSSettingsWindow:
                 """Callback функция, вызываемая после успешного ввода пароля"""
                 if self.set_custom_dns(dns_servers, password):
                     # Показываем сообщение и ждем, пока пользователь нажмет OK
-                    show_info(self.window, "Успех",
-                            f"Пользовательские DNS успешно применены\n"
-                            f"Подключение: {self.active_connection}\n"
-                            f"DNS: {dns_servers}")
+                    show_info(
+                        self.window,
+                        "Успех",
+                        (
+                            f"Пользовательские DNS успешно применены. "
+                            f"Подключение: {self.active_connection}. DNS: {dns_servers}"
+                        ),
+                    )
                     # Закрываем окно после того, как пользователь нажал OK
                     self.window.destroy()
 
@@ -423,9 +434,14 @@ class DNSSettingsWindow:
             def on_password_valid(password):
                 """Callback функция, вызываемая после успешного ввода пароля"""
                 if self.reset_to_auto(password):
-                    show_info(self.window, "Успех",
-                            f"DNS сброшены на автоматические (DHCP)\n"
-                            f"Подключение: {self.active_connection}")
+                    show_info(
+                        self.window,
+                        "Успех",
+                        (
+                            f"DNS сброшены на автоматические (DHCP). "
+                            f"Подключение: {self.active_connection}"
+                        ),
+                    )
                     # Закрываем окно после успешного применения
                     self.window.destroy()
 
@@ -433,9 +449,14 @@ class DNSSettingsWindow:
         else:
             # Проверяем, если пользователь пытался ввести DNS, но оставил пример
             if custom_primary and is_example_text(custom_primary):
-                show_error(self.window, "Ошибка",
-                        "Введите реальный DNS адрес в поле 'Основной'\n"
-                        "или выберите один из предложенных DNS серверов")
+                show_error(
+                    self.window,
+                    "Ошибка",
+                    (
+                        "Введите реальный DNS адрес в поле «Основной» "
+                        "или выберите один из предложенных DNS серверов."
+                    ),
+                )
             else:
                 show_error(self.window, "Ошибка", "Не выбран ни один DNS сервер")
             return
@@ -516,7 +537,6 @@ class DNSSettingsWindow:
         """Создает окно настроек DNS"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Настройки DNS")
-        self.window.geometry("380x610")
         self.window.configure(bg='#182030')
 
         # Основной фрейм
@@ -532,7 +552,14 @@ class DNSSettingsWindow:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        _canvas_inner_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        def _on_canvas_configure(event):
+            cw = int(event.width)
+            if cw > 0:
+                canvas.itemconfig(_canvas_inner_id, width=cw)
+
+        canvas.bind("<Configure>", _on_canvas_configure)
 
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -724,6 +751,43 @@ class DNSSettingsWindow:
         # Загружаем текущие настройки DNS
         self.load_current_settings()
 
+        # У Toplevel с Canvas winfo_reqheight() окна занижен (канва не «тянет» высоту контента),
+        # fit_toplevel_to_content даёт низкое окно (~400 px). Размер клиентской области считаем
+        # по scrollable_frame — как у service_unlock с fixed_content_size в dpi_utils.
+        min_w, min_h = 340, 400
+        margin_w, margin_h = 8, 12
+        try:
+            self.window.update_idletasks()
+        except tk.TclError:
+            pass
+        try:
+            measure_w = max(min_w, int(scrollable_frame.winfo_reqwidth()))
+            canvas.itemconfig(_canvas_inner_id, width=measure_w)
+            self.window.update_idletasks()
+            iw = int(scrollable_frame.winfo_reqwidth())
+            ih = int(scrollable_frame.winfo_reqheight())
+        except tk.TclError:
+            iw, ih = min_w, min_h
+        sw = max(1, int(self.window.winfo_screenwidth()))
+        sh = max(1, int(self.window.winfo_screenheight()))
+        cw = max(min_w, iw)
+        fw = min(sw, max(min_w, cw + margin_w))
+        fh = min(sh, max(min_h, ih + margin_h))
+        try:
+            self.window.minsize(min_w, min_h)
+            self.window.resizable(True, True)
+        except tk.TclError:
+            pass
+        place_toplevel_centered_on_parent(
+            self.window,
+            self.parent,
+            min_width=min_w,
+            min_height=min_h,
+            margin_width=margin_w,
+            margin_height=margin_h,
+            fixed_content_size=(fw, fh),
+            immediate=True,
+        )
         return self.window
 
     def set_entry_text_with_color(self, entry_widget, text_var, text):

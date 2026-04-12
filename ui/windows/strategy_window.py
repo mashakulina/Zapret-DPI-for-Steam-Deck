@@ -4,6 +4,7 @@ from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
 from core.service_manager import ServiceManager
 from ui.windows.sudo_password_window import SudoPasswordWindow
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class StrategyWindow:
     def __init__(self, parent):
@@ -13,7 +14,6 @@ class StrategyWindow:
         self.root.title("Смена стратегии")
 
         self.selected_strategy = None
-        self.strategy_var = tk.StringVar()
         self.strategy_items = []  # Храним названия стратегий
 
         # Цвета
@@ -38,13 +38,28 @@ class StrategyWindow:
         self.load_working_strategies()  # Загружаем рабочие стратегии перед загрузкой всех
         self.load_strategies()
         self.load_current_strategy()
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=720, min_height=280, margin_width=8, margin_height=12
+        )
 
     def load_working_strategies(self):
         """Загружает список рабочих стратегий из файла"""
         try:
             if os.path.exists(self.working_strategies_file):
                 with open(self.working_strategies_file, 'r', encoding='utf-8') as f:
-                    strategies = [line.strip() for line in f if line.strip()]
+                    strategies = []
+                    for line in f:
+                        s = line.strip()
+                        if not s:
+                            continue
+                        if s.startswith("\ufeff"):
+                            s = s.lstrip("\ufeff").strip()
+                        if s:
+                            strategies.append(s)
                     self.working_strategies = set(strategies)
                     print(f"Загружено {len(self.working_strategies)} рабочих стратегий")
             else:
@@ -56,7 +71,6 @@ class StrategyWindow:
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("830x320")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
@@ -71,54 +85,30 @@ class StrategyWindow:
                               font=("Arial", 16, "bold"), fg='white', bg='#182030')
         title_label.pack(pady=(5, 20))
 
-        # Фрейм для списка стратегий с тремя колонками
-        list_frame = tk.Frame(main_frame, bg='#182030', height=180)
-        list_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 0))
+        # Три колонки — как в окне выбора стратегий для теста: фреймы + строки (радио + ⭐ + имя)
+        list_frame = tk.Frame(main_frame, bg='#182030', height=250)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Контейнер для трех колонок
         columns_container = tk.Frame(list_frame, bg='#182030')
         columns_container.pack(fill=tk.BOTH, expand=True)
 
-        # Создаем три колонки
+        self.radio_selected = "◉"
+        self.radio_unselected = "○"
+
         self.column_frames = []
-        self.column_listboxes = []
+        self.column_strategies = [[], [], []]
+        self.labels_by_strategy = {}
+        self.row_widgets = {}
 
         for i in range(3):
-            column_frame = tk.Frame(columns_container, bg='#182030', padx=5)
+            column_frame = tk.Frame(columns_container, bg='#182030', padx=10)
             column_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             self.column_frames.append(column_frame)
+            column_frame.bind("<Configure>", lambda e, c=i: self._on_column_configure(c, e))
 
-            # Listbox для колонки
-            listbox = tk.Listbox(
-                column_frame,
-                bg='#182030',
-                fg='white',
-                selectbackground='#1E4A6E',
-                selectforeground='white',
-                font=("Arial", 11),
-                highlightthickness=0,
-                bd=0,
-                relief=tk.FLAT,
-                activestyle='none',
-                selectmode=tk.SINGLE,
-                exportselection=True,
-                height=7
-            )
-            listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            self.column_listboxes.append(listbox)
-
-            # Bind события выбора для каждого Listbox
-            listbox.bind('<<ListboxSelect>>', lambda e, lb=listbox: self.on_strategy_select_listbox(lb))
-            listbox.bind('<Button-1>', lambda e, lb=listbox: self.on_listbox_click_listbox(e, lb))
-
-            # Добавляем разделитель между колонками (кроме последней)
             if i < 2:
                 separator = tk.Frame(columns_container, width=1, bg='#1E4A6E')
                 separator.pack(side=tk.LEFT, fill=tk.Y, padx=5)
-
-        # Символ радиокнопки для отображения
-        self.radio_selected = "◉"  # Заполненный кружок
-        self.radio_unselected = "○"  # Пустой кружок
 
         # Статусная строка
         self.status_label = tk.Label(
@@ -170,6 +160,69 @@ class StrategyWindow:
         )
         back_button.pack(side=tk.LEFT)
 
+    def _prefix_text(self, strategy, selected=False):
+        radio = self.radio_selected if selected else self.radio_unselected
+        star = "⭐ " if strategy in self.working_strategies else ""
+        return f"  {radio}  {star}"
+
+    def _set_row_visual(self, strategy, selected):
+        w = self.row_widgets.get(strategy)
+        if not w:
+            return
+        w["prefix"].config(text=self._prefix_text(strategy, selected))
+
+    def _on_column_configure(self, col_index, event):
+        if event.widget is not self.column_frames[col_index]:
+            return
+        wrap = max(72, event.width - 16)
+        for s in self.column_strategies[col_index]:
+            lbl = self.labels_by_strategy.get(s)
+            if lbl is not None:
+                lbl.config(wraplength=wrap)
+
+    def _create_strategy_row(self, col_index, strategy):
+        col_frame = self.column_frames[col_index]
+        self.column_strategies[col_index].append(strategy)
+        row = tk.Frame(col_frame, bg="#182030", cursor="hand2")
+        row.pack(fill=tk.X, anchor="nw", pady=1)
+        lbl_font = ("Arial", 11)
+        prefix_lbl = tk.Label(
+            row,
+            text=self._prefix_text(strategy, selected=False),
+            font=lbl_font,
+            fg="white",
+            bg="#182030",
+            anchor="nw",
+        )
+        prefix_lbl.pack(side=tk.LEFT, anchor="nw")
+        name_lbl = tk.Label(
+            row,
+            text=strategy,
+            font=lbl_font,
+            fg="white",
+            bg="#182030",
+            justify="left",
+            anchor="nw",
+            wraplength=200,
+        )
+        name_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True, anchor="nw")
+
+        def select_row(_event=None, s=strategy):
+            self._on_row_select(s)
+
+        for w in (prefix_lbl, name_lbl, row):
+            w.bind("<Button-1>", select_row)
+        self.labels_by_strategy[strategy] = name_lbl
+        self.row_widgets[strategy] = {"prefix": prefix_lbl, "name": name_lbl}
+
+    def _on_row_select(self, strategy_name):
+        if strategy_name not in self.strategy_items:
+            return
+        self.reset_radio_buttons()
+        self._set_row_visual(strategy_name, selected=True)
+        self.selected_strategy = strategy_name
+        self.apply_button.config(state=tk.NORMAL, bg="#15354D")
+
     def load_current_strategy(self):
         """Загружает текущую стратегию из файла name_strategy.txt"""
         try:
@@ -193,111 +246,43 @@ class StrategyWindow:
             self.current_strategy = None
 
     def highlight_current_strategy(self):
-        """Подсвечивает текущую стратегию в списке"""
+        """Подсвечивает текущую стратегию (◉ / ○) в строках-колонках."""
         if not self.current_strategy:
             return
-
-        # Ищем индекс текущей стратегии
         try:
             if self.current_strategy in self.strategy_items:
-                index = self.strategy_items.index(self.current_strategy)
-
-                # Выделяем стратегию
                 self.selected_strategy = self.current_strategy
-
-                # Сбрасываем все радиокнопки
                 self.reset_radio_buttons()
-
-                # Находим в какой колонке и какой индекс внутри колонки
-                col_index, item_index = self.get_column_and_index(index)
-
-                if col_index is not None and item_index is not None:
-                    listbox = self.column_listboxes[col_index]
-
-                    # Устанавливаем выбранную радиокнопку
-                    current_text = listbox.get(item_index)
-                    if self.radio_unselected in current_text:
-                        # Восстанавливаем отображаемое имя со звездочкой если нужно
-                        display_name = self.current_strategy
-                        if self.current_strategy in self.working_strategies:
-                            display_name = f"⭐ {self.current_strategy}"
-
-                        listbox.delete(item_index)
-                        listbox.insert(item_index, f"  {self.radio_selected}  {display_name}")
-
-                    # Выделяем строку в Listbox
-                    listbox.selection_clear(0, tk.END)
-                    listbox.selection_set(item_index)
-                    listbox.activate(item_index)
-
-                    # Прокручиваем чтобы было видно
-                    listbox.see(item_index)
-
-                # Активируем кнопку Применить
+                self._set_row_visual(self.current_strategy, selected=True)
                 self.apply_button.config(state=tk.NORMAL, bg='#15354D')
-
                 print(f"Подсвечена текущая стратегия: {self.current_strategy}")
         except Exception as e:
             print(f"Ошибка подсветки текущей стратегии: {e}")
 
-    def get_column_and_index(self, global_index):
-        """Возвращает номер колонки и индекс внутри колонки по глобальному индексу"""
-        if not self.strategy_items or global_index >= len(self.strategy_items):
-            return None, None
-
-        # Распределяем стратегии по колонкам равномерно
-        items_per_column = (len(self.strategy_items) + 2) // 3  # Округление вверх
-
-        col_index = global_index // items_per_column
-        if col_index >= 3:  # На всякий случай
-            col_index = 2
-
-        item_index = global_index % items_per_column
-
-        # Проверяем что в этой колонке есть столько элементов
-        listbox = self.column_listboxes[col_index]
-        if item_index >= listbox.size():
-            # Ищем последний элемент в этой колонке
-            item_index = listbox.size() - 1
-
-        return col_index, item_index
-
-    def get_global_index(self, col_index, item_index):
-        """Возвращает глобальный индекс по номеру колонки и индексу внутри колонки"""
-        if col_index >= len(self.column_listboxes):
-            return None
-
-        # Подсчитываем количество элементов в предыдущих колонках
-        total_before = 0
-        for i in range(col_index):
-            total_before += self.column_listboxes[i].size()
-
-        return total_before + item_index
-
     def load_strategies(self):
-        """Загружает список стратегий из папки и распределяет по трем колонкам"""
+        """Загружает стратегии в три колонки (распределение как в окне для теста)."""
         try:
-            # Путь к папке со стратегиями
             manager_dir = os.path.expanduser("~/Zapret_DPI_Manager/files")
             strategy_dir = os.path.join(manager_dir, "strategy")
 
-            # Создаем папку если ее нет
             if not os.path.exists(strategy_dir):
                 os.makedirs(strategy_dir)
                 print(f"Создана папка для стратегий: {strategy_dir}")
 
-            # Очищаем списки
-            for listbox in self.column_listboxes:
-                listbox.delete(0, tk.END)
+            for cf in self.column_frames:
+                for w in cf.winfo_children():
+                    w.destroy()
+            self.labels_by_strategy.clear()
+            self.row_widgets.clear()
+            self.column_strategies = [[], [], []]
             self.strategy_items.clear()
+            self.selected_strategy = None
+            self.apply_button.config(state=tk.DISABLED, bg='#2a4d6a')
 
-            # Загружаем пользовательские стратегии из файлов (без расширения)
             if os.path.exists(strategy_dir):
-                # Получаем все файлы, которые не являются папками
                 strategy_files = [f for f in os.listdir(strategy_dir)
                                 if os.path.isfile(os.path.join(strategy_dir, f))]
 
-                # Сортируем и фильтруем
                 sorted_files = []
                 for file in sorted(strategy_files):
                     if not file.startswith('.'):
@@ -306,145 +291,40 @@ class StrategyWindow:
                 self.strategy_items = sorted_files
 
                 if not self.strategy_items:
-                    # Нет стратегий - показываем сообщение в первой колонке
-                    self.column_listboxes[0].insert(tk.END, "  Стратегии не найдены")
-                    self.column_listboxes[0].config(state=tk.DISABLED)
+                    empty_label = tk.Label(
+                        self.column_frames[0],
+                        text="Стратегии не найдены",
+                        font=("Arial", 11),
+                        fg="white",
+                        bg="#182030",
+                    )
+                    empty_label.pack(pady=20)
                 else:
-                    # Распределяем стратегии по трем колонкам
-                    items_per_column = (len(self.strategy_items) + 2) // 3  # Округление вверх
+                    items_per_column = (len(self.strategy_items) + 2) // 3
 
                     for i, strategy in enumerate(self.strategy_items):
                         col_index = i // items_per_column
-                        if col_index < 3:  # Убеждаемся что не выходим за пределы
-                            listbox = self.column_listboxes[col_index]
+                        if col_index < 3:
+                            self._create_strategy_row(col_index, strategy)
 
-                            # Добавляем звездочку если стратегия рабочая
-                            display_name = strategy
-                            if strategy in self.working_strategies:
-                                display_name = f"⭐ {strategy}"
-
-                            listbox.insert(tk.END, f"  {self.radio_unselected}  {display_name}")
-
-                    # После загрузки всех стратегий подсвечиваем текущую
+                    print(f"Загружено {len(self.strategy_items)} стратегий")
                     self.root.after(100, self.highlight_current_strategy)
 
         except Exception as e:
             print(f"Ошибка загрузки стратегий: {e}")
-            self.column_listboxes[0].insert(tk.END, f"  Ошибка: {str(e)}")
-            self.column_listboxes[0].config(state=tk.DISABLED)
-
-    def on_listbox_click_listbox(self, event, listbox):
-        """Обрабатывает клик в конкретном Listbox для имитации радиокнопок"""
-        # Получаем индекс кликнутого элемента
-        index = listbox.nearest(event.y)
-
-        # Находим какой это Listbox и получаем его содержимое
-        col_index = self.column_listboxes.index(listbox)
-
-        # Получаем текст элемента
-        if index < listbox.size():
-            item_text = listbox.get(index)
-
-            # Извлекаем имя стратегии из текста (убираем звездочку если есть)
-            if "  " in item_text:
-                parts = item_text.split("  ")
-                if len(parts) >= 3:
-                    display_name = parts[2].strip()
-
-                    # Убираем звездочку для поиска оригинального имени
-                    if display_name.startswith("⭐ "):
-                        strategy_name = display_name[2:].strip()
-                    else:
-                        strategy_name = display_name
-
-                    # Находим глобальный индекс
-                    global_index = self.get_global_index(col_index, index)
-
-                    if strategy_name in self.strategy_items and global_index is not None:
-                        # Сбрасываем все радиокнопки
-                        self.reset_radio_buttons()
-
-                        # Восстанавливаем отображаемое имя со звездочкой если нужно
-                        display_name_with_star = strategy_name
-                        if strategy_name in self.working_strategies:
-                            display_name_with_star = f"⭐ {strategy_name}"
-
-                        # Устанавливаем выбранную радиокнопку
-                        listbox.delete(index)
-                        listbox.insert(index, f"  {self.radio_selected}  {display_name_with_star}")
-
-                        # Выделяем строку
-                        listbox.selection_clear(0, tk.END)
-                        listbox.selection_set(index)
-                        listbox.activate(index)
-
-                        # Сохраняем выбранную стратегию (оригинальное имя)
-                        self.selected_strategy = strategy_name
-                        self.apply_button.config(state=tk.NORMAL, bg='#15354D')
-
-        return "break"  # Предотвращаем стандартную обработку
-
-    def on_strategy_select_listbox(self, listbox):
-        """Обрабатывает выбор стратегии через клавиатуру в конкретном Listbox"""
-        selection = listbox.curselection()
-        if selection:
-            index = selection[0]
-
-            # Находим какой это Listbox
-            col_index = self.column_listboxes.index(listbox)
-
-            # Получаем текст элемента
-            item_text = listbox.get(index)
-
-            # Извлекаем имя стратегии из текста (убираем звездочку если есть)
-            if "  " in item_text:
-                parts = item_text.split("  ")
-                if len(parts) >= 3:
-                    display_name = parts[2].strip()
-
-                    # Убираем звездочку для поиска оригинального имени
-                    if display_name.startswith("⭐ "):
-                        strategy_name = display_name[2:].strip()
-                    else:
-                        strategy_name = display_name
-
-                    if strategy_name in self.strategy_items:
-                        # Сбрасываем все радиокнопки
-                        self.reset_radio_buttons()
-
-                        # Восстанавливаем отображаемое имя со звездочкой если нужно
-                        display_name_with_star = strategy_name
-                        if strategy_name in self.working_strategies:
-                            display_name_with_star = f"⭐ {strategy_name}"
-
-                        # Устанавливаем выбранную радиокнопку
-                        listbox.delete(index)
-                        listbox.insert(index, f"  {self.radio_selected}  {display_name_with_star}")
-
-                        self.selected_strategy = strategy_name
-                        self.apply_button.config(state=tk.NORMAL, bg='#15354D')
+            err = tk.Label(
+                self.column_frames[0],
+                text=f"Ошибка: {str(e)}",
+                font=("Arial", 11),
+                fg="#ff7043",
+                bg="#182030",
+            )
+            err.pack(pady=20)
 
     def reset_radio_buttons(self):
-        """Сбрасывает все радиокнопки к пустому состоянию во всех колонках"""
-        for i, strategy in enumerate(self.strategy_items):
-            # Находим в какой колонке и какой индекс внутри колонки
-            col_index, item_index = self.get_column_and_index(i)
-
-            if col_index is not None and item_index is not None:
-                listbox = self.column_listboxes[col_index]
-
-                # Проверяем что элемент существует
-                if item_index < listbox.size():
-                    # Восстанавливаем отображаемое имя со звездочкой если нужно
-                    display_name = strategy
-                    if strategy in self.working_strategies:
-                        display_name = f"⭐ {strategy}"
-
-                    # Проверяем что это действительно стратегия (а не сообщение об ошибке)
-                    current_text = listbox.get(item_index)
-                    if strategy in current_text or f"⭐ {strategy}" in current_text:
-                        listbox.delete(item_index)
-                        listbox.insert(item_index, f"  {self.radio_unselected}  {display_name}")
+        """Все строки снова с ○; звезда у рабочих — только в префиксе."""
+        for strategy in self.strategy_items:
+            self._set_row_visual(strategy, selected=False)
 
     def ensure_sudo_password(self):
         """Проверяет и получает пароль sudo если нужно"""
@@ -495,7 +375,7 @@ class StrategyWindow:
             strategy_file = os.path.join(strategy_dir, self.selected_strategy)
 
             if not os.path.exists(strategy_file):
-                messagebox.showerror("Ошибка", f"Файл стратегии не найден:\n{self.selected_strategy}")
+                messagebox.showerror("Ошибка", f"Файл стратегии не найден: {self.selected_strategy}")
                 self.reset_ui_state()
                 return
 

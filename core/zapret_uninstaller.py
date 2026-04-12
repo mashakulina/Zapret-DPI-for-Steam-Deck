@@ -9,6 +9,7 @@ import platform
 from tkinter import messagebox
 from ui.components.custom_messagebox import ask_yesno as custom_show_yesno
 from ui.components.custom_messagebox import show_info as custom_show_info
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class ZapretUninstaller:
     def __init__(self, root_window=None):
@@ -93,15 +94,9 @@ class ZapretUninstaller:
         try:
             progress_window = tk.Toplevel(self.root)
             progress_window.title(title)
-            progress_window.geometry("400x180")
             progress_window.configure(bg='#182030')
             progress_window.resizable(False, False)
             progress_window.transient(self.root)
-
-            # Центрируем окно
-            progress_window.update_idletasks()
-            x = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - (400 // 2)
-            y = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - (180 // 2)
 
             # Основной фрейм
             main_frame = tk.Frame(progress_window, bg='#182030', padx=30, pady=25)
@@ -160,6 +155,10 @@ class ZapretUninstaller:
             )
             self.percent_label.pack(pady=(5, 0))
 
+            progress_window.update_idletasks()
+            place_toplevel_centered_on_parent(
+                progress_window, self.root, min_width=340, min_height=140, margin_width=8, margin_height=10
+            )
             progress_window.update()
             self.log_debug("Окно прогресса создано успешно")
             return progress_window

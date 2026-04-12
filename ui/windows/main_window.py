@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 import tkinter as tk
 import subprocess
 import threading
@@ -7,7 +8,7 @@ import platform
 import shlex
 from tkinter import messagebox
 from ui.components.custom_messagebox import ask_yesno, show_error, show_info
-from ui.components.button_styler import create_hover_button
+from ui.components.button_styler import create_hover_button, uniform_button_width_for_font
 from ui.windows.strategy_window import StrategyWindow
 from ui.windows.strategy_selector_window import StrategySelectorWindow
 from core.service_manager import ServiceManager
@@ -25,6 +26,15 @@ from core.file_checker import run_file_check
 from core.zapret_uninstaller import run_zapret_uninstall
 from ui.windows.update_window import show_update_window
 from ui.windows.gamefilter_window import GameFilterWindow
+from core.dpi_utils import (
+    _parse_winfo_geometry,
+    _place_child_centered_on_anchor,
+    application_tk_root,
+    center_toplevel_on_screen,
+    fit_toplevel_to_content,
+    set_window_size_to_fit_content,
+)
+from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
 
 # Выполняется под root через sudo -S; скрипт сам вызывает sudo (systemctl, cp в plugins).
 ZAPRET_DPI_PLUGIN_INSTALL_CMD = (
@@ -55,6 +65,7 @@ class MainWindow:
         self.decky_plugin_installed = os.path.isdir(self.decky_plugin_path)
 
         self.setup_ui()
+        self._apply_main_window_size()
         # Сначала проверяем зависимости
         self.check_dependencies_on_startup()
         # Затем проверяем zapret
@@ -254,6 +265,8 @@ class MainWindow:
         notification_window.geometry(f"{width}x{height}")
         notification_window.configure(bg='#182030')
         notification_window.grab_set()  # Модальное окно
+        notification_window.resizable(True, True)
+        notification_window.minsize(320, 200)
 
         # Основной контейнер
         main_frame = tk.Frame(notification_window, bg='#182030', padx=10, pady=10)
@@ -272,13 +285,24 @@ class MainWindow:
         # Информационное сообщение
         info_label = tk.Label(
             main_frame,
-            text="Рекомендуется обновиться для получения\nновых функций и исправлений ошибок",
+            text="Рекомендуется обновиться для получения новых функций и исправлений ошибок",
             font=("Arial", 11),
             fg='#AAAAAA',
             bg='#182030',
-            justify=tk.CENTER
+            justify=tk.CENTER,
+            wraplength=max(120, width - 40),
         )
-        info_label.pack(pady=(0, 20))
+        info_label.pack(pady=(0, 20), fill=tk.X)
+
+        def _sync_info_wrap(_event=None):
+            try:
+                aw = max(main_frame.winfo_width(), 1)
+                info_label.config(wraplength=max(120, aw - 40))
+            except tk.TclError:
+                pass
+
+        main_frame.bind("<Configure>", lambda _e: _sync_info_wrap())
+        notification_window.after_idle(_sync_info_wrap)
 
         # Фрейм для сообщений об обновлениях
         updates_frame = tk.Frame(main_frame, bg='#182030')
@@ -593,7 +617,6 @@ class MainWindow:
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("460x230")
         self.root.configure(bg='#182030')
 
         # Устанавливаем WM_CLASS
@@ -612,6 +635,17 @@ class MainWindow:
                 self.root.iconphoto(True, icon)
         except Exception as e:
             print(f"Не удалось установить иконку: {e}")
+
+    def _apply_main_window_size(self):
+        """Размер и minsize по содержимому, чтобы UI не обрезался при высоком DPI."""
+        fit_toplevel_to_content(
+            self.root,
+            min_width=320,
+            min_height=200,
+            margin_width=8,
+            margin_height=12,
+        )
+        center_toplevel_on_screen(self.root)
 
     def on_focus_in(self, event):
         """Обрабатывает получение фокуса окном"""
@@ -854,7 +888,7 @@ class MainWindow:
     def open_user_guide(self, event=None):
         """Открывает руководство пользователя в браузере"""
         import webbrowser
-        url = "https://telegra.ph/Rukovodstvo-polzovatelya-Zapret-DPI-Manager-20-dlya-Steam-Deck-01-04"
+        url = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/blob/main/docs/user-guide-zapret-dpi-manager-steam-deck-ru.md"
 
         try:
             webbrowser.open(url)
@@ -1084,6 +1118,7 @@ class MainWindow:
         warning_window = tk.Toplevel(self.root)
         warning_window.title("ВНИМАНИЕ!")
         warning_window.configure(bg='#182030')
+        warning_window.resizable(False, False)
 
         # Определяем функцию для проверки Steam Deck
         def is_steamdeck():
@@ -1127,45 +1162,27 @@ class MainWindow:
         screen_width = warning_window.winfo_screenwidth()
         screen_height = warning_window.winfo_screenheight()
 
-        # Базовые размеры (оригинал)
-        base_width = 450
-        base_height = 310
-
         # --- Учёт ориентации ---
         if screen_height > screen_width:
             # Портретная ориентация (например, у Steam Deck в вертикальном режиме)
             screen_width, screen_height = screen_height, screen_width
 
+        # Эталонные размеры окна с учётом DPI (100% ≈ 1.0, 125% ≈ 1.25). При f>1 шрифты растут сильнее
+        # по вертикали — чуть больший коэффициент по ширине, меньший по высоте, чтобы пропорции не «заваливались».
+        f = warning_dialog_scale(self.root)
+        extra = max(0.0, float(f) - 1.0)
+        base_width = int(round(470.0 * f * (1.0 + 0.22 * extra)))
+        base_height = int(round(340.0 * f * (1.0 + 0.09 * extra)))
+        base_width = max(380, min(base_width, int(screen_width) - 32))
+        base_height = max(280, min(base_height, int(screen_height) - 48))
+
         # --- Подстройка под Steam Deck / SteamOS ---
         on_steamdeck = is_steamdeck()
 
         if on_steamdeck:
-            # На Steam Deck — размер окна меньше, чтобы точно влезало
-            width = min(base_width - 60, screen_width - 80)  # Еще меньше для надежности
+            # Целевые минимумы; итоговый размер и позиция — после сборки UI (fit + центр по главному окну)
+            width = min(base_width - 60, screen_width - 80)
             height = min(base_height - 60, screen_height - 80)
-
-            # Для Steam Deck делаем позиционирование относительно главного окна
-            try:
-                # Позиционируем относительно главного окна
-                main_x = self.root.winfo_x()
-                main_y = self.root.winfo_y()
-                main_width = self.root.winfo_width()
-                main_height = self.root.winfo_height()
-
-                # Позиция по центру главного окна
-                x = main_x + (main_width - width) // 2
-                y = main_y + (main_height - height) // 2
-
-                # Убедимся, что окно не выходит за границы экрана
-                x = max(0, min(x, screen_width - width - 10))
-                y = max(0, min(y, screen_height - height - 10))
-
-                warning_window.geometry(f"{int(width)}x{int(height)}+{int(x)}+{int(y)}")
-            except:
-                # Если не удалось получить позицию главного окна
-                width = min(base_width - 60, screen_width - 80)
-                height = min(base_height - 60, screen_height - 80)
-                warning_window.geometry(f"{int(width)}x{int(height)}")
 
             # Делаем более читаемым для Steam Deck
             font_title = ("Arial", 14, "bold")
@@ -1193,9 +1210,22 @@ class MainWindow:
             padx_main = 20
             pady_main = 15
 
-        # Основной контейнер
-        main_frame = tk.Frame(warning_window, bg='#182030', padx=padx_main, pady=pady_main)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Фиксированный перенос по целевой ширине (не winfo_width при Configure — иначе при 1px
+        # получается wraplength=120, огромная высота req и «вытянутое» окно после fit_toplevel).
+        wrap_px = max(120, width - 2 * int(padx_main))
+
+        # Внешняя колонка фиксированной ширины: перенос и высота не «плавают» с размером Toplevel (лог: 409 vs 644 px).
+        outer = tk.Frame(
+            warning_window,
+            bg='#182030',
+            width=int(width),
+            height=min(max(400, int(screen_height) - 80), 900),
+        )
+        outer.pack(anchor=tk.N)
+        outer.pack_propagate(False)
+
+        main_frame = tk.Frame(outer, bg='#182030', padx=padx_main, pady=pady_main)
+        main_frame.pack(fill=tk.X)
 
         # Заголовок
         title_label = tk.Label(
@@ -1207,7 +1237,7 @@ class MainWindow:
         )
         title_label.pack(pady=(0, 10))
 
-        # Основное предупреждение
+        # Основное предупреждение (перенос по ширине окна, без фиксации wraplength к начальной geometry)
         warning_text = "Данный фильтр является экспериментальной функцией"
         warning_label = tk.Label(
             main_frame,
@@ -1216,13 +1246,14 @@ class MainWindow:
             fg='white',
             bg='#182030',
             justify=tk.CENTER,
-            wraplength=width - padx_main * 2  # Автоперенос для Steam Deck
+            anchor=tk.CENTER,
+            wraplength=wrap_px,
         )
-        warning_label.pack(pady=(0, 15))
+        warning_label.pack(pady=(0, 15), fill=tk.X)
 
         # Подробности о проблемах
         problems_frame = tk.Frame(main_frame, bg='#182030')
-        problems_frame.pack(fill=tk.X, pady=(0, 20))
+        problems_frame.pack(fill=tk.X, pady=(0, 12))
 
         problems_title = tk.Label(
             problems_frame,
@@ -1230,30 +1261,30 @@ class MainWindow:
             font=font_problems,
             fg='#ff3b30',
             bg='#182030',
-            anchor=tk.W
+            anchor=tk.W,
         )
         problems_title.pack(fill=tk.X, pady=(0, 5))
 
-        # Список проблем
         problems = [
             "• черный экран после перехода с рабочего стола в игровой режим. Лучше перезагрузиться",
             "• долгая загрузка после включения/перезагрузки",
             "• скорее всего не будет работать Youtube и Discord. Нужно будет отключать GameFilter",
-            "• возможны другие нестабильности в работе"
+            "• возможны другие нестабильности в работе",
         ]
-
+        problem_wrap_labels: list[tk.Label] = []
         for problem in problems:
-            problem_label = tk.Label(
+            pl = tk.Label(
                 problems_frame,
                 text=problem,
                 font=font_problems,
                 fg='#AAAAAA',
                 bg='#182030',
-                anchor=tk.W,
+                anchor=tk.NW,
                 justify=tk.LEFT,
-                wraplength=width - padx_main * 2  # Автоперенос
+                wraplength=wrap_px,
             )
-            problem_label.pack(fill=tk.X, pady=2, anchor=tk.W)
+            problem_wrap_labels.append(pl)
+            pl.pack(fill=tk.X, pady=(0, 6), anchor=tk.NW)
 
         # Финальное предупреждение
         final_warning = tk.Label(
@@ -1263,9 +1294,10 @@ class MainWindow:
             fg='#ff9500',
             bg='#182030',
             justify=tk.CENTER,
-            wraplength=width - padx_main * 2  # Автоперенос
+            anchor=tk.CENTER,
+            wraplength=wrap_px,
         )
-        final_warning.pack(pady=(0, 20))
+        final_warning.pack(pady=(0, 12), fill=tk.X)
 
         # Фрейм для кнопок
         buttons_frame = tk.Frame(main_frame, bg='#182030')
@@ -1313,13 +1345,84 @@ class MainWindow:
         cancel_button.bind("<Enter>", lambda e: cancel_button.config(bg='#1e4a6a'))
         cancel_button.bind("<Leave>", lambda e: cancel_button.config(bg='#15354D'))
 
+        wrap_labels: list[tk.Label] = [warning_label, final_warning, *problem_wrap_labels]
+
+        def _apply_wrap_for_outer(wcol: int) -> None:
+            wp = max(120, int(wcol) - 2 * int(padx_main))
+            for lb in wrap_labels:
+                lb.config(wraplength=wp)
+
+        outer.update_idletasks()
+        outer_w = max(int(width), int(main_frame.winfo_reqwidth()))
+        outer_h = max(1, int(main_frame.winfo_reqheight()))
+        outer.config(width=outer_w, height=outer_h)
+        outer.update_idletasks()
+        # Если масштаб «потерялся» (~1.0), колонка узкая — много строк и огромная высота (лог ~473×644).
+        # Только расширять outer недостаточно: нужно обновить wraplength у всех Label.
+        sw_outer = int(warning_window.winfo_screenwidth())
+        wrap_adjust_iters = 0
+        for _ in range(6):
+            if outer_h <= max(440, int(outer_w * 1.3)):
+                break
+            grow = min(max(24, outer_w // 8), sw_outer - outer_w - 40)
+            if grow < 16:
+                break
+            outer_w += grow
+            outer.config(width=outer_w)
+            _apply_wrap_for_outer(outer_w)
+            outer.update_idletasks()
+            outer_h = max(1, int(main_frame.winfo_reqheight()))
+            outer.config(height=outer_h)
+            outer.update_idletasks()
+            wrap_adjust_iters += 1
+
         # ОБЯЗАТЕЛЬНО для SteamOS/Wayland
         warning_window.transient(self.root)  # Делаем окно дочерним
         warning_window.grab_set()  # Делаем модальным
 
-        # Ждем немного чтобы окно успело отобразиться
         warning_window.update_idletasks()
         warning_window.update()
+
+        # Не fit_toplevel_to_content: он ставит minsize(max(min_w, req_w), …) и при min_w=580
+        # раздувает ширину до 580 при низкой высоте контента → «полоска» 580×350 (см. лог post_fit/post_place).
+        try:
+            warning_window.minsize(1, 1)
+        except tk.TclError:
+            pass
+        fw, fh = set_window_size_to_fit_content(
+            warning_window,
+            min_width=0,
+            min_height=0,
+            margin_width=8,
+            margin_height=12,
+        )
+        try:
+            warning_window.lift()
+        except tk.TclError:
+            pass
+        anchor = application_tk_root(self.root)
+        if anchor is not None:
+            try:
+                self.root.update_idletasks()
+                self.root.update()
+            except tk.TclError:
+                pass
+            _place_child_centered_on_anchor(warning_window, anchor)
+        else:
+            center_toplevel_on_screen(warning_window)
+        warning_window.update_idletasks()
+        # WM/transient иногда ужимает Toplevel ниже winfo_req+margin от set_window_size_to_fit_content.
+        try:
+            _parsed_geom = _parse_winfo_geometry(warning_window.winfo_geometry())
+            if _parsed_geom:
+                _gw0, _gh0, _gx0, _gy0 = _parsed_geom
+                if _gw0 < int(fw) or _gh0 < int(fh):
+                    warning_window.geometry(
+                        f"{int(fw)}x{int(fh)}{_gx0:+d}{_gy0:+d}"
+                    )
+                    warning_window.update_idletasks()
+        except tk.TclError:
+            pass
 
         # Для Steam Deck делаем дополнительную проверку
         if on_steamdeck:
@@ -1469,22 +1572,30 @@ class MainWindow:
         menu_x = self.settings_icon.winfo_rootx()
         menu_y = self.settings_icon.winfo_rooty() + self.settings_icon.winfo_height()
 
+        f = logical_ui_scale(self.root)
+        base_menu_w, base_menu_h = 240, 385
+        menu_w = int(round(base_menu_w * f))
+        menu_h = int(round(base_menu_h * f))
+        fz = max(9, int(round(11 * f)))
+        padx_m = int(max(8, round(12 * f)))
+        pady_m = int(max(6, round(10 * f)))
+        bd_m = max(1, int(round(f)))
+
         self.settings_menu = tk.Toplevel(self.root)
         self.settings_menu.wm_overrideredirect(True)
-        self.settings_menu.geometry(f"240x385+{menu_x}+{menu_y}")
-        self.settings_menu.configure(bg='#15354D', relief=tk.RAISED, bd=1)
+        self.settings_menu.geometry(f"{menu_w}x{menu_h}+{menu_x}+{menu_y}")
+        self.settings_menu.configure(bg='#15354D', relief=tk.RAISED, bd=bd_m)
 
-        # Стиль для кнопок меню
+        # Стиль для кнопок меню (явные пиксели/pt — через коэффициент от DPI Tk, см. tk_scale_lab_helpers)
         menu_button_style = {
-            'font': ('Arial', 11),
+            'font': ('Arial', fz),
             'bg': '#15354D',
             'fg': 'white',
             'bd': 0,
             'relief': tk.FLAT,
-            'padx': 12,
-            'pady': 10,
+            'padx': padx_m,
+            'pady': pady_m,
             'anchor': tk.W,
-            'width': 18,
             'highlightthickness': 0,
             'cursor': 'hand2'
         }
@@ -1505,6 +1616,14 @@ class MainWindow:
             ("Обновить Zapret", self.open_update_settings),
             ("Удалить Zapret", self.uninstall_zapret)
         ]
+        menu_button_style["width"] = max(
+            int(round(18 * f)),
+            uniform_button_width_for_font(
+                self.settings_menu,
+                menu_button_style["font"],
+                *[t for t, _ in menu_items],
+            ),
+        )
 
         for text, command in menu_items:
             menu_button = create_hover_button(self.settings_menu, text=text,
@@ -1512,6 +1631,15 @@ class MainWindow:
             menu_button.pack(fill=tk.X)
             menu_button.bind("<Enter>", lambda e, btn=menu_button: btn.config(bg='#1e4a6a'))
             menu_button.bind("<Leave>", lambda e, btn=menu_button: btn.config(bg='#15354D'))
+
+        self.settings_menu.update_idletasks()
+        fit_toplevel_to_content(
+            self.settings_menu,
+            min_width=int(round(200 * f)),
+            min_height=int(round(120 * f)),
+            margin_width=int(max(4, round(8 * f))),
+            margin_height=int(max(8, round(12 * f))),
+        )
 
         # Bind событие клика вне меню для закрытия
         self.settings_menu.bind("<FocusOut>", lambda e: self.close_settings_menu())

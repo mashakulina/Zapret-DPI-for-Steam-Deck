@@ -5,6 +5,7 @@ from core.manager_updater import ManagerUpdater
 from core.zapret_updater import ZapretUpdater
 from ui.components.button_styler import create_hover_button
 from ui.components.custom_messagebox import ask_yesno
+from core.dpi_utils import center_toplevel_on_parent, set_window_size_to_fit_content
 
 class UpdateWindow:
     def __init__(self, parent):
@@ -25,17 +26,30 @@ class UpdateWindow:
         self.zapret_version = None
 
         self.setup_ui()
+        self.root.update_idletasks()
+        try:
+            self.root.minsize(1, 1)
+        except tk.TclError:
+            pass
+        set_window_size_to_fit_content(
+            self.root,
+            min_width=360,
+            min_height=320,
+            margin_width=8,
+            margin_height=12,
+        )
+        center_toplevel_on_parent(self.root, self.parent)
 
     def setup_window(self):
         self.root.title("Обновление")
-        self.root.geometry("400x400")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
 
     def setup_ui(self):
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Без expand по Y: иначе winfo_reqheight раздувается и fit_toplevel давал «школу» вместо ~400×400.
+        main_frame.pack(fill=tk.X)
 
         # Заголовок
         tk.Label(main_frame, text="Обновление компонентов",
@@ -68,16 +82,17 @@ class UpdateWindow:
         )
         self.action_btn.pack(anchor=tk.CENTER)
 
-        # Лог
+        # Лог — фиксированная высота в строках, без expand (иначе окно тянется на весь экран).
         log_frame = tk.Frame(main_frame, bg='#182030')
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        log_frame.pack(fill=tk.X)
 
         tk.Label(log_frame, text="Лог обновлений:",
                 font=("Arial", 10), fg='white', bg='#182030').pack(anchor=tk.W, pady=(0, 5))
 
         self.log_text = tk.Text(
             log_frame,
-            height=5,
+            height=6,
+            width=48,
             bg='#15354D',
             fg='white',
             wrap=tk.WORD,
@@ -85,7 +100,7 @@ class UpdateWindow:
             highlightthickness=0,
             borderwidth=0
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        self.log_text.pack(fill=tk.X)
 
         # Кнопка закрытия
         close_frame = tk.Frame(main_frame, bg='#182030')
@@ -340,12 +355,14 @@ class UpdateProgressWindow:
         """Запускает окно прогресса"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Обновление")
-        self.window.geometry("400x200")
         self.window.configure(bg='#182030')
         self.window.transient(self.parent)
         self.window.grab_set()
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=340, min_height=160, margin_width=8, margin_height=12
+        )
         self.start_update_process()
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)

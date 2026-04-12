@@ -1,5 +1,6 @@
 import tkinter as tk
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 from ui.windows.strategy_window import StrategyWindow
 from ui.windows.custom_strategy_window import CustomStrategyWindow
 
@@ -11,10 +12,12 @@ class StrategySelectorWindow:
         self.root.title("Выбор типа стратегии")
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=240, min_height=260, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("250x285")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()

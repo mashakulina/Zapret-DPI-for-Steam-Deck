@@ -4,6 +4,7 @@ import tkinter as tk
 import os
 from ui.components.button_styler import create_hover_button
 from ui.components.custom_messagebox import show_info, show_error
+from core.dpi_utils import place_toplevel_centered_on_parent
 from core.game_presets import (
     GAME_PRESETS,
     get_active_preset_id,
@@ -27,6 +28,9 @@ class GameFilterWindow:
         self.root.title("GameFilter")
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=280, min_height=220, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна."""
@@ -140,6 +144,9 @@ class GamePresetWindow:
 
         self.setup_ui()
         self._load_preset_state()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=320, min_height=280, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна."""

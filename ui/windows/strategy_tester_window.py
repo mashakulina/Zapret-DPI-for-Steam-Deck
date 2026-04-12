@@ -9,6 +9,7 @@ import io
 import contextlib
 from pathlib import Path
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from datetime import datetime, timedelta
 
@@ -72,11 +73,12 @@ class StrategyTesterWindow:
 
         self.window = tk.Toplevel(self.parent)
         self.window.title("Автоподбор стратегий")
-        self.window.geometry("650x500")
         self.window.configure(bg='#182030')
 
         self.setup_ui()
-
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=560, min_height=420, margin_width=8, margin_height=12
+        )
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         self.window.mainloop()

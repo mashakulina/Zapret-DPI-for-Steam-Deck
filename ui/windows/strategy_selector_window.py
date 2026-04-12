@@ -2,6 +2,7 @@ import tkinter as tk
 import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 from ui.windows.strategy_window import StrategyWindow
 from ui.windows.custom_strategy_window import CustomStrategyWindow
 from ui.windows.strategy_tester_window import StrategyTesterWindow
@@ -15,12 +16,12 @@ class AutoSelectionWindow:
         self.root.title("Автоподбор стратегий")
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=220, min_height=200, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        window_width = 250
-        window_height = 250
-
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
@@ -118,14 +119,13 @@ class StrategySelectionWindow:
 
         self.setup_ui()
         self.load_strategies()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=640, min_height=300, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
         self.root.title("Выбор стратегий для тестирования")
-
-        # Устанавливаем размер окна (уменьшили высоту)
-        window_width = 770
-        window_height = 360
 
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
@@ -359,12 +359,12 @@ class StrategySelectorWindow:
         self.root.title("Выбор типа стратегии")
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=240, min_height=260, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        window_width = 250
-        window_height = 340
-
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()

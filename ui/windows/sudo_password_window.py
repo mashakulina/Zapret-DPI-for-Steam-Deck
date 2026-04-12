@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from core.sudo_checker import SudoChecker
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class SudoPasswordWindow:
     def __init__(self, parent, on_password_valid=None):
@@ -20,10 +21,12 @@ class SudoPasswordWindow:
         if cached_password:
             self.password_entry.insert(0, cached_password)
             self.remember_var.set(True)
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=280, min_height=240, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("300x310")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
@@ -49,13 +52,24 @@ class SudoPasswordWindow:
         # Описание
         description_label = tk.Label(
             main_frame,
-            text="Для управления службой требуются\nправа администратора",
+            text="Для управления службой требуются права администратора",
             font=("Arial", 10),
             fg='#AAAAAA',
             bg='#182030',
-            justify=tk.CENTER
+            justify=tk.LEFT,
+            wraplength=360,
         )
-        description_label.pack(pady=(0, 20))
+        description_label.pack(pady=(0, 20), fill=tk.X)
+
+        def _sync_desc_wrap(_event=None):
+            try:
+                aw = max(main_frame.winfo_width(), 1)
+                description_label.config(wraplength=max(120, aw - 40))
+            except tk.TclError:
+                pass
+
+        main_frame.bind("<Configure>", lambda _e: _sync_desc_wrap())
+        self.root.after_idle(_sync_desc_wrap)
 
         # Поле для пароля
         password_frame = tk.Frame(main_frame, bg='#182030')

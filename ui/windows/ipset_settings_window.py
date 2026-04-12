@@ -5,13 +5,21 @@ from tkinter import messagebox
 import re
 import os
 from ui.components.custom_messagebox import show_info, show_error, ask_yesno, ask_yesnocancel
+from core.dpi_utils import application_tk_root, place_toplevel_centered_on_parent
+from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
 
 
 class IpsetSettingsWindow:
+    """Пользовательские IP: базовый размер при ~100 % DPI, далее — _s / _font как у hostlist."""
+
+    _BASE_WIN_W = 450
+    _BASE_WIN_H = 480
+    # Верхняя граница ширины (логические px при ~100 %), чтобы не раздуваться под reqwidth подсказок
+    _MAX_WIN_W = 480
+
     def __init__(self, parent):
         self.parent = parent
         self.window = None
-
 
         self.blocked_text_input = None
         self.unblocked_text_input = None
@@ -143,10 +151,15 @@ class IpsetSettingsWindow:
             blocked_count = len([line for line in blocked_data.split('\n') if line.strip() and not line.strip().startswith('#')]) if blocked_data else 0
             unblocked_count = len([line for line in unblocked_data.split('\n') if line.strip() and not line.strip().startswith('#')]) if unblocked_data else 0
 
-            show_info(self.window, "Сохранение",
-                    f"Данные успешно сохранены!\n\n"
-                    f"Заблокированные IP: {blocked_count} (сохранено в ipset-all_user.txt)\n"
-                    f"Незаблокированные IP: {unblocked_count} (сохранено в ipset-exclude_user.txt)")
+            show_info(
+                self.window,
+                "Сохранение",
+                (
+                    f"Данные успешно сохранены! "
+                    f"Заблокированные IP: {blocked_count} (сохранено в ipset-all_user.txt). "
+                    f"Незаблокированные IP: {unblocked_count} (сохранено в ipset-exclude_user.txt)."
+                ),
+            )
 
         except Exception as e:
             show_info(self.window, "Ошибка", f"Не удалось сохранить файлы: {e}")
@@ -192,107 +205,220 @@ class IpsetSettingsWindow:
         from ui.components.button_styler import create_hover_button
         return create_hover_button(parent, text, command, **kwargs)
 
+    def _anchor_root(self):
+        return application_tk_root(self.parent) or self.parent
+
+    def _s(self, px: float) -> int:
+        f = float(getattr(self, "_ui_scale", 1.0))
+        return max(1, int(round(float(px) * f)))
+
+    def _font(self, family, size, weight=None):
+        f = float(getattr(self, "_logical_scale", 1.0))
+        s = max(8, int(round(float(size) * f)))
+        if weight:
+            return (family, s, weight)
+        return (family, s)
+
+    def _clamped_fixed_geometry_wh(self, anchor=None):
+        anchor = anchor or self._anchor_root()
+        sw = max(1, int(anchor.winfo_screenwidth()))
+        sh = max(1, int(anchor.winfo_screenheight()))
+        margin = max(8, self._s(24))
+        # Оба источника: на Wayland часть DE даёт 150 % только в logical_ui_scale,
+        # а warning_dialog_scale остаётся ~1 — тогда прежняя ветка по u не срабатывала.
+        u = max(
+            float(warning_dialog_scale(anchor)),
+            float(logical_ui_scale(anchor)),
+        )
+
+        base_h = float(self._BASE_WIN_H)
+        if u >= 1.45:
+            base_h *= 0.74
+        elif u >= 1.22:
+            base_h *= 0.86
+
+        tw = min(int(self._s(self._BASE_WIN_W)), max(1, sw - margin))
+        th = min(int(self._s(base_h)), max(1, sh - margin))
+
+        # Потолок по экрану: иначе на Deck / низком дисплее окно почти на весь рост.
+        screen_cap = max(260, int(sh * 0.70) - margin)
+        if u >= 1.30 or sh <= 900:
+            th = min(th, screen_cap)
+
+        tw = min(tw, max(1, sw - margin))
+        th = min(th, max(1, sh - margin))
+        return tw, th
+
+    def _place_ipset_user_window_once(self, tw, th):
+        """Один вызов размещения без maxsize/minsize и отложенных повторов — меньше «прыжков» WM."""
+        tw, th = int(tw), int(th)
+        try:
+            place_toplevel_centered_on_parent(
+                self.window,
+                self.parent,
+                fixed_content_size=(tw, th),
+                immediate=True,
+            )
+        except tk.TclError:
+            pass
+
     def create_text_tab(self, parent, tab_name, description, file_name):
         """Создает вкладку с текстовым полем для ввода IP-адресов"""
         frame = tk.Frame(parent, bg='#182030')
 
-        # Описание
-        info = tk.Label(frame,
-                    text=description,
-                    font=("Arial", 10),
-                    fg='#8e8e93',
-                    bg='#182030',
-                    justify=tk.LEFT,
-                    wraplength=400)
-        info.pack(anchor=tk.W, pady=(0, 15))
+        info = tk.Label(
+            frame,
+            text=description,
+            font=self._font("Arial", 10),
+            fg='#8e8e93',
+            bg='#182030',
+            justify=tk.LEFT,
+            anchor=tk.NW,
+            wraplength=self._s(260),
+        )
+        info.grid(row=0, column=0, sticky="ew", pady=(0, self._s(8)))
 
-        # Фрейм для текстового поля
+        def _sync_tab_desc_wrap(_event=None):
+            try:
+                aw = max(frame.winfo_width(), 1)
+                info.configure(wraplength=max(self._s(100), aw - self._s(12)))
+            except tk.TclError:
+                pass
+
+        frame.bind("<Configure>", lambda _e: _sync_tab_desc_wrap())
+        frame.after_idle(_sync_tab_desc_wrap)
+
         text_frame = tk.Frame(frame, bg='#182030')
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        text_frame.grid(row=1, column=0, sticky="nsew", pady=(0, self._s(6)))
+        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
 
-        # Метка для текстового поля
-        text_label = tk.Label(text_frame,
-                            text="Введите IP-адреса:",
-                            font=("Arial", 11),
-                            fg='#0a84ff',
-                            bg='#182030')
-        text_label.pack(anchor=tk.W, pady=(0, 5))
+        text_label = tk.Label(
+            text_frame,
+            text="Введите IP-адреса:",
+            font=self._font("Arial", 11),
+            fg='#0a84ff',
+            bg='#182030',
+        )
+        text_label.grid(row=0, column=0, sticky="w", pady=(0, self._s(4)))
 
-        # Текстовое поле с прокруткой
         text_container = tk.Frame(text_frame, bg='#182030')
-        text_container.pack(fill=tk.BOTH, expand=True)
+        text_container.grid(row=1, column=0, sticky="nsew")
+        text_frame.grid_rowconfigure(1, weight=1)
+        text_frame.grid_columnconfigure(0, weight=1)
 
-        # Текстовое поле
-        text_input = tk.Text(text_container,
-                            font=("Courier New", 10),
-                            bg='#1a1a2e',
-                            fg='#ffffff',
-                            insertbackground='white',
-                            wrap=tk.NONE,
-                            height=8)
-        text_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        _hi = max(
+            float(getattr(self, "_ui_scale", 1.0)),
+            float(getattr(self, "_logical_scale", 1.0)),
+        )
+        _text_lines = 4 if _hi >= 1.30 else 5
 
-        return frame, text_input
+        text_input = tk.Text(
+            text_container,
+            font=self._font("Courier New", 10),
+            bg='#1a1a2e',
+            fg='#ffffff',
+            insertbackground='white',
+            wrap=tk.NONE,
+            height=_text_lines,
+        )
+        text_input.grid(row=0, column=0, sticky="nsew")
+        text_container.grid_rowconfigure(0, weight=1)
+        text_container.grid_columnconfigure(0, weight=1)
+
+        tab_refs = {"info": info, "text_label": text_label, "text_input": text_input}
+        return frame, text_input, tab_refs
 
     def create_window(self):
         """Создает окно добавления пользовательских IP-адресов"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Добавление пользовательских IP-адресов")
-        self.window.geometry("460x560")
         self.window.configure(bg='#182030')
         self.window.resizable(True, True)
 
-        # Основной фрейм
-        main_frame = tk.Frame(self.window, bg='#182030', padx=20, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        anchor = self._anchor_root()
+        self._ui_scale = float(warning_dialog_scale(anchor))
+        self._logical_scale = float(logical_ui_scale(anchor))
 
-        # Заголовок
-        title_label = tk.Label(main_frame,
-                               text="Добавление пользовательских IP-адресов",
-                               font=("Arial", 14, "bold"),
-                               fg='white',
-                               bg='#182030')
-        title_label.pack(anchor=tk.CENTER, pady=(0, 15))
+        _tw, _th = self._clamped_fixed_geometry_wh(anchor)
+        shell = tk.Frame(self.window, bg="#182030", width=_tw, height=_th)
+        shell.pack_propagate(False)
+        shell.pack()
+        self._ip_shell_frame = shell
 
-        # Информационный текст
+        # Внешние отступы — внутри shell; propagate=False не даёт Toplevel раздуваться под reqheight > clamp
+        main_frame = tk.Frame(shell, bg='#182030', padx=self._s(12))
+        main_frame.pack(
+            fill=tk.BOTH,
+            expand=True,
+            pady=(self._s(12), self._s(15)),
+        )
+        self._ip_main_frame = main_frame
+
+        title_label = tk.Label(
+            main_frame,
+            text="Добавление пользовательских IP-адресов",
+            font=self._font("Arial", 14, "bold"),
+            fg='white',
+            bg='#182030',
+        )
+        title_label.grid(row=0, column=0, pady=(0, self._s(10)))
+        self._ip_title_label = title_label
+
         info_frame = tk.Frame(main_frame, bg='#182030')
-        info_frame.pack(fill=tk.X, pady=(0, 15))
+        info_frame.grid(row=1, column=0, sticky="ew", pady=(0, self._s(8)))
 
-        info_text = [
-            "Вводить адреса или диапазон нужно по одному на строку",
-            "Примеры ввода адресов: 192.168.1.1, 10.0.0.0/8 или 172.16.0.0-172.31.255.255",
-            "Чтобы оставить комментарий, нужно сначала поставить знак '#' и только после этого писать текст комментария"
-        ]
+        info_body = (
+            "Вводить адреса или диапазон нужно по одному на строку.\n"
+            "Примеры ввода адресов: 192.168.1.1, 10.0.0.0/8 или 172.16.0.0-172.31.255.255.\n"
+            "Чтобы оставить комментарий, нужно сначала поставить знак «#» и только после этого писать текст комментария."
+        )
+        info_block = tk.Label(
+            info_frame,
+            text=info_body,
+            font=self._font("Arial", 10),
+            fg='#8e8e93',
+            bg='#182030',
+            justify=tk.LEFT,
+            anchor=tk.NW,
+            wraplength=self._s(260),
+        )
+        info_block.pack(anchor=tk.NW, fill=tk.X)
+        self._ip_info_block = info_block
 
-        for text in info_text:
-            info_label = tk.Label(info_frame,
-                                 text=text,
-                                 font=("Arial", 10),
-                                 fg='#8e8e93',
-                                 bg='#182030',
-                                 justify=tk.LEFT,
-                                 wraplength=400)
-            info_label.pack(anchor=tk.W, pady=(0, 5))
+        def _sync_ip_hints_wrap(_event=None):
+            try:
+                aw = max(info_frame.winfo_width(), 1)
+                info_block.configure(wraplength=max(self._s(100), aw - self._s(8)))
+            except tk.TclError:
+                pass
 
-        # Создаем Notebook для вкладок
-        notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        info_frame.bind("<Configure>", lambda _e: _sync_ip_hints_wrap())
+        info_frame.after_idle(_sync_ip_hints_wrap)
 
-        # Стилизация Notebook
+        self._ip_nb_style = "IpsetUser.TNotebook"
         style = ttk.Style()
         style.theme_use('default')
-        style.configure('TNotebook', background='#182030', borderwidth=0)
-        style.configure('TNotebook.Tab',
-                    background='#1a1a2e',
-                    foreground='#8e8e93',
-                    padding=[10, 5],
-                    font=('Arial', 10))
-        style.map('TNotebook.Tab',
-                background=[('selected', '#0a84ff')],
-                foreground=[('selected', 'white')])
+        style.configure(self._ip_nb_style, background='#182030', borderwidth=0)
+        style.configure(
+            f"{self._ip_nb_style}.Tab",
+            background='#1a1a2e',
+            foreground='#8e8e93',
+            padding=[self._s(8), self._s(4)],
+            font=self._font('Arial', 10),
+        )
+        style.map(
+            f"{self._ip_nb_style}.Tab",
+            background=[('selected', '#0a84ff')],
+            foreground=[('selected', 'white')],
+        )
 
-        # Вкладка "Заблокированный"
-        blocked_frame, self.blocked_text_input = self.create_text_tab(
+        notebook = ttk.Notebook(main_frame, style=self._ip_nb_style)
+        notebook.grid(row=2, column=0, sticky="nsew", pady=(0, self._s(6)))
+        main_frame.grid_rowconfigure(2, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)  # растяжение по ширине окна
+
+        blocked_frame, self.blocked_text_input, br = self.create_text_tab(
             notebook,
             "Заблокированный",
             "Пользовательские IP-адреса сохраняются в файле ipset-all_user.txt.",
@@ -300,46 +426,42 @@ class IpsetSettingsWindow:
         )
         notebook.add(blocked_frame, text="Заблокированный")
 
-        # Вкладка "Незаблокированный"
-        unblocked_frame, self.unblocked_text_input = self.create_text_tab(
+        unblocked_frame, self.unblocked_text_input, ur = self.create_text_tab(
             notebook,
             "Незаблокированный",
             "Пользовательские IP-адреса сохраняются в файле ipset-exclude_user.txt",
             "ipset-exclude_user.txt"
         )
         notebook.add(unblocked_frame, text="Незаблокированный")
+        self._ip_tab_refs = (br, ur)
 
-        # Фрейм для кнопок
         buttons_frame = tk.Frame(main_frame, bg='#182030')
-        buttons_frame.pack(fill=tk.X, pady=(0, 0))
+        buttons_frame.grid(row=3, column=0, sticky="ew", pady=(0, self._s(10)))
+        self._ip_buttons_frame = buttons_frame
 
-        # Контейнер для центрирования кнопок
         buttons_center_frame = tk.Frame(buttons_frame, bg='#182030')
         buttons_center_frame.pack()
 
-        # Стиль кнопок
         button_style = {
-            'font': ('Arial', 11),
+            'font': self._font('Arial', 11),
             'bg': '#15354D',
             'fg': 'white',
             'bd': 0,
-            'padx': 25,
-            'pady': 10,
+            'padx': self._s(18),
+            'pady': self._s(8),
             'width': 15,
             'highlightthickness': 0,
             'cursor': 'hand2'
         }
 
-        # Кнопка сохранения
         self.save_button = self.create_hover_button(
             buttons_center_frame,
             text="Сохранить",
             command=self.save_data,
             **button_style
         )
-        self.save_button.pack(side=tk.LEFT, padx=(0, 15))
+        self.save_button.pack(side=tk.LEFT, padx=(0, self._s(12)))
 
-        # Кнопка отмены
         self.cancel_button = self.create_hover_button(
             buttons_center_frame,
             text="Назад",
@@ -348,27 +470,71 @@ class IpsetSettingsWindow:
         )
         self.cancel_button.pack(side=tk.LEFT)
 
-        # Добавляем статусную строку для сообщений
         self.status_message = tk.Label(
             main_frame,
             text="",
-            font=("Arial", 10),
+            font=self._font("Arial", 10),
             fg='#AAAAAA',
             bg='#182030'
         )
-        self.status_message.pack(pady=(10, 0))
+        self.status_message.grid(row=4, column=0, sticky="ew", pady=(self._s(3), 0))
+        self.status_message.grid_remove()
 
-        # Загружаем существующие данные
         self.load_existing_data()
 
-        # Устанавливаем фокус на текстовое поле
         if self.blocked_text_input:
             self.blocked_text_input.focus_set()
+
+        # Узкая обёртка текста до измерения reqwidth — иначе длинные подписи дают mrw > 1000 px
+        _inner_w = max(self._s(72), _tw - 2 * self._s(12))
+        try:
+            self._ip_info_block.configure(wraplength=_inner_w)
+        except tk.TclError:
+            pass
+        for tab in getattr(self, "_ip_tab_refs", ()) or ():
+            inf = tab.get("info") if tab else None
+            if inf:
+                try:
+                    inf.configure(wraplength=max(self._s(72), _inner_w - self._s(8)))
+                except tk.TclError:
+                    pass
+
+        self.window.update_idletasks()
+        try:
+            mrh = int(main_frame.winfo_reqheight())
+            mrw = int(main_frame.winfo_reqwidth())
+        except tk.TclError:
+            mrh, mrw = _th, _tw
+        margin = max(8, self._s(24))
+        sh_scr = max(1, int(anchor.winfo_screenheight()))
+        sw_scr = max(1, int(anchor.winfo_screenwidth()))
+        _w_cap = min(sw_scr - margin, int(self._s(self._MAX_WIN_W)))
+        _th_fit = min(sh_scr - margin, max(_th, mrh))
+        _tw_fit = min(_w_cap, max(_tw, mrw))
+        shell.configure(width=_tw_fit, height=_th_fit)
+
+        try:
+            self.window.minsize(1, 1)
+            _cap_h = min(int(sh_scr * 0.96), _th_fit + self._s(80))
+            _cap_w = min(sw_scr - margin, _tw_fit + self._s(32))
+            self.window.maxsize(max(_tw_fit, _cap_w), max(_th_fit, _cap_h))
+        except tk.TclError:
+            pass
+
+        self._place_ipset_user_window_once(_tw_fit, _th_fit)
 
         return self.window
 
     def show_status_message(self, message, success=False, warning=False, error=False):
         """Показывает сообщение в статусной строке"""
+        if not (message or "").strip():
+            try:
+                self.status_message.config(text="")
+                self.status_message.grid_remove()
+            except tk.TclError:
+                pass
+            return
+
         self.status_message.config(text=message)
 
         if success:
@@ -380,9 +546,20 @@ class IpsetSettingsWindow:
         else:
             self.status_message.config(fg='#AAAAAA')  # Серый
 
-        # Автоматически очищаем сообщение через 3 секунды
-        if message:
-            self.window.after(3000, lambda: self.status_message.config(text=""))
+        try:
+            self.status_message.grid(row=4, column=0, sticky="ew", pady=(self._s(3), 0))
+        except tk.TclError:
+            pass
+
+        def _clear_status():
+            try:
+                if self.window and self.window.winfo_exists() and self.status_message.winfo_exists():
+                    self.status_message.config(text="")
+                    self.status_message.grid_remove()
+            except tk.TclError:
+                pass
+
+        self.window.after(3000, _clear_status)
 
     def run(self):
         """Запускает окно добавления пользовательских IP-адресов"""
@@ -506,7 +683,6 @@ class IpsetFilterWindow:
         """Создает окно настройки IPSet Filter"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Настройка IPSet Filter")
-        self.window.geometry("420x350")  # Увеличил высоту для статусной строки
         self.window.configure(bg='#182030')
 
         # Основной фрейм
@@ -526,14 +702,26 @@ class IpsetFilterWindow:
         note_frame.pack(fill=tk.X, pady=(0, 10))
 
         note_text = "Данная настройка полезна, если не работает ресурс, который без Zapret работает"
-        note_label = tk.Label(note_frame,
-                             text=note_text,
-                             font=("Arial", 10),
-                             fg='#ff9500',  # Оранжевый цвет для выделения
-                             bg='#182030',
-                             justify=tk.CENTER,
-                             wraplength=400)
-        note_label.pack()
+        note_label = tk.Label(
+            note_frame,
+            text=note_text,
+            font=("Arial", 10),
+            fg='#ff9500',  # Оранжевый цвет для выделения
+            bg='#182030',
+            justify=tk.CENTER,
+            wraplength=400,
+        )
+        note_label.pack(fill=tk.X)
+
+        def _sync_note_wrap(_event=None):
+            try:
+                aw = max(main_frame.winfo_width(), 1)
+                note_label.config(wraplength=max(120, aw - 40))
+            except tk.TclError:
+                pass
+
+        main_frame.bind("<Configure>", lambda _e: _sync_note_wrap())
+        self.window.after_idle(_sync_note_wrap)
 
         # Фрейм для радиокнопок
         radio_frame = tk.Frame(main_frame, bg='#182030')
@@ -681,6 +869,9 @@ class IpsetFilterWindow:
         elif current_mode == "any":
             self.show_status_message("Текущий режим: any (любой IP)", warning=False)
 
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=360, min_height=300, margin_width=8, margin_height=12
+        )
         return self.window
 
     def show_status_message(self, message, success=False, warning=False, error=False):
@@ -733,7 +924,6 @@ class IpsetMainWindow:
         """Создает главное окно выбора настроек IPSet"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Настройки IPSet")
-        self.window.geometry("300x260")
         self.window.configure(bg='#182030')
 
         # Основной фрейм
@@ -774,7 +964,7 @@ class IpsetMainWindow:
         )
         filter_button.pack(pady=(0, 15))
 
-        # Кнопка "Добавление пользовательских IP-адресов" (в две строки)
+        # Кнопка «Добавление пользовательских IP-адресов» (две строки через \n)
         ip_button = self.create_hover_button(
             buttons_frame,
             text="Добавление пользовательских\nIP-адресов",
@@ -796,6 +986,9 @@ class IpsetMainWindow:
         )
         back_button.pack(pady=(10, 0))
 
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=260, min_height=220, margin_width=8, margin_height=12
+        )
         return self.window
 
     def run(self):

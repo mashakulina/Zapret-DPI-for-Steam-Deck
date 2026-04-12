@@ -11,6 +11,7 @@ import urllib.parse
 import ssl
 from urllib.error import URLError
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 import os
 
 class ConnectionCheckWindow:
@@ -25,32 +26,15 @@ class ConnectionCheckWindow:
         """Запускает окно проверки соединения"""
         self.window = tk.Toplevel(self.parent)
         self.window.title("Проверка соединения")
-        self.window.geometry("600x500")
         self.window.configure(bg='#182030')
 
         self.setup_ui()
-
-        # Центрируем окно относительно родителя
-        self.center_window()
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=520, min_height=400, margin_width=8, margin_height=12
+        )
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         self.window.mainloop()
-
-    def center_window(self):
-        """Центрирует окно относительно родителя"""
-        self.window.update_idletasks()
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_width = self.parent.winfo_width()
-        parent_height = self.parent.winfo_height()
-
-        window_width = self.window.winfo_width()
-        window_height = self.window.winfo_height()
-
-        x = parent_x + (parent_width - window_width) // 2
-        y = parent_y + (parent_height - window_height) // 2
-
-        self.window.geometry(f"+{x}+{y}")
 
     def setup_ui(self):
         """Создает интерфейс окна"""
@@ -687,9 +671,15 @@ class ConnectionCheckWindow:
             self.log_message("")
             self.log_message("🔍 Возможные проблемы:", "#ff9500")
             if not has_generate_204:
-                self.log_message("   • Проблемы с видео-серверами Google\nСкорее всего сам сайт youtube грузится, но могут наблюдаться тормоза", "#ff9500")
+                self.log_message(
+                    "   • Проблемы с видео-серверами Google. Скорее всего сам сайт youtube грузится, но могут наблюдаться тормоза",
+                    "#ff9500",
+                )
             if not has_youtube_main:
-                self.log_message("   • Основной сайт YouTube недоступен\nПопробуйте включить DNS Google", "#ff9500")
+                self.log_message(
+                    "   • Основной сайт YouTube недоступен. Попробуйте включить DNS Google",
+                    "#ff9500",
+                )
             if not has_images:
                 self.log_message("   • Проблемы с загрузкой изображений", "#ff9500")
 

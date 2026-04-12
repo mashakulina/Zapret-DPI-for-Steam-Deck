@@ -1,4 +1,33 @@
 import tkinter as tk
+import tkinter.font as tkfont
+
+
+def uniform_button_width_for_font(master, font, *texts, pad_chars=2):
+    """Ширина tk.Button в символах (width) по самой длинной строке; pad_chars — запас."""
+    if not texts:
+        return max(1, 1 + int(pad_chars))
+    try:
+        f = tkfont.Font(master=master, font=font)
+        zero = f.measure("0")
+        if zero < 1:
+            zero = 1
+        mw = 0
+        for t in texts:
+            if t is None:
+                continue
+            for line in str(t).split("\n"):
+                mw = max(mw, f.measure(line))
+        n = (mw + zero - 1) // zero + int(pad_chars)
+        return max(1, n)
+    except Exception:
+        longest = 1
+        for t in texts:
+            if t is None:
+                continue
+            for line in str(t).split("\n"):
+                longest = max(longest, len(line))
+        return max(1, longest + int(pad_chars))
+
 
 def create_hover_button(parent, text, command, **kwargs):
     """Создает кнопку с эффектом наведения"""

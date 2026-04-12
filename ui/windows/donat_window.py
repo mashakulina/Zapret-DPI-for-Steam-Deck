@@ -2,6 +2,7 @@ import tkinter as tk
 import webbrowser
 import os
 from ui.components.button_styler import create_hover_button
+from core.dpi_utils import place_toplevel_centered_on_parent
 
 class DonationWindow:
     def __init__(self, parent):
@@ -11,10 +12,12 @@ class DonationWindow:
         self.root.title("Поддержать разработчика")
 
         self.setup_ui()
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, min_width=340, min_height=360, margin_width=8, margin_height=12
+        )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
-        self.root.geometry("380x460")
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
 
@@ -49,19 +52,31 @@ class DonationWindow:
 
         # Текст с благодарностью
         thank_you_text = (
-            "Спасибо, что используете\nZapret DPI Manager!\n\n"
+            "Спасибо, что используете Zapret DPI Manager! "
             "Если вам нравится проект и вы хотите поддержать его развитие, "
             "вы можете сделать это через систему донатов."
         )
 
-        thank_you_label = tk.Label(main_frame,
-                                  text=thank_you_text,
-                                  font=('Arial', 11),
-                                  bg='#182030',
-                                  fg='white',
-                                  wraplength=350,
-                                  justify=tk.CENTER)
-        thank_you_label.pack(pady=(0, 15))
+        thank_you_label = tk.Label(
+            main_frame,
+            text=thank_you_text,
+            font=('Arial', 11),
+            bg='#182030',
+            fg='white',
+            wraplength=350,
+            justify=tk.CENTER,
+        )
+        thank_you_label.pack(pady=(0, 15), fill=tk.X)
+
+        def _sync_thank_wrap(_event=None):
+            try:
+                aw = max(main_frame.winfo_width(), 1)
+                thank_you_label.config(wraplength=max(120, aw - 40))
+            except tk.TclError:
+                pass
+
+        main_frame.bind("<Configure>", lambda _e: _sync_thank_wrap())
+        self.root.after_idle(_sync_thank_wrap)
 
         # Фрейм для QR кода
         qr_frame = tk.Frame(main_frame, bg='#182030')

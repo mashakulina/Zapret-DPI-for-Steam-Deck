@@ -6,6 +6,12 @@ from ui.components.custom_messagebox import show_info, show_error
 from core.service_data import SERVICE_CATEGORIES, PROXY_DOMAINS
 from ui.components.button_styler import create_hover_button
 from ui.windows.sudo_password_window import SudoPasswordWindow
+from core.dpi_utils import (
+    geometry_resize_keep_position,
+    place_toplevel_centered_on_parent,
+    set_window_size_to_fit_content,
+)
+from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
 
 class ServiceUnlockWindow:
     def __init__(self, parent):
@@ -94,6 +100,20 @@ class ServiceUnlockWindow:
         """Создает кнопку в стиле главного меню с эффектом наведения"""
         return create_hover_button(parent, text, command, **kwargs)
 
+    def _s(self, px: float) -> int:
+        """Размер в пикселях (или условных pt) с учётом масштаба экрана."""
+        f = getattr(self, "_ui_scale", 1.0)
+        return max(1, int(round(float(px) * f)))
+
+    def _font(self, family, size, weight=None):
+        # Размеры окна/отступы — по warning_dialog_scale (Xft/env); шрифты — по logical_ui_scale,
+        # иначе при 125%/150% двойной рост: Tk уже масштабирует DPI + мы умножали pt на 1.25/1.5.
+        f = float(getattr(self, "_logical_scale", 1.0))
+        s = max(8, int(round(float(size) * f)))
+        if weight:
+            return (family, s, weight)
+        return (family, s)
+
     def create_main_category_frame(self, parent, category_name, category_content):
         """Создает фрейм для основной категории"""
         frame = tk.Frame(parent, bg='#182030', padx=10, pady=0)
@@ -113,7 +133,7 @@ class ServiceUnlockWindow:
             spacer = tk.Label(
                 header_frame,
                 text="",
-                font=("Arial", 10),
+                font=self._font("Arial", 10),
                 bg='#182030',
                 width=1
             )
@@ -139,7 +159,7 @@ class ServiceUnlockWindow:
             toggle_button = tk.Label(
                 header_frame,
                 text="▼",
-                font=("Arial", 10),
+                font=self._font("Arial", 10),
                 fg='#8e8e93',
                 bg='#182030',
                 cursor='hand2',
@@ -153,7 +173,7 @@ class ServiceUnlockWindow:
             header_frame,
             text=category_name,
             variable=category_var,
-            font=("Arial", 12, "bold"),
+            font=self._font("Arial", 12, "bold"),
             fg='#0a84ff',
             bg='#182030',
             selectcolor='#182030',
@@ -169,7 +189,7 @@ class ServiceUnlockWindow:
         count_label = tk.Label(
             header_frame,
             text=f"({selected_count}/{total_count})",
-            font=("Arial", 10),
+            font=self._font("Arial", 10),
             fg='#8e8e93',
             bg='#182030'
         )
@@ -224,7 +244,7 @@ class ServiceUnlockWindow:
             frame,
             text=subcategory_name,
             variable=subcategory_var,
-            font=("Arial", 11),
+            font=self._font("Arial", 11),
             fg='#34c759',
             bg='#182030',
             selectcolor='#182030',
@@ -240,7 +260,7 @@ class ServiceUnlockWindow:
         sub_count_label = tk.Label(
             frame,
             text=f"({selected_count}/{total_count})",
-            font=("Arial", 9),
+            font=self._font("Arial", 9),
             fg='#8e8e93',
             bg='#182030'
         )
@@ -476,10 +496,15 @@ class ServiceUnlockWindow:
                             if category_info['var'].get():
                                 categories_selected += 1
 
-                        show_info(self.window, "Сохранение",
-                                f"Данные успешно сохранены в {self.hosts_file}\n\n"
-                                f"Добавлено записей: {total_selected}\n"
-                                f"Выбранных категорий: {categories_selected}")
+                        show_info(
+                            self.window,
+                            "Сохранение",
+                            (
+                                f"Данные успешно сохранены в {self.hosts_file}. "
+                                f"Добавлено записей: {total_selected}. "
+                                f"Выбранных категорий: {categories_selected}"
+                            ),
+                        )
                     else:
                         show_info(self.window, "Сохранение",
                                 f"Все записи разблокировки удалены из {self.hosts_file}")
@@ -507,8 +532,11 @@ class ServiceUnlockWindow:
                 result = subprocess.run(['systemd-resolve', '--flush-caches'],
                                      capture_output=True, text=True)
                 if result.returncode == 0:
-                    show_info(self.window, "Информация",
-                             "DNS кеш обновлен.\nИзменения вступят в силу немедленно.")
+                    show_info(
+                        self.window,
+                        "Информация",
+                        "DNS кеш обновлен. Изменения вступят в силу немедленно.",
+                    )
                     return
 
             # Для систем с nscd
@@ -516,72 +544,106 @@ class ServiceUnlockWindow:
                 result = subprocess.run(['nscd', '-i', 'hosts'],
                                      capture_output=True, text=True)
                 if result.returncode == 0:
-                    show_info(self.window, "Информация",
-                             "DNS кеш обновлен.\nИзменения вступят в силу немедленно.")
+                    show_info(
+                        self.window,
+                        "Информация",
+                        "DNS кеш обновлен. Изменения вступят в силу немедленно.",
+                    )
                     return
 
             # Если не удалось обновить кеш
-            show_info(self.window, "Информация",
-                     "Файл hosts обновлен.\nДля применения изменений может потребоваться перезагрузка или очистка DNS кеша.")
+            show_info(
+                self.window,
+                "Информация",
+                "Файл hosts обновлен. Для применения изменений может потребоваться перезагрузка или очистка DNS кеша.",
+            )
 
         except Exception as e:
             print(f"Ошибка обновления DNS кеша: {e}")
-            show_info(self.window, "Информация",
-                     "Файл hosts обновлен.\nДля применения изменений может потребоваться перезагрузка.")
+            show_info(
+                self.window,
+                "Информация",
+                "Файл hosts обновлен. Для применения изменений может потребоваться перезагрузка.",
+            )
 
     def create_window(self):
         """Создает окно разблокировки сервисов"""
+        self._ui_scale = warning_dialog_scale(self.parent)
+        self._logical_scale = logical_ui_scale(self.parent)
         self.window = tk.Toplevel(self.parent)
         self.window.title("Разблокировка сервисов")
-        self.window.geometry("450x500")
         self.window.configure(bg='#182030')
         try:
             self.window.wm_overrideredirect(False)
-            self.window.attributes('-toolwindow', True)
-        except:
+            # -toolwindow на Linux/Steam часто мешает перетаскиванию и даёт «прилипание» к краю.
+        except tk.TclError:
             pass
 
-        # Основной фрейм
+        # Основной фрейм — без expand по Y (лог H3: winfo_reqheight раздувал окно до ~988 px высоты).
         main_frame = tk.Frame(self.window, bg='#182030', padx=10, pady=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.pack(fill=tk.X)
 
         # Заголовок
         title_label = tk.Label(main_frame,
                                text="Разблокировка сервисов",
-                               font=("Arial", 14, "bold"),
+                               font=self._font("Arial", 14, "bold"),
                                fg='white',
                                bg='#182030')
         title_label.pack(anchor=tk.CENTER, pady=(0, 15))
 
+        _wrap0 = max(200, self._s(380))
         # Описание
-        desc_label = tk.Label(main_frame,
-                             text="Выберите категории сервисов для разблокировки.\n"
-                                  "Разверните категорию, чтобы увидеть отдельные сервисы.\n"
-                                  "Записи будут добавлены в файл /etc/hosts.",
-                             font=("Arial", 10),
-                             fg='#8e8e93',
-                             bg='#182030',
-                             justify=tk.CENTER,
-                             wraplength=400)
-        desc_label.pack(anchor=tk.CENTER, pady=(0, 0))
+        desc_label = tk.Label(
+            main_frame,
+            text=(
+                "Выберите категории сервисов для разблокировки. "
+                "Разверните категорию, чтобы увидеть отдельные сервисы. "
+                "Записи будут добавлены в файл /etc/hosts."
+            ),
+            font=self._font("Arial", 10),
+            fg='#8e8e93',
+            bg='#182030',
+            justify=tk.CENTER,
+            wraplength=_wrap0,
+        )
+        desc_label.pack(anchor=tk.CENTER, pady=(0, 0), fill=tk.X)
 
-        desc_label = tk.Label(main_frame,
-                             text="После добавления перезагрузите браузер",
-                             font=("Arial", 10),
-                             fg='#ff9500',
-                             bg='#182030',
-                             justify=tk.CENTER,
-                             wraplength=400)
-        desc_label.pack(anchor=tk.CENTER, pady=(0, 15))
+        desc_hint_label = tk.Label(
+            main_frame,
+            text="После добавления перезагрузите браузер",
+            font=self._font("Arial", 10),
+            fg='#ff9500',
+            bg='#182030',
+            justify=tk.CENTER,
+            wraplength=_wrap0,
+        )
+        desc_hint_label.pack(anchor=tk.CENTER, pady=(0, 15), fill=tk.X)
+
+        def _sync_service_unlock_wrap(_event=None):
+            try:
+                aw = max(main_frame.winfo_width(), 1)
+                pad = self._s(40)
+                wl = max(self._s(120), aw - pad)
+                desc_label.config(wraplength=wl)
+                desc_hint_label.config(wraplength=wl)
+            except tk.TclError:
+                pass
+
+        main_frame.bind("<Configure>", lambda _e: _sync_service_unlock_wrap())
+        self.window.after_idle(_sync_service_unlock_wrap)
 
 
-        # Фрейм с прокруткой для категорий
+        # Фрейм с прокруткой — высоту задаёт canvas, не expand на весь экран.
         canvas_frame = tk.Frame(main_frame, bg='#182030')
-        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
+        canvas_frame.pack(fill=tk.X, pady=(0, 0))
 
-        # Создаем Canvas и Scrollbar
-        canvas = tk.Canvas(canvas_frame, bg='#182030', highlightthickness=0, height=250)
-        scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=canvas.yview)
+        # Canvas со скроллом; полоса прокрутки скрыта — только колесо мыши / Button-4/5.
+        canvas = tk.Canvas(
+            canvas_frame,
+            bg='#182030',
+            highlightthickness=0,
+            height=self._s(220),
+        )
         scrollable_frame = tk.Frame(canvas, bg='#182030')
 
         scrollable_frame.bind(
@@ -589,8 +651,32 @@ class ServiceUnlockWindow:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        _inner_w0 = max(self._s(440), 320)
+        canvas_inner_id = canvas.create_window(
+            (0, 0),
+            window=scrollable_frame,
+            anchor="nw",
+            width=_inner_w0,
+        )
+
+        def _sync_canvas_inner_width(_event=None):
+            try:
+                self.window.update_idletasks()
+                cfw = int(canvas_frame.winfo_width())
+                cw_canvas = int(canvas.winfo_width())
+                viewport = cfw - 4
+                if viewport >= 48:
+                    inner = viewport
+                elif cw_canvas >= 48:
+                    inner = cw_canvas - 4
+                else:
+                    return
+                canvas.itemconfig(canvas_inner_id, width=inner)
+            except tk.TclError:
+                pass
+
+        canvas.bind("<Configure>", lambda e: _sync_canvas_inner_width())
+        canvas_frame.bind("<Configure>", lambda e: _sync_canvas_inner_width())
 
         # Функция для обработки колесика мыши
         def on_mouse_wheel(event):
@@ -608,7 +694,6 @@ class ServiceUnlockWindow:
         scrollable_frame.bind("<Button-4>", on_mouse_wheel)
         scrollable_frame.bind("<Button-5>", on_mouse_wheel)
 
-        # Размещаем Canvas и Scrollbar
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Создаем фреймы для основных категорий
@@ -626,13 +711,13 @@ class ServiceUnlockWindow:
 
         # Стиль кнопок
         button_style = {
-            'font': ('Arial', 11),
+            'font': self._font("Arial", 11),
             'bg': '#15354D',
             'fg': 'white',
             'bd': 0,
-            'padx': 20,
-            'pady': 8,
-            'width': 12,
+            'padx': self._s(20),
+            'pady': self._s(8),
+            'width': max(8, self._s(12)),
             'highlightthickness': 0,
             'cursor': 'hand2'
         }
@@ -680,6 +765,94 @@ class ServiceUnlockWindow:
             **button_style
         )
         back_btn.pack(side=tk.LEFT)
+
+        self.window.update_idletasks()
+        try:
+            self.window.minsize(1, 1)
+        except tk.TclError:
+            pass
+        fw, fh = set_window_size_to_fit_content(
+            self.window,
+            min_width=max(360, self._s(400)),
+            min_height=max(340, self._s(400)),
+            margin_width=8,
+            margin_height=12,
+        )
+        min_h = max(340, self._s(400))
+        sh_scr = max(400, int(self.window.winfo_screenheight()))
+        try:
+            sh_fit = max(320, int(self.parent.winfo_screenheight()))
+        except tk.TclError:
+            sh_fit = sh_scr
+        # Высота экрана по родителю (физический монитор), не по Toplevel — иначе max_h не сжимает fh.
+        sh_fit = min(sh_fit, sh_scr)
+        # Лог 150%: sh_fit=1080 при ui_scale=1.5 — дробный масштаб «съедает» рабочую область, Tk всё ещё отдаёт полный sh.
+        if float(self._ui_scale) >= 1.4:
+            sh_fit = max(
+                320,
+                min(
+                    sh_fit,
+                    int(round(float(sh_fit) / (float(self._ui_scale) / 1.1))),
+                ),
+            )
+        vertical_margin = max(120, self._s(96))
+        max_h_screen_fit = max(min_h, sh_fit - vertical_margin)
+        # Не раздувать до почти полного экрана (лог: 537×988 при sh≈800+).
+        max_h = max(min_h, min(int(sh_fit * 0.78), self._s(660), max_h_screen_fit))
+        fh = max(min_h, min(int(fh), int(max_h)))
+        self.window.update_idletasks()
+        try:
+            _req_h = int(self.window.winfo_reqheight())
+        except tk.TclError:
+            _req_h = int(fh)
+        _room = max(int(min_h), int(sh_fit) - int(vertical_margin))
+        # sh_fit может быть занижен; для анти-обрезания кнопок допускаем потолок по физической высоте экрана.
+        try:
+            _sh0 = max(int(sh_fit), int(self.window.winfo_screenheight()))
+        except tk.TclError:
+            _sh0 = int(sh_fit)
+        _room_ext = max(_room, int(_sh0) - int(self._s(48)))
+        if _req_h > int(fh) and _room_ext >= int(min_h):
+            max_h = max(int(max_h), min(_req_h, _room_ext))
+            # Раньше min(fh, max_h) не давал вырасти: при max_h↑ fh оставался заниженным (лог 150%: 648 при req 712).
+            fh = max(min_h, min(max(int(fh), _req_h), int(max_h)))
+            try:
+                geometry_resize_keep_position(
+                    self.window,
+                    min(int(fw), int(self.window.winfo_screenwidth())),
+                    fh,
+                )
+                self.window.update_idletasks()
+            except tk.TclError:
+                pass
+        sw_scr = max(1, int(self.window.winfo_screenwidth()))
+        final_w = min(int(fw), sw_scr)
+        final_h = int(fh)
+        try:
+            self.window.resizable(False, False)
+        except tk.TclError:
+            pass
+        try:
+            geometry_resize_keep_position(self.window, final_w, final_h)
+            self.window.update_idletasks()
+        except tk.TclError:
+            pass
+        # Как у hostlist/dns/ipset: place_toplevel_centered_on_parent; размер — свой (скролл
+        # раздувает winfo_reqheight, fit_toplevel_to_content был бы лишним).
+        place_toplevel_centered_on_parent(
+            self.window,
+            self.parent,
+            max(360, self._s(400)),
+            max(340, self._s(400)),
+            margin_width=8,
+            margin_height=12,
+            fixed_content_size=(final_w, final_h),
+            immediate=True,
+        )
+
+        self.window.after_idle(_sync_canvas_inner_width)
+        for _ms in (1, 50, 150, 400, 600):
+            self.window.after(_ms, _sync_canvas_inner_width)
 
         return self.window
 
