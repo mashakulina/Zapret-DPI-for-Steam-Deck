@@ -26,7 +26,6 @@ class HostlistSettingsWindow:
         self.list_general_file = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
         self.list_general_user_file_file = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
         self.list_exclude_user_file = os.path.join(self.manager_dir, "files", "lists", "list-exclude_user.txt")
-        self.roblox_file = os.path.join(self.manager_dir, "utils", "roblox.txt")
 
         # Данные для предустановленных сервисов
         self.services = {
@@ -63,16 +62,13 @@ class HostlistSettingsWindow:
                 "raw.gitlab.com",
                 "snippets.gitlab.com",
                 "git.sr.ht"
-            ],
-            "Roblox": self.load_roblox_domains()
+            ]
         }
 
         # Переменные для чекбоксов
         self.whatsapp_var = tk.BooleanVar()
         self.rockstar_var = tk.BooleanVar()
         self.github_var = tk.BooleanVar()
-        # ДОБАВЛЕНО: Переменная для чекбокса Roblox
-        self.roblox_var = tk.BooleanVar()
 
         # Переменные для текстовых полей вкладок
         self.blocked_text_input = None
@@ -266,23 +262,6 @@ class HostlistSettingsWindow:
         tw, th = self._clamped_fixed_geometry_wh(anchor)
         self._apply_fixed_window_bounds(tw, th)
 
-    def load_roblox_domains(self):
-        """Загружает домены Roblox из файла roblox.txt"""
-        domains = []
-        try:
-            if os.path.exists(self.roblox_file):
-                with open(self.roblox_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):  # Пропускаем пустые строки и комментарии
-                            domains.append(line)
-                print(f"Загружено {len(domains)} доменов Roblox из {self.roblox_file}")
-            else:
-                print(f"Файл {self.roblox_file} не найден")
-        except Exception as e:
-            print(f"Ошибка загрузки файла roblox.txt: {e}")
-        return domains
-
     def create_hover_button(self, parent, text, command, **kwargs):
         """Создает кнопку в стиле главного меню с эффектом наведения"""
         from ui.components.button_styler import create_hover_button
@@ -341,14 +320,6 @@ class HostlistSettingsWindow:
                             github_selected = True
                             break
                     self.github_var.set(github_selected)
-
-                    # ДОБАВЛЕНО: Проверяем наличие доменов Roblox
-                    roblox_selected = False
-                    for domain in self.services["Roblox"]:
-                        if domain in self.existing_domains:
-                            roblox_selected = True
-                            break
-                    self.roblox_var.set(roblox_selected)
 
         except Exception as e:
             print(f"Ошибка загрузки файла list-general.txt: {e}")
@@ -539,8 +510,7 @@ class HostlistSettingsWindow:
             # Удаляем все домены сервисов (чтобы потом добавить только выбранные)
             all_service_domains = set(self.services["WhatsApp"] +
                                       self.services["Rockstar/Epic Games"] +
-                                      self.services["Github"] +
-                                      self.services["Roblox"])  # ДОБАВЛЕНО: Roblox
+                                      self.services["Github"])
             current_domains = current_domains - all_service_domains
 
             # Добавляем домены выбранных сервисов
@@ -552,10 +522,6 @@ class HostlistSettingsWindow:
 
             if self.github_var.get():
                 current_domains.update(self.services["Github"])
-
-            # ДОБАВЛЕНО: Добавляем домены Roblox, если выбран чекбокс
-            if self.roblox_var.get():
-                current_domains.update(self.services["Roblox"])
 
             # Сортируем и сохраняем в файл list-general.txt
             sorted_domains = sorted(current_domains)
@@ -572,18 +538,8 @@ class HostlistSettingsWindow:
                 selected_services.append("Rockstar/Epic Games")
             if self.github_var.get():
                 selected_services.append("Github")
-            # ДОБАВЛЕНО: Roblox в статистику
-            if self.roblox_var.get():
-                selected_services.append("Roblox")
 
             services_text = ", ".join(selected_services) if selected_services else "ни одного сервиса"
-
-            # ДОБАВЛЕНО: Информация о количестве доменов Roblox
-            roblox_count_info = ""
-            if self.roblox_var.get():
-                roblox_count_info = (
-                    f" Доменов Roblox добавлено: {len(self.services['Roblox'])}."
-                )
 
             show_info(
                 self.window,
@@ -593,7 +549,6 @@ class HostlistSettingsWindow:
                     f"Всего доменов в list-general.txt: {len(sorted_domains)}. "
                     f"Заблокированные домены: {blocked_count} (сохранено в list-general_user.txt). "
                     f"Незаблокированные домены: {unblocked_count} (сохранено в list-exclude_user.txt)."
-                    f"{roblox_count_info}"
                 ),
             )
 
@@ -843,23 +798,10 @@ class HostlistSettingsWindow:
                                        activeforeground='white')
         github_check.pack(anchor=tk.W, pady=(0, self._s(5)))
 
-        # Чекбокс Roblox
-        roblox_check = tk.Checkbutton(checkboxes_frame,
-                                       text="Roblox",
-                                       variable=self.roblox_var,
-                                       font=self._font("Arial", 11),
-                                       fg='white',
-                                       bg='#182030',
-                                       selectcolor='#182030',
-                                       activebackground='#182030',
-                                       highlightthickness=0,
-                                       activeforeground='white')
-        roblox_check.pack(anchor=tk.W, pady=(0, self._s(5)))
         self._hl_checkbuttons = (
             whatsapp_check,
             rockstar_check,
             github_check,
-            roblox_check,
         )
 
 
