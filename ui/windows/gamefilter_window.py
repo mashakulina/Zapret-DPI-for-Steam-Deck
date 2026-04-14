@@ -238,6 +238,63 @@ class GamePresetWindow:
         """Путь к config.txt в каталоге менеджера."""
         return os.path.join(self.manager_dir, "config.txt")
 
+    def _read_nonempty_lines(self, path):
+        """Читает непустые строки файла без комментариев."""
+        if not os.path.isfile(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+    def _write_lines(self, path, lines):
+        """Записывает строки в файл, по одной на строку."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            if lines:
+                f.write("\n".join(lines) + "\n")
+            else:
+                f.write("")
+
+    def _apply_roblox_domains(self):
+        """Добавляет домены Roblox в list-general.txt без дубликатов."""
+        source_path = os.path.join(self.manager_dir, "utils", "list-general_roblox.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
+        source_domains = self._read_nonempty_lines(source_path)
+        if not source_domains:
+            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
+        current_domains = self._read_nonempty_lines(target_path)
+        merged_domains = sorted(set(current_domains).union(set(source_domains)))
+        self._write_lines(target_path, merged_domains)
+
+    def _remove_roblox_domains(self):
+        """Удаляет домены Roblox из list-general.txt."""
+        source_path = os.path.join(self.manager_dir, "utils", "list-general_roblox.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
+        source_domains = set(self._read_nonempty_lines(source_path))
+        if not source_domains:
+            return
+        current_domains = self._read_nonempty_lines(target_path)
+        filtered_domains = [domain for domain in current_domains if domain not in source_domains]
+        self._write_lines(target_path, filtered_domains)
+
+    def _apply_roblox_ipset(self):
+        """Заменяет ipset-all.txt данными Roblox."""
+        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_roblox.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
+        if not os.path.isfile(source_path):
+            raise FileNotFoundError(f"Файл не найден: {source_path}")
+        with open(source_path, "r", encoding="utf-8") as f:
+            roblox_ipset = f.read()
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(roblox_ipset)
+
+    def _set_ipset_none(self):
+        """Устанавливает IPSetFilter в none."""
+        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write("203.0.113.113/32")
+
     def apply_preset(self):
         """Применяет выбранный пресет: файл-маркер в utils и запись в config.txt."""
         if not self.main_window.ensure_sudo_password():
@@ -248,7 +305,11 @@ class GamePresetWindow:
         if not selected:
             active_before = get_active_preset_id(self.manager_dir)
             if active_before:
-                remove_preset_lines_from_config(active_before, self.manager_dir)
+                if active_before == "roblox":
+                    self._remove_roblox_domains()
+                    self._set_ipset_none()
+                else:
+                    remove_preset_lines_from_config(active_before, self.manager_dir)
                 restore_gamefilter_for_preset(active_before, self.manager_dir)
             clear_active_preset(self.manager_dir)
             show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
@@ -271,7 +332,11 @@ class GamePresetWindow:
 
         active_before = get_active_preset_id(self.manager_dir)
         if active_before and active_before != preset_id:
-            remove_preset_lines_from_config(active_before, self.manager_dir)
+            if active_before == "roblox":
+                self._remove_roblox_domains()
+                self._set_ipset_none()
+            else:
+                remove_preset_lines_from_config(active_before, self.manager_dir)
             restore_gamefilter_for_preset(active_before, self.manager_dir)
 
         set_active_preset(preset_id, self.manager_dir)
@@ -281,6 +346,9 @@ class GamePresetWindow:
 
         config_path = self.get_config_path()
         try:
+            if preset_id == "roblox":
+                self._apply_roblox_domains()
+                self._apply_roblox_ipset()
             if lines:
                 existing = ""
                 if os.path.exists(config_path):

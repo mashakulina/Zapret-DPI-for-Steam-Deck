@@ -39,6 +39,11 @@ GAME_PRESETS = {
         "game_filter_tcp": "27015,27036",
         "game_filter_udp": "27015,27031-27036",
     },
+    "roblox": {
+        "name": "Roblox",
+        "game_filter_tcp": "{GameFilter}",
+        "game_filter_udp": "49152-65535",
+    },
 }
 
 def get_manager_dir():
