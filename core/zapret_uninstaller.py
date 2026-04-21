@@ -10,6 +10,17 @@ from tkinter import messagebox
 from ui.components.custom_messagebox import ask_yesno as custom_show_yesno
 from ui.components.custom_messagebox import show_info as custom_show_info
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.platform_info import (
+    is_valve_steamos,
+    distro_log_label,
+    os_release_id_normalized,
+    detect_package_backend,
+    dependency_package_name,
+    remove_command_for_package,
+    ZAPRET_SYSTEMD_UNIT_PATH,
+    ZAPRET_SYSTEMD_UNIT_PATH_LEGACY,
+    zapret_systemd_unit_is_present,
+)
 
 class ZapretUninstaller:
     def __init__(self, root_window=None):
@@ -22,39 +33,12 @@ class ZapretUninstaller:
         self.uninstall_successful = False
 
     def check_if_steamos(self):
-        """Проверяет, является ли система SteamOS"""
-        self.log_debug("Проверка системы на SteamOS...")
-
-        # Способ 1: Проверка по наличию команды steamos-readonly
-        try:
-            result = subprocess.run(['which', 'steamos-readonly'],
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                self.log_debug("Найдена команда steamos-readonly")
-                return True
-        except:
-            pass
-
-        # Способ 2: Проверка по релизу системы
-        try:
-            with open('/etc/os-release', 'r') as f:
-                content = f.read().lower()
-                if 'steamos' in content or 'steamdeck' in content:
-                    self.log_debug("Обнаружен SteamOS в /etc/os-release")
-                    return True
-        except:
-            pass
-
-        # Способ 3: Проверка по другим признакам
-        try:
-            if os.path.exists('/home/deck'):
-                self.log_debug("Обнаружен пользователь deck")
-                return True
-        except:
-            pass
-
-        self.log_debug("Система не является SteamOS")
-        return False
+        """Только официальная SteamOS Valve (ID=steamos)."""
+        self.log_debug(
+            f"Проверка Valve SteamOS… Дистрибутив: {distro_log_label()} "
+            f"(ID={os_release_id_normalized() or '?'})"
+        )
+        return is_valve_steamos()
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -333,7 +317,7 @@ class ZapretUninstaller:
         self.log_debug("Проверка установки Zapret...")
 
         zapret_dir_exists = os.path.exists("/opt/zapret")
-        service_exists = os.path.exists("/usr/lib/systemd/system/zapret.service")
+        service_exists = zapret_systemd_unit_is_present()
         manager_dir_exists = os.path.exists(os.path.expanduser("~/Zapret_DPI_Manager"))
 
         self.log_debug(f"Папка /opt/zapret существует: {zapret_dir_exists}")
@@ -395,29 +379,31 @@ class ZapretUninstaller:
         return True
 
     def remove_service_file(self):
-        """Удаляет файл службы"""
+        """Удаляет unit zapret в /etc и при наличии — legacy в /usr."""
         self.current_task = "remove_service"
-        self.log_debug("Удаление файла службы zapret.service...")
+        self.log_debug("Удаление файлов службы zapret.service...")
 
-        service_path = "/usr/lib/systemd/system/zapret.service"
-
-        # Проверяем, существует ли файл
-        check_result = self.run_with_sudo(['ls', '-la', service_path])
-        if check_result and check_result['returncode'] != 0:
-            self.log_debug("Файл службы не существует, пропускаем удаление")
+        if not zapret_systemd_unit_is_present():
+            self.log_debug("Файлы unit не найдены, пропускаем удаление")
             return True
 
-        # Удаляем файл
         result = self.run_with_sudo(
-            ['rm', service_path],
-            "Удаление файла службы..."
+            ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH],
+            "Удаление unit из /etc/systemd/system…",
         )
-
-        if not result or result['returncode'] != 0:
-            self.log_debug(f"Ошибка удаления файла службы: {result['stderr'] if result else 'No result'}")
+        if not result or result["returncode"] != 0:
+            self.log_debug(
+                f"Ошибка удаления unit: {result['stderr'] if result else 'No result'}"
+            )
             return False
 
-        self.log_debug("Файл службы успешно удален")
+        # Legacy в /usr: на immutable-системах rm может завершиться с ошибкой — не считаем это фатальным.
+        self.run_with_sudo(
+            ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH_LEGACY],
+            "Удаление устаревшего unit из /usr…",
+        )
+
+        self.log_debug("Файлы службы удалены (основной путь; /usr при возможности)")
         return True
 
     def remove_zapret_directory(self):
@@ -519,27 +505,44 @@ class ZapretUninstaller:
             return False
 
     def remove_dependencies(self):
-        """Удаляет зависимости (ipset)"""
+        """Удаляет зависимости (ipset) через подходящий пакетный менеджер."""
         self.current_task = "remove_dependencies"
         self.log_debug("Удаление зависимостей (ipset)...")
 
-        result = self.run_with_sudo(
-            ['pacman', '-Rns', '--noconfirm', 'ipset'],
-            "Удаление зависимостей..."
-        )
+        backend = detect_package_backend()
+        if not backend:
+            self.log_debug("Пакетный менеджер не определён, пропускаем удаление ipset")
+            return True
+
+        pkg = dependency_package_name("ipset", backend)
+        remove_cmd = remove_command_for_package(backend, pkg)
+        if not remove_cmd:
+            self.log_debug(f"Нет команды удаления для бэкенда {backend}")
+            return True
+
+        self.log_debug(f"Удаление пакета {pkg} ({backend}): {' '.join(remove_cmd)}")
+        result = self.run_with_sudo(remove_cmd, "Удаление зависимостей...")
 
         if not result:
             self.log_debug("Нет результата от удаления зависимостей")
             return False
 
         if result['returncode'] != 0:
-            # Если пакет не установлен, это не ошибка
-            if "не установлен" in result['stdout'] or "not found" in result['stdout'].lower():
+            out = (result.get("stdout") or "") + "\n" + (result.get("stderr") or "")
+            out_lower = out.lower()
+            benign = (
+                "не установлен" in out_lower
+                or "not installed" in out_lower
+                or "no package" in out_lower
+                or "не найден" in out_lower
+                or "not found" in out_lower
+                or "no match for" in out_lower
+            )
+            if benign:
                 self.log_debug("Пакет ipset не установлен, пропускаем удаление")
                 return True
-            else:
-                self.log_debug(f"Предупреждение при удалении зависимостей: {result['stderr']}")
-                return False
+            self.log_debug(f"Предупреждение при удалении зависимостей: {result['stderr']}")
+            return False
 
         self.log_debug("Зависимости успешно удалены")
         return True
@@ -652,7 +655,10 @@ class ZapretUninstaller:
     def uninstall_zapret(self):
         """Основная функция удаления zapret"""
         self.log_debug("=== ЗАПУСК УДАЛЕНИЯ ZAPRET ===")
-        self.log_debug(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        if self.is_steamos:
+            self.log_debug("Режим Valve SteamOS (readonly, pacman)")
+        else:
+            self.log_debug(f"Дистрибутив: {distro_log_label()}")
 
         # Проверяем, установлен ли что-то для удаления
         if not self.is_zapret_installed():

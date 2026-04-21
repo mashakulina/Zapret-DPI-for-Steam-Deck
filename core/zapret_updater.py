@@ -6,6 +6,14 @@ import subprocess
 import time
 from core.updater_base import BaseUpdater
 from core.manager_config import ZAPRET_CONFIG
+from core.platform_info import (
+    is_valve_steamos,
+    distro_log_label,
+    os_release_id_normalized,
+    ZAPRET_SYSTEMD_UNIT_DIR,
+    ZAPRET_SYSTEMD_UNIT_PATH,
+    ZAPRET_SYSTEMD_UNIT_PATH_LEGACY,
+)
 
 class ZapretUpdater(BaseUpdater):
     def __init__(self):
@@ -17,39 +25,12 @@ class ZapretUpdater(BaseUpdater):
         self.is_steamos = self.check_if_steamos()
 
     def check_if_steamos(self):
-        """Проверяет, является ли система SteamOS"""
-        print("Проверка системы на SteamOS...")
-
-        # Способ 1: Проверка по наличию команды steamos-readonly
-        try:
-            result = subprocess.run(['which', 'steamos-readonly'],
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                print("Найдена команда steamos-readonly")
-                return True
-        except:
-            pass
-
-        # Способ 2: Проверка по релизу системы
-        try:
-            with open('/etc/os-release', 'r') as f:
-                content = f.read().lower()
-                if 'steamos' in content or 'steamdeck' in content:
-                    print("Обнаружен SteamOS в /etc/os-release")
-                    return True
-        except:
-            pass
-
-        # Способ 3: Проверка по другим признакам
-        try:
-            if os.path.exists('/home/deck'):
-                print("Обнаружен пользователь deck")
-                return True
-        except:
-            pass
-
-        print("Система не является SteamOS")
-        return False
+        """Только официальная SteamOS Valve (ID=steamos)."""
+        print(
+            f"Проверка Valve SteamOS… Дистрибутив: {distro_log_label()} "
+            f"(ID={os_release_id_normalized() or '?'})"
+        )
+        return is_valve_steamos()
 
     def get_sudo_password(self, parent_window):
         """Получает sudo пароль через окно"""
@@ -121,7 +102,11 @@ class ZapretUpdater(BaseUpdater):
         commands = [
             (['systemctl', 'stop', 'zapret'], "Остановка службы zapret"),
             (['systemctl', 'disable', 'zapret'], "Отключение автозапуска"),
-            (['rm', '-f', '/usr/lib/systemd/system/zapret.service'], "Удаление файла службы"),
+            (["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH], "Удаление unit из /etc/systemd/system"),
+            (
+                ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH_LEGACY],
+                "Удаление устаревшего unit из /usr (при возможности)",
+            ),
             (['rm', '-rf', '/opt/zapret/'], "Удаление директории zapret")
         ]
 
@@ -351,22 +336,38 @@ WantedBy=multi-user.target
             temp_service.write(service_content)
             temp_service.close()
 
-            # Копируем в системную директорию
-            result = self.run_with_sudo(
-                ['cp', temp_service.name, '/usr/lib/systemd/system/zapret.service'],
+            result_mk = self.run_with_sudo(
+                ["mkdir", "-p", ZAPRET_SYSTEMD_UNIT_DIR],
                 password,
-                "Копирование файла службы..."
+                "Подготовка каталога /etc/systemd/system…",
+            )
+            if not result_mk or result_mk["returncode"] != 0:
+                print("Не удалось создать каталог для службы")
+                os.unlink(temp_service.name)
+                return False
+
+            result = self.run_with_sudo(
+                ["cp", temp_service.name, ZAPRET_SYSTEMD_UNIT_PATH],
+                password,
+                "Копирование файла службы...",
             )
 
-            # Удаляем временный файл
             os.unlink(temp_service.name)
 
-            if not result or result['returncode'] != 0:
+            if not result or result["returncode"] != 0:
                 print("Не удалось создать службу")
                 return False
 
-            # Устанавливаем права
-            self.run_with_sudo(['chmod', '644', '/usr/lib/systemd/system/zapret.service'], password)
+            self.run_with_sudo(
+                ["chmod", "644", ZAPRET_SYSTEMD_UNIT_PATH],
+                password,
+                "Права на файл службы...",
+            )
+            self.run_with_sudo(
+                ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH_LEGACY],
+                password,
+                "Удаление устаревшего unit из /usr…",
+            )
 
             return True
 
@@ -455,7 +456,10 @@ WantedBy=multi-user.target
     def update_zapret(self, download_url, parent_window, progress_callback=None):
         """Выполняет обновление zapret службы"""
         print(f"=== ЗАПУСК ОБНОВЛЕНИЯ ZAPRET ===")
-        print(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        if self.is_steamos:
+            print("Режим Valve SteamOS (readonly, pacman)")
+        else:
+            print(f"Дистрибутив: {distro_log_label()}")
 
         password = self.get_sudo_password(parent_window)
         if not password:

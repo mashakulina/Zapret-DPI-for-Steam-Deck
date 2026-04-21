@@ -10,6 +10,14 @@ from ui.components.custom_messagebox import show_info as custom_show_info
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from tkinter import messagebox
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.platform_info import (
+    is_valve_steamos,
+    distro_log_label,
+    os_release_id_normalized,
+    detect_package_backend,
+    dependency_package_name,
+    install_command_for_package,
+)
 
 class DependencyChecker:
     def __init__(self, root_window=None):
@@ -20,43 +28,16 @@ class DependencyChecker:
         self.current_task = ""
         self.debug_log = []  # Лог для дебага
         self.last_command_result = None  # Результат последней команды
-        self.is_steamos = self.check_if_steamos()  # Проверяем систему
-        self.log_debug(f"Система определена как: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        self.is_steamos = self.check_if_steamos()  # Только Valve SteamOS (ID=steamos)
+        self.log_debug(
+            f"Дистрибутив: {distro_log_label()} (ID={os_release_id_normalized() or '?'}); "
+            f"Valve SteamOS: {'да' if self.is_steamos else 'нет'}"
+        )
 
     def check_if_steamos(self):
-        """Проверяет, является ли система SteamOS"""
-        self.log_debug("Проверка системы на SteamOS...")
-
-        # Способ 1: Проверка по наличию команды steamos-readonly
-        try:
-            result = subprocess.run(['which', 'steamos-readonly'],
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                self.log_debug("Найдена команда steamos-readonly")
-                return True
-        except:
-            pass
-
-        # Способ 2: Проверка по релизу системы
-        try:
-            with open('/etc/os-release', 'r') as f:
-                content = f.read().lower()
-                if 'steamos' in content or 'steamdeck' in content:
-                    self.log_debug("Обнаружен SteamOS в /etc/os-release")
-                    return True
-        except:
-            pass
-
-        # Способ 3: Проверка по другим признакам
-        try:
-            if os.path.exists('/home/deck'):
-                self.log_debug("Обнаружен пользователь deck")
-                return True
-        except:
-            pass
-
-        self.log_debug("Система не является SteamOS")
-        return False
+        """Только официальная SteamOS Valve (см. core.platform_info.is_valve_steamos)."""
+        self.log_debug("Проверка: Valve SteamOS по ID=steamos в /etc/os-release...")
+        return is_valve_steamos()
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -526,33 +507,18 @@ class DependencyChecker:
                     dep_progress
                 )
 
-            # Определяем пакетный менеджер в зависимости от системы
-            if self.is_steamos:
-                # Для SteamOS используем pacman
-                install_cmd = ['pacman', '-S', '--noconfirm', package_name]
-                package_manager = "pacman"
-            else:
-                # Для других систем определяем пакетный менеджер
-                if os.path.exists('/usr/bin/apt'):
-                    install_cmd = ['apt', 'install', '-y', package_name]
-                    package_manager = "apt"
-                elif os.path.exists('/usr/bin/yum'):
-                    install_cmd = ['yum', 'install', '-y', package_name]
-                    package_manager = "yum"
-                elif os.path.exists('/usr/bin/dnf'):
-                    install_cmd = ['dnf', 'install', '-y', package_name]
-                    package_manager = "dnf"
-                elif os.path.exists('/usr/bin/zypper'):
-                    install_cmd = ['zypper', '--non-interactive', 'install', package_name]
-                    package_manager = "zypper"
-                elif os.path.exists('/usr/bin/pacman'):
-                    install_cmd = ['pacman', '-S', '--noconfirm', package_name]
-                    package_manager = "pacman"
-                else:
-                    self.log_debug(f"Не удалось определить пакетный менеджер для установки {package_name}")
-                    return False
+            backend = detect_package_backend()
+            if not backend:
+                self.log_debug(f"Не удалось определить пакетный менеджер для установки {package_name}")
+                return False
 
-            self.log_debug(f"Используется пакетный менеджер: {package_manager}")
+            repo_pkg = dependency_package_name(package_name, backend)
+            install_cmd = install_command_for_package(backend, repo_pkg)
+            if not install_cmd:
+                self.log_debug(f"Нет команды установки для бэкенда: {backend}")
+                return False
+
+            self.log_debug(f"Пакетный бэкенд: {backend}; пакет в репозитории: {repo_pkg}")
             self.log_debug(f"Запуск установки: {' '.join(install_cmd)}")
 
             result = self.run_with_sudo(
@@ -774,7 +740,10 @@ class DependencyChecker:
     def check_and_install_dependencies(self):
         """Основная функция проверки и установки зависимостей"""
         self.log_debug("=== НАЧАЛО ПРОВЕРКИ ЗАВИСИМОСТЕЙ ===")
-        self.log_debug(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        if self.is_steamos:
+            self.log_debug("Режим Valve SteamOS (readonly, pacman)")
+        else:
+            self.log_debug(f"Дистрибутив: {distro_log_label()}")
 
         if self.root:
             self.root.update()

@@ -15,6 +15,15 @@ from core.manager_config import RELEASES_URL
 from ui.components.custom_messagebox import show_info as custom_show_info
 from tkinter import messagebox
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.platform_info import (
+    is_valve_steamos,
+    distro_log_label,
+    os_release_id_normalized,
+    ZAPRET_SYSTEMD_UNIT_DIR,
+    ZAPRET_SYSTEMD_UNIT_PATH,
+    ZAPRET_SYSTEMD_UNIT_PATH_LEGACY,
+    zapret_systemd_unit_is_present,
+)
 
 class ZapretChecker:
     def __init__(self, root_window=None):
@@ -25,7 +34,7 @@ class ZapretChecker:
         self.debug_log = []  # Лог для дебага
         self.last_command_result = None  # Результат последней команды
         self.home_dir = os.path.expanduser("~")  # Динамическое определение домашней директории
-        self.is_steamos = self.check_if_steamos()  # Проверка на SteamOS
+        self.is_steamos = self.check_if_steamos()  # Только Valve SteamOS
 
         # Из manager_config.py
         self.zapret_archive_url = f"{RELEASES_URL}/zapret.tar.gz"
@@ -43,39 +52,12 @@ class ZapretChecker:
         self.zapret_dir = "/opt/zapret"
 
     def check_if_steamos(self):
-        """Проверяет, является ли система SteamOS"""
-        self.log_debug("Проверка системы на SteamOS...")
-
-        # Способ 1: Проверка по наличию команды steamos-readonly
-        try:
-            result = subprocess.run(['which', 'steamos-readonly'],
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                self.log_debug("Найдена команда steamos-readonly")
-                return True
-        except:
-            pass
-
-        # Способ 2: Проверка по релизу системы
-        try:
-            with open('/etc/os-release', 'r') as f:
-                content = f.read().lower()
-                if 'steamos' in content or 'steamdeck' in content:
-                    self.log_debug("Обнаружен SteamOS в /etc/os-release")
-                    return True
-        except:
-            pass
-
-        # Способ 3: Проверка по другим признакам
-        try:
-            if os.path.exists('/home/deck'):
-                self.log_debug("Обнаружен пользователь deck")
-                return True
-        except:
-            pass
-
-        self.log_debug("Система не является SteamOS")
-        return False
+        """Только официальная SteamOS Valve (ID=steamos)."""
+        self.log_debug(
+            f"Проверка Valve SteamOS… Дистрибутив: {distro_log_label()} "
+            f"(ID={os_release_id_normalized() or '?'})"
+        )
+        return is_valve_steamos()
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -89,8 +71,7 @@ class ZapretChecker:
         # Проверяем наличие папки /opt/zapret
         zapret_dir_exists = os.path.exists(self.zapret_dir)
 
-        # Проверяем наличие службы
-        service_exists = os.path.exists("/usr/lib/systemd/system/zapret.service")
+        service_exists = zapret_systemd_unit_is_present()
 
         return zapret_dir_exists and service_exists
 
@@ -565,21 +546,35 @@ WantedBy=multi-user.target
             temp_service.write(service_content)
             temp_service.close()
 
-            # Копируем в системную директорию
+            result_mk = self.run_with_sudo(
+                ["mkdir", "-p", ZAPRET_SYSTEMD_UNIT_DIR],
+                "Подготовка каталога /etc/systemd/system…",
+            )
+            if not result_mk or result_mk["returncode"] != 0:
+                print("Не удалось создать каталог для службы")
+                os.unlink(temp_service.name)
+                return False
+
             result = self.run_with_sudo(
-                ['cp', temp_service.name, '/usr/lib/systemd/system/zapret.service'],
-                "Копирование файла службы..."
+                ["cp", temp_service.name, ZAPRET_SYSTEMD_UNIT_PATH],
+                "Копирование файла службы...",
             )
 
-            # Удаляем временный файл
             os.unlink(temp_service.name)
 
-            if not result or result['returncode'] != 0:
+            if not result or result["returncode"] != 0:
                 print("Не удалось создать службу")
                 return False
 
-            # Устанавливаем права
-            self.run_with_sudo(['chmod', '644', '/usr/lib/systemd/system/zapret.service'])
+            self.run_with_sudo(
+                ["chmod", "644", ZAPRET_SYSTEMD_UNIT_PATH],
+                "Права на файл службы...",
+            )
+            # Убираем legacy из /usr, если возможно (игнорируем ошибку на ro /usr).
+            self.run_with_sudo(
+                ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH_LEGACY],
+                "Удаление устаревшего unit из /usr…",
+            )
 
             return True
 
@@ -640,7 +635,10 @@ WantedBy=multi-user.target
     def install_zapret(self):
         """Основная функция установки zapret"""
         self.log_debug("=== НАЧАЛО УСТАНОВКИ ZAPRET ===")
-        self.log_debug(f"Обнаружена система: {'SteamOS' if self.is_steamos else 'другая ОС'}")
+        if self.is_steamos:
+            self.log_debug("Режим Valve SteamOS (readonly, pacman)")
+        else:
+            self.log_debug(f"Дистрибутив: {distro_log_label()}")
         self.log_debug(f"Текущий пользователь: {os.path.basename(self.home_dir)}")
 
         if self.root:
@@ -735,7 +733,7 @@ WantedBy=multi-user.target
                              "Лог ошибки:\n"
                              f"{error_details}\n\n"
                              "Проверьте:\n"
-                             "1. Права доступа к /usr/lib/systemd/system/\n"
+                             "1. Права на запись в /etc/systemd/system/\n"
                              "2. Достаточно ли места на диске\n"
                              "3. Не заблокирована ли система")
                 return False
