@@ -377,7 +377,6 @@ SERVICE_CATEGORIES = {
         "images.pump.fun": "138.124.72.139",
         "swap-api.pump.fun": "138.124.72.139",
         "www.elgato.com": "138.124.72.139",
-        "info.dns.malw.link": "104.21.24.110",
         "protonmail.com": "3.66.189.153",
         "mail.proton.me": "3.66.189.153",
         "codeium.com": "50.7.87.85",

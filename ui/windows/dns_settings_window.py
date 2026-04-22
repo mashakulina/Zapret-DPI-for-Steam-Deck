@@ -23,8 +23,7 @@ class DNSSettingsWindow:
             "Xbox DNS": "111.88.96.50 111.88.96.51",
             "GeoHide DNS": "45.155.204.190 37.230.192.51",
             "DNS Mafioznik.xyz": "103.27.157.38 103.27.157.100",
-            "Comss DNS": "83.220.169.155 212.109.195.93",
-            "dns.malw.link": "84.21.189.133 193.23.209.189"
+            "Comss DNS": "83.220.169.155 212.109.195.93"
         }
 
         # Переменные для чекбоксов
@@ -614,7 +613,7 @@ class DNSSettingsWindow:
 
         # Для работы с ИИ
         self.create_dns_group(inner_frame, "Для работы с ИИ",
-                            ["Xbox DNS", "GeoHide DNS", "DNS Mafioznik.xyz", "Comss DNS", "dns.malw.link"])
+                            ["Xbox DNS", "GeoHide DNS", "DNS Mafioznik.xyz", "Comss DNS"])
 
         # Пользовательский DNS
         custom_group = tk.Frame(inner_frame, bg='#182030')
