@@ -315,6 +315,8 @@ class GamePresetWindow:
             show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
             if hasattr(self.main_window, "show_status_message"):
                 self.main_window.show_status_message("Применение пресетов снято", success=True)
+            if hasattr(self.main_window, "update_game_filter_indicator"):
+                self.main_window.update_game_filter_indicator()
             self.main_window.restart_zapret_after_preset("Пресет снят")
             self.close_window()
             return
@@ -359,6 +361,8 @@ class GamePresetWindow:
                     f.write(new_content)
             if hasattr(self.main_window, "show_status_message"):
                 self.main_window.show_status_message(f"Был выбран пресет для {name}", success=True)
+            if hasattr(self.main_window, "update_game_filter_indicator"):
+                self.main_window.update_game_filter_indicator()
             show_info(self.root, "Пресет", f"Был выбран пресет для {name}.")
             self.main_window.restart_zapret_after_preset(f"Пресет {name} применён")
         except Exception as e:

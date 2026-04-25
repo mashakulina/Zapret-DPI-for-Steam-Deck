@@ -24,6 +24,7 @@ from core.dependency_checker import run_dependency_check
 from core.zapret_checker import run_zapret_check
 from core.file_checker import run_file_check
 from core.zapret_uninstaller import run_zapret_uninstall
+from core.game_presets import get_active_preset_id
 from ui.windows.update_window import show_update_window
 from ui.windows.gamefilter_window import GameFilterWindow
 from core.dpi_utils import (
@@ -1218,7 +1219,8 @@ class MainWindow:
 
     def update_game_filter_indicator(self):
         """Обновляет цвет индикатора Game Filter"""
-        if self.is_game_filter_enabled():
+        active_preset = get_active_preset_id()
+        if self.is_game_filter_enabled() or active_preset is not None:
             self.game_filter_indicator.config(fg='#30d158')  # Зеленый
         else:
             self.game_filter_indicator.config(fg='#ff3b30')  # Красный
