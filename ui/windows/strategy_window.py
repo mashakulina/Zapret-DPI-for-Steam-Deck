@@ -3,6 +3,7 @@ import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
 from core.service_manager import ServiceManager
+from core.game_presets import reapply_active_preset_to_config
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from core.dpi_utils import place_toplevel_centered_on_parent
 
@@ -399,6 +400,9 @@ class StrategyWindow:
                 # Записываем содержимое стратегии в config.txt
                 with open(config_file, 'w', encoding='utf-8') as f:
                     f.write(strategy_content)
+
+                # Если активен игровой пресет, применяем его к новому config.txt.
+                reapply_active_preset_to_config(manager_dir)
 
                 strategy_name = self.selected_strategy
 

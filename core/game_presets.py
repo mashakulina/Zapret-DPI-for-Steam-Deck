@@ -44,6 +44,14 @@ GAME_PRESETS = {
         "game_filter_tcp": "{GameFilter}",
         "game_filter_udp": "49152-65535",
     },
+    "elite_dangerous": {
+        "name": "Elite Dangerous",
+        "lines": [
+            "--filter-tcp=443 --hostlist-domains=api.orerve.net,orerve.net,frontier.co.uk,frontierstore.net,auth.frontierstore.net,elitedangerous.com --dpi-desync=hostfakesplit --dpi-desync-hostfakesplit-mod=host=amd.com --dpi-desync-fooling=ts --new",
+        ],
+        "game_filter_tcp": "{GameFilter}",
+        "game_filter_udp": "4380,5100,19364,27000-27031,27036",
+    },
 }
 
 def get_manager_dir():
@@ -175,3 +183,46 @@ def remove_preset_lines_from_config(preset_id, manager_dir=None):
         new_content += "\n"
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(new_content)
+
+
+def reapply_active_preset_to_config(manager_dir=None):
+    """
+    Повторно применяет активный пресет к текущему config.txt.
+    Нужен после смены стратегии, когда config.txt был перезаписан.
+    """
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+
+    active_preset_id = get_active_preset_id(manager_dir)
+    if not active_preset_id:
+        return False
+
+    preset = GAME_PRESETS.get(active_preset_id)
+    if not preset:
+        return False
+
+    config_path = _config_txt_path(manager_dir)
+    if not os.path.isfile(config_path):
+        return False
+
+    # 1) Подстановка портов GameFilter для пресетов с tcp/udp.
+    tcp = preset.get("game_filter_tcp")
+    udp = preset.get("game_filter_udp")
+    if tcp is not None and udp is not None:
+        substitute_gamefilter_in_config(tcp, udp, manager_dir)
+
+    # 2) Префиксные строки пресета (если есть) добавляем в начало нового config.txt.
+    lines = preset.get("lines") or []
+    if lines:
+        with open(config_path, "r", encoding="utf-8") as f:
+            existing = f.read()
+
+        preset_block = "\n".join(lines)
+        if existing == preset_block or existing.startswith(preset_block + "\n"):
+            return True
+
+        new_content = preset_block + ("\n" + existing if existing else "\n")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    return True

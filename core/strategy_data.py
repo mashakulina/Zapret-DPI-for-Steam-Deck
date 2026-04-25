@@ -1,4 +1,5 @@
 import os
+from core.game_presets import reapply_active_preset_to_config
 
 # Данные стратегий для сборки своей стратегии
 STRATEGY_OPTIONS = {
@@ -251,6 +252,9 @@ def save_strategy_names(selected_strategies):
             else:
                 # Если нет валидных стратегий, оставляем config.txt пустым
                 f.write("")
+
+        # После смены стратегии пере-применяем активный игровой пресет (если есть).
+        reapply_active_preset_to_config(manager_dir)
 
         return True
     except Exception as e:
