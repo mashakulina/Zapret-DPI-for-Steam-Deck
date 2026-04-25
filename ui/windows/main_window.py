@@ -1074,18 +1074,17 @@ class MainWindow:
         if self.status_tooltip:
             return
 
-        # Определяем текст в зависимости от цвета индикатора
-        status_text = ""
-        indicator_status = self.status_indicator.cget("text")
-
-        if indicator_status == '🟢':  # Зеленый
+        # Индикатор всегда "⬤", а состояние хранится в fg.
+        indicator_color = str(self.status_indicator.cget("fg")).strip().lower()
+        if indicator_color in {"#30d158"}:  # Зеленый
             status_text = "Статус службы: активен"
-        elif indicator_status == '🔴':  # Красный
+        elif indicator_color in {"#ff3b30"}:  # Красный
             status_text = "Статус службы: неактивен"
-        elif indicator_status == '🟠':  # Оранжевый
+        elif indicator_color in {"#ff9500"}:  # Оранжевый
             status_text = "Статус службы: неизвестный"
         else:
-            status_text = "Статус службы: неопределен"
+            # Безопасный фолбэк, если цвет задан именем или системой.
+            status_text = "Статус службы: активен" if self.service_running else "Статус службы: неактивен"
 
         # Позиционируем подсказку рядом с индикатором
         x = self.status_indicator.winfo_rootx() - 20
@@ -1301,13 +1300,16 @@ class MainWindow:
                     "/sys/devices/virtual/dmi/id/product_name"
                 ]
 
-                # Проверяем наличие файлов Steam Deck
+                # Наличие hwmon — железо Steam Deck; DMI без общих подстрок «deck» (ложные срабатывания на ПК).
                 for file in steamdeck_files:
-                    if os.path.exists(file):
-                        with open(file, 'r') as f:
-                            content = f.read().lower()
-                            if 'steam' in content or 'deck' in content:
-                                return True
+                    if not os.path.exists(file):
+                        continue
+                    if "steamdeck_hwmon" in file.replace("\\", "/"):
+                        return True
+                    with open(file, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read().lower()
+                    if "steam deck" in content or "jupiter" in content or "galileo" in content:
+                        return True
 
                 # Проверяем переменные окружения
                 if 'DECK' in os.path.environ.get('XDG_SESSION_DESKTOP', '').upper():
