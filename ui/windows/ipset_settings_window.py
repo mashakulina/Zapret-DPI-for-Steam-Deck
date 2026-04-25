@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+import ipaddress
 import re
 import os
 from ui.components.custom_messagebox import show_info, show_error, ask_yesno, ask_yesnocancel
@@ -30,7 +31,7 @@ class IpsetSettingsWindow:
         self.ipset_exclude_user_file = os.path.join(self.manager_dir, "files", "lists", "ipset-exclude_user.txt")
 
     def validate_ip_address(self, ip_str):
-        """Проверяет корректность IP-адреса, диапазона или подсети"""
+        """Проверяет корректность IP-адреса, диапазона или подсети (IPv4 и IPv6)."""
 
         # Комментарий
         if ip_str.strip().startswith('#'):
@@ -40,59 +41,33 @@ class IpsetSettingsWindow:
         if not ip_str.strip():
             return True, ""
 
-        # Регулярные выражения для различных форматов
-        ip_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
-        cidr_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$'
+        s = ip_str.strip()
+
+        # Диапазон только для IPv4: 172.16.0.0-172.31.255.255
         range_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}-\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
-
-        # Проверка простого IP-адреса
-        if re.match(ip_pattern, ip_str):
-            parts = ip_str.split('.')
-            for part in parts:
-                if not 0 <= int(part) <= 255:
-                    return False, "Неверный IP-адрес"
-            return True, ""
-
-        # Проверка CIDR нотации
-        elif re.match(cidr_pattern, ip_str):
-            ip_part, cidr_part = ip_str.split('/')
-            parts = ip_part.split('.')
-
-            # Проверка IP части
-            for part in parts:
-                if not 0 <= int(part) <= 255:
-                    return False, "Неверный IP в CIDR"
-
-            # Проверка CIDR части
-            cidr = int(cidr_part)
-            if not 0 <= cidr <= 32:
-                return False, "Неверная маска CIDR"
-
-            return True, ""
-
-        # Проверка диапазона
-        elif re.match(range_pattern, ip_str):
-            start_ip, end_ip = ip_str.split('-')
-
-            # Проверка начального IP
-            start_parts = start_ip.split('.')
-            for part in start_parts:
+        if re.match(range_pattern, s):
+            start_ip, end_ip = s.split('-')
+            for part in start_ip.split('.'):
                 if not 0 <= int(part) <= 255:
                     return False, "Неверный начальный IP в диапазоне"
-
-            # Проверка конечного IP
-            end_parts = end_ip.split('.')
-            for part in end_parts:
+            for part in end_ip.split('.'):
                 if not 0 <= int(part) <= 255:
                     return False, "Неверный конечный IP в диапазоне"
-
             return True, ""
 
-        else:
-            # Проверяем, не является ли это комментарием без #
-            if ip_str.strip() and not ip_str.strip().startswith('#'):
-                return False, "Некорректный формат или комментарий без #"
-            return False, "Некорректный формат"
+        # Одиночный адрес или подсеть CIDR (IPv4 и IPv6), например 2a14:7583:f14c::/46
+        if '/' in s:
+            try:
+                ipaddress.ip_network(s, strict=False)
+                return True, ""
+            except ValueError:
+                return False, "Некорректный адрес или префикс (IPv4/IPv6 CIDR)"
+
+        try:
+            ipaddress.ip_address(s)
+            return True, ""
+        except ValueError:
+            return False, "Некорректный формат адреса или комментарий без #"
 
     def save_data(self):
         """Сохраняет данные в файлы"""
@@ -370,7 +345,8 @@ class IpsetSettingsWindow:
 
         info_body = (
             "Вводить адреса или диапазон нужно по одному на строку.\n"
-            "Примеры ввода адресов: 192.168.1.1, 10.0.0.0/8 или 172.16.0.0-172.31.255.255.\n"
+            "Примеры: IPv4 — 192.168.1.1, 10.0.0.0/8, 172.16.0.0-172.31.255.255; "
+            "IPv6 — 2001:db8::1 или подсеть 2a14:7583:f14c::/46.\n"
             "Чтобы оставить комментарий, нужно сначала поставить знак «#» и только после этого писать текст комментария."
         )
         info_block = tk.Label(
