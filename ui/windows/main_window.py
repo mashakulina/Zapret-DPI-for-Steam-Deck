@@ -83,6 +83,7 @@ class MainWindow:
         # self.check_files_on_startup()
         self.load_current_strategy()
         self.check_service_status()  # Проверяем статус службы при запуске
+        self.update_game_filter_indicator()  # GameFilter / активный пресет игры (маркер в utils)
         self.schedule_status_update()  # Запускаем периодическую проверку
         self.status_tooltip = None  # Всплывающее окошко для статуса
         self.root.after(100, self.check_updates_on_startup)
@@ -822,6 +823,7 @@ class MainWindow:
     def on_focus_in(self, event):
         """Обрабатывает получение фокуса окном"""
         self.load_current_strategy()  # Обновляем стратегию при получении фокуса
+        self.update_game_filter_indicator()
 
     def on_focus_out(self, event):
         """Обрабатывает потерю фокуса окном - закрываем меню"""
