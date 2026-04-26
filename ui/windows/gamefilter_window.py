@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Окно GameFilter: пресеты игр и включение GameFilter."""
-import tkinter as tk
 import os
+import tkinter as tk
+
 from ui.components.button_styler import create_hover_button
+from ui.windows.main.protocols import MainWindowActions
 from ui.components.custom_messagebox import show_info, show_error
 from core.dpi_utils import place_toplevel_centered_on_parent
 from core.game_presets import (
@@ -20,7 +22,7 @@ from core.game_presets import (
 class GameFilterWindow:
     """Окно выбора действия GameFilter: пресет игры, включить GameFilter или назад."""
 
-    def __init__(self, parent, main_window):
+    def __init__(self, parent: tk.Misc, main_window: MainWindowActions):
         self.parent = parent
         self.main_window = main_window
         self.root = tk.Toplevel(parent)
@@ -133,7 +135,7 @@ class GameFilterWindow:
 class GamePresetWindow:
     """Окно выбора пресета игры: чекбоксы (один на выбор), Применить и Назад."""
 
-    def __init__(self, parent, main_window):
+    def __init__(self, parent: tk.Misc, main_window: MainWindowActions):
         self.parent = parent
         self.main_window = main_window
         self.root = tk.Toplevel(parent)

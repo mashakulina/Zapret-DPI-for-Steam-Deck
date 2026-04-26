@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 # Добавляем путь к core для импорта strategy_tester
 sys.path.append(str(Path(__file__).parent.parent.parent / 'core'))
 
+from core.game_presets import reapply_active_preset_to_config
+
 class OutputRedirector:
     """Перенаправляет вывод print в GUI окно"""
     def __init__(self, log_callback):
@@ -663,7 +665,7 @@ class StrategyTesterWindow:
             try:
                 if 'loop' in locals():
                     loop.close()
-            except:
+            except Exception:
                 pass
 
             # Восстанавливаем состояние кнопок
@@ -753,6 +755,8 @@ class StrategyTesterWindow:
             name_strategy_path = self.project_root / "utils" / "name_strategy.txt"
             with open(name_strategy_path, 'w', encoding='utf-8') as f:
                 f.write(strategy_name)
+
+            reapply_active_preset_to_config(str(self.project_root))
 
             self.log_message(f"✅ Стратегия '{strategy_name}' применена автоматически", "#30d158")
             self.log_message(f"📝 Записана в: {config_path}", "#4fc3f7")

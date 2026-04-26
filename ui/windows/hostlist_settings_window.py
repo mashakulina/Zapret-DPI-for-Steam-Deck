@@ -403,7 +403,7 @@ class HostlistSettingsWindow:
 
             # Возвращаем "break", чтобы предотвратить стандартную вставку
             return "break"
-        except:
+        except Exception:
             # Если не удалось получить из буфера обмена, разрешаем стандартную вставку
             return None
 

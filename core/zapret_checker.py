@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-import subprocess
-import tkinter as tk
+import getpass
 import os
+import shutil
+import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
-import tarfile
-import shutil
 import time
-import getpass
+import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
-from ui.windows.sudo_password_window import SudoPasswordWindow
-from core.manager_config import RELEASES_URL
-from ui.components.custom_messagebox import show_info as custom_show_info
 from tkinter import messagebox
+
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.manager_config import RELEASES_URL
 from core.platform_info import (
     is_valve_steamos,
     distro_log_label,
@@ -26,8 +26,16 @@ from core.platform_info import (
 )
 
 class ZapretChecker:
-    def __init__(self, root_window=None):
+    def __init__(
+        self,
+        root_window=None,
+        *,
+        show_info_fn: Callable[[str, str], None] | None = None,
+        sudo_password_provider: Callable[[], str | None] | None = None,
+    ):
         self.root = root_window
+        self._show_info_fn = show_info_fn
+        self._sudo_password_provider = sudo_password_provider
         self.progress_window = None
         self.current_task = ""
         self.sudo_password = None
@@ -136,16 +144,19 @@ class ZapretChecker:
                 text=True
             )
             return result.returncode == 0 and result.stdout.strip() == "active"
-        except:
+        except Exception:
             return False
 
     def show_info(self, title, message):
         """Показывает информационное сообщение"""
+        if self._show_info_fn is not None:
+            self._show_info_fn(title, message)
+            return
         if self.root and self.root.winfo_exists():
             try:
-                custom_show_info(self.root, title, message)
-            except ImportError:
                 messagebox.showinfo(title, message, parent=self.root)
+            except Exception:
+                print(f"{title}: {message}")
         else:
             print(f"{title}: {message}")
 
@@ -244,26 +255,28 @@ class ZapretChecker:
 
     def get_sudo_password(self):
         """Запрашивает sudo пароль у пользователя"""
-        try:
-            password_window = SudoPasswordWindow(
-                self.root,
-                on_password_valid=lambda pwd: self.set_sudo_password(pwd)
-            )
-            password = password_window.run()
-
-            if password:
-                self.sudo_password = password
-                return True
-            else:
+        if self._sudo_password_provider is not None:
+            try:
+                password = self._sudo_password_provider()
+                if password:
+                    self.sudo_password = password
+                    return True
                 return False
-
-        except ImportError as e:
-            print(f"Ошибка импорта SudoPasswordWindow: {e}")
-            self.show_info("Ошибка",
-                         "Не удалось загрузить модуль запроса пароля.\nУстановка Zapret невозможна.")
+            except Exception as e:
+                print(f"Ошибка при запросе пароля: {e}")
+                return False
+        try:
+            pwd = getpass.getpass("Пароль sudo: ")
+            if pwd:
+                self.sudo_password = pwd
+                return True
             return False
         except Exception as e:
             print(f"Ошибка при запросе пароля: {e}")
+            self.show_info(
+                "Ошибка",
+                "Не удалось запросить пароль.\nУстановка Zapret невозможна.",
+            )
             return False
 
     def set_sudo_password(self, password):
@@ -777,7 +790,7 @@ WantedBy=multi-user.target
             # Пытаемся заблокировать систему даже при ошибке
             try:
                 self.lock_readonly_system()
-            except:
+            except Exception:
                 pass
 
             if self.progress_window:
@@ -829,11 +842,22 @@ WantedBy=multi-user.target
         # Устанавливаем zapret
         return self.install_zapret()
 
-def run_zapret_check(root_window=None):
+def run_zapret_check(
+    root_window=None,
+    *,
+    show_info_fn: Callable[[str, str], None] | None = None,
+    sudo_password_provider: Callable[[], str | None] | None = None,
+):
     """
-    Запускает проверку и установку zapret при старте программы
+    Запускает проверку и установку zapret при старте программы.
+
+    Для GUI используйте ui.integrations.zapret_check.run_zapret_check.
     """
-    checker = ZapretChecker(root_window)
+    checker = ZapretChecker(
+        root_window,
+        show_info_fn=show_info_fn,
+        sudo_password_provider=sudo_password_provider,
+    )
     return checker.check_and_install_zapret()
 
 if __name__ == "__main__":

@@ -518,7 +518,7 @@ class ServiceUnlockWindow:
                 # Удаляем временный файл
                 try:
                     os.unlink(temp_path)
-                except:
+                except Exception:
                     pass
 
         except Exception as e:

@@ -259,7 +259,7 @@ class StrategyTester:
                                 from urllib.parse import urlparse
                                 parsed = urlparse(value)
                                 ping_target = parsed.hostname or value
-                            except:
+                            except Exception:
                                 ping_target = value
 
                             targets.append({
@@ -386,7 +386,7 @@ class StrategyTester:
                             from urllib.parse import urlparse
                             parsed = urlparse(value)
                             ping_target = parsed.hostname or value
-                        except:
+                        except Exception:
                             ping_target = value
 
                         targets.append({
@@ -993,7 +993,7 @@ class StrategyTester:
                 if 'temp_config' in locals() and temp_config and temp_config.exists():
                     try:
                         temp_config.unlink()
-                    except:
+                    except Exception:
                         pass
 
             except Exception as e:
@@ -2310,7 +2310,7 @@ class StrategyTester:
             try:
                 import webbrowser
                 webbrowser.open(f"file://{report_path}")
-            except:
+            except Exception:
                 print("   ℹ️  Отчет можно открыть вручную")
 
         elif self.stop_requested:

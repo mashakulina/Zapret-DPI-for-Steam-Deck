@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-import subprocess
-import tkinter as tk
 import os
-import shutil
-import time
 import platform
+import shutil
+import subprocess
+import sys
+import time
+import tkinter as tk
+from collections.abc import Callable
 from tkinter import messagebox
-from ui.components.custom_messagebox import ask_yesno as custom_show_yesno
-from ui.components.custom_messagebox import show_info as custom_show_info
+
 from core.dpi_utils import place_toplevel_centered_on_parent
 from core.platform_info import (
     is_valve_steamos,
@@ -23,8 +24,16 @@ from core.platform_info import (
 )
 
 class ZapretUninstaller:
-    def __init__(self, root_window=None):
+    def __init__(
+        self,
+        root_window=None,
+        *,
+        show_info_fn: Callable[[str, str], None] | None = None,
+        ask_yesno_fn: Callable[[str, str], bool] | None = None,
+    ):
         self.root = root_window
+        self._show_info_fn = show_info_fn
+        self._ask_yesno_fn = ask_yesno_fn
         self.sudo_password = None
         self.progress_window = None
         self.current_task = ""
@@ -50,22 +59,33 @@ class ZapretUninstaller:
     def show_info(self, title, message):
         """Показывает информационное сообщение"""
         self.log_debug(f"show_info: {title} - {message}")
-        if self.root and self.root.winfo_exists():
+        if self._show_info_fn is not None:
+            self._show_info_fn(title, message)
+        elif self.root and self.root.winfo_exists():
             try:
-                custom_show_info(self.root, title, message)
-            except ImportError:
                 messagebox.showinfo(title, message, parent=self.root)
+            except Exception:
+                print(f"{title}: {message}")
         else:
             print(f"{title}: {message}")
+
+        if title == "Удаление завершено" and self.uninstall_successful:
+            self.log_debug("Закрытие программы после успешного удаления...")
+            if self.root:
+                self.root.quit()
+                self.root.destroy()
+            sys.exit(0)
 
     def show_yesno_dialog(self, title, message):
         """Показывает диалог с выбором Да/Нет"""
         self.log_debug(f"show_yesno_dialog: {title}")
+        if self._ask_yesno_fn is not None:
+            return self._ask_yesno_fn(title, message)
         if self.root and self.root.winfo_exists():
             try:
-                return custom_show_yesno(self.root, title, message)
-            except ImportError:
-                return messagebox.askyesno(title, message, parent=self.root)
+                return bool(messagebox.askyesno(title, message, parent=self.root))
+            except Exception:
+                return False
         return False
 
     def create_progress_window(self, title="Удаление Zapret"):
@@ -783,7 +803,7 @@ class ZapretUninstaller:
             # Пытаемся заблокировать систему даже при ошибке
             try:
                 self.lock_readonly_system()
-            except:
+            except Exception:
                 pass
 
             if self.progress_window:
@@ -798,27 +818,6 @@ class ZapretUninstaller:
                          f"Лог удаления:\n{error_log}")
             return False
 
-    def show_info(self, title, message):
-        """Показывает информационное сообщение и закрывает программу если это завершающее сообщение"""
-        self.log_debug(f"show_info: {title} - {message}")
-
-        if self.root and self.root.winfo_exists():
-            try:
-                custom_show_info(self.root, title, message)
-            except ImportError:
-                messagebox.showinfo(title, message, parent=self.root)
-
-            # Если это сообщение об успешном завершении и программа была успешно удалена,
-            # закрываем программу после нажатия OK
-            if title == "Удаление завершено" and self.uninstall_successful:
-                self.log_debug("Закрытие программы после успешного удаления...")
-                if self.root:
-                    self.root.quit()
-                    self.root.destroy()
-                sys.exit(0)
-        else:
-            print(f"{title}: {message}")
-
     def run_uninstall(self):
         """Запускает процесс удаления и возвращает True если нужно закрыть программу"""
         result = self.uninstall_zapret()
@@ -828,11 +827,22 @@ class ZapretUninstaller:
             return "close_app"
         return result
 
-def run_zapret_uninstall(root_window=None):
+def run_zapret_uninstall(
+    root_window=None,
+    *,
+    show_info_fn: Callable[[str, str], None] | None = None,
+    ask_yesno_fn: Callable[[str, str], bool] | None = None,
+):
     """
-    Запускает удаление zapret
+    Запускает удаление zapret.
+
+    Для кастомных диалогов используйте ui.integrations.zapret_uninstall.run_zapret_uninstall.
     """
-    uninstaller = ZapretUninstaller(root_window)
+    uninstaller = ZapretUninstaller(
+        root_window,
+        show_info_fn=show_info_fn,
+        ask_yesno_fn=ask_yesno_fn,
+    )
     return uninstaller.run_uninstall()
 
 if __name__ == "__main__":

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-import subprocess
-import tkinter as tk
 import os
-import sys
-import time
 import shutil
+import subprocess
+import sys
 import tempfile
-from ui.components.custom_messagebox import show_info as custom_show_info
-from ui.windows.sudo_password_window import SudoPasswordWindow
+import time
+import tkinter as tk
+from collections.abc import Callable
 from tkinter import messagebox
+
 from core.dpi_utils import place_toplevel_centered_on_parent
 from core.platform_info import (
     is_valve_steamos,
@@ -20,8 +20,16 @@ from core.platform_info import (
 )
 
 class DependencyChecker:
-    def __init__(self, root_window=None):
+    def __init__(
+        self,
+        root_window=None,
+        *,
+        show_info_fn: Callable[[str, str], None] | None = None,
+        sudo_password_provider: Callable[[], str | None] | None = None,
+    ):
         self.root = root_window
+        self._show_info_fn = show_info_fn
+        self._sudo_password_provider = sudo_password_provider
         self.dependencies = ['curl', 'nft']
         self.sudo_password = None
         self.progress_window = None
@@ -69,12 +77,15 @@ class DependencyChecker:
     def show_info(self, title, message):
         """Показывает информационное сообщение через кастомное окно"""
         self.log_debug(f"show_info: {title} - {message}")
+        if self._show_info_fn is not None:
+            self._show_info_fn(title, message)
+            return
         if self.root and self.root.winfo_exists():
             try:
-                custom_show_info(self.root, title, message)
-            except ImportError as e:
-                self.log_debug(f"Ошибка импорта кастомного messagebox: {e}")
                 messagebox.showinfo(title, message, parent=self.root)
+            except Exception as e:
+                self.log_debug(f"Ошибка messagebox: {e}")
+                print(f"{title}: {message}")
         else:
             print(f"{title}: {message}")
 
@@ -193,29 +204,32 @@ class DependencyChecker:
     def get_sudo_password(self):
         """Запрашивает sudo пароль у пользователя"""
         self.log_debug("Запрос sudo пароля...")
-        try:
-            password_window = SudoPasswordWindow(
-                self.root,
-                on_password_valid=lambda pwd: self.set_sudo_password(pwd)
-            )
-
-            password = password_window.run()
-
-            if password:
-                self.sudo_password = password
-                self.log_debug("Sudo пароль получен (длина: {})".format(len(password)))
-                return True
-            else:
+        if self._sudo_password_provider is not None:
+            try:
+                password = self._sudo_password_provider()
+                if password:
+                    self.sudo_password = password
+                    self.log_debug("Sudo пароль получен (длина: {})".format(len(password)))
+                    return True
                 self.log_debug("Пользователь отменил ввод пароля")
                 return False
+            except Exception as e:
+                self.log_debug(f"Ошибка при запросе пароля: {e}")
+                return False
+        try:
+            import getpass
 
-        except ImportError as e:
-            self.log_debug(f"Ошибка импорта SudoPasswordWindow: {e}")
-            self.show_info("Ошибка",
-                         "Не удалось загрузить модуль запроса пароля.\nУстановка зависимостей невозможна.")
+            pwd = getpass.getpass("Пароль sudo: ")
+            if pwd:
+                self.sudo_password = pwd
+                return True
             return False
         except Exception as e:
             self.log_debug(f"Ошибка при запросе пароля: {e}")
+            self.show_info(
+                "Ошибка",
+                "Не удалось запросить пароль.\nУстановка зависимостей невозможна.",
+            )
             return False
 
     def set_sudo_password(self, password):
@@ -655,7 +669,7 @@ class DependencyChecker:
                     try:
                         shutil.rmtree(temp_dir)
                         self.log_debug(f"Временная папка удалена: {temp_dir}")
-                    except:
+                    except Exception:
                         pass
 
     def install_ipset_from_local(self, package_path):
@@ -698,7 +712,7 @@ class DependencyChecker:
                 try:
                     shutil.rmtree(temp_dir)
                     self.log_debug(f"Временная папка удалена: {temp_dir}")
-                except:
+                except Exception:
                     pass
 
     def is_timeout_error(self, stderr):
@@ -895,7 +909,7 @@ class DependencyChecker:
             if self.is_steamos:
                 try:
                     self.lock_readonly_system()
-                except:
+                except Exception:
                     pass
 
             if self.progress_window:
@@ -907,14 +921,23 @@ class DependencyChecker:
                          "Программа может работать некорректно.")
             return False
 
-def run_dependency_check(root_window=None):
+def run_dependency_check(
+    root_window=None,
+    *,
+    show_info_fn: Callable[[str, str], None] | None = None,
+    sudo_password_provider: Callable[[], str | None] | None = None,
+):
     """
-    Запускает проверку зависимостей при старте программы
-    """
-    checker = DependencyChecker(root_window)
-    result = checker.check_and_install_dependencies()
+    Запускает проверку зависимостей при старте программы.
 
-    return result
+    Для GUI используйте ui.integrations.dependency_check.run_dependency_check.
+    """
+    checker = DependencyChecker(
+        root_window,
+        show_info_fn=show_info_fn,
+        sudo_password_provider=sudo_password_provider,
+    )
+    return checker.check_and_install_dependencies()
 
 if __name__ == "__main__":
     test_checker = DependencyChecker()

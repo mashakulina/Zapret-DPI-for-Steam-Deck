@@ -24,7 +24,7 @@ def setup_window_properties(self):
     # Устанавливаем WM_CLASS (БЕЗ ПРОБЕЛОВ!)
     try:
         self.root.wm_class("ZapretDPIManager")
-    except:
+    except Exception:
         pass
 
     # Устанавливаем иконку

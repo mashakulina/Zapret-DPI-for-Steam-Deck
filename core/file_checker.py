@@ -7,15 +7,23 @@ import tempfile
 import tarfile
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
-from core.manager_config import RELEASES_URL
-from ui.components.custom_messagebox import show_info as custom_show_info
 from tkinter import messagebox
+
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.manager_config import RELEASES_URL
+
 
 class ZapretFileChecker:
-    def __init__(self, root_window=None):
+    def __init__(
+        self,
+        root_window=None,
+        *,
+        show_info_fn: Callable[[str, str], None] | None = None,
+    ):
         self.root = root_window
+        self._show_info_fn = show_info_fn
         self.progress_window = None
         self.current_task = ""
         self.sudo_password = None
@@ -86,11 +94,14 @@ class ZapretFileChecker:
 
     def show_info(self, title, message):
         """Показывает информационное сообщение"""
+        if self._show_info_fn is not None:
+            self._show_info_fn(title, message)
+            return
         if self.root and self.root.winfo_exists():
             try:
-                custom_show_info(self.root, title, message)
-            except ImportError:
                 messagebox.showinfo(title, message, parent=self.root)
+            except Exception:
+                print(f"{title}: {message}")
         else:
             print(f"{title}: {message}")
 
@@ -547,11 +558,13 @@ class ZapretFileChecker:
         return self.fix_zapret_files()
 
 
-def run_file_check(root_window=None):
+def run_file_check(root_window=None, *, show_info_fn: Callable[[str, str], None] | None = None):
     """
-    Запускает проверку и восстановление файлов Zapret DPI Manager
+    Запускает проверку и восстановление файлов Zapret DPI Manager.
+
+    Для кастомных диалогов приложения используйте ui.integrations.file_check.run_file_check.
     """
-    checker = ZapretFileChecker(root_window)
+    checker = ZapretFileChecker(root_window, show_info_fn=show_info_fn)
     return checker.run_check()
 
 

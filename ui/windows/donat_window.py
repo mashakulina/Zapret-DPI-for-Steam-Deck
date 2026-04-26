@@ -24,7 +24,7 @@ class DonationWindow:
         # Устанавливаем WM_CLASS
         try:
             self.root.wm_class("ZapretDPIManager")
-        except:
+        except Exception:
             pass
 
         # Устанавливаем иконку

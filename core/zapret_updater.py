@@ -522,7 +522,7 @@ WantedBy=multi-user.target
             try:
                 if password:
                     self.lock_steamos_system(password)
-            except:
+            except Exception:
                 pass
 
             return False

@@ -40,7 +40,7 @@ class SudoChecker:
             if os.path.exists(cache_file):
                 with open(cache_file, 'r') as f:
                     return f.read().strip()
-        except:
+        except Exception:
             pass
         return None
 
@@ -51,7 +51,7 @@ class SudoChecker:
             cache_file = os.path.expanduser("~/.zapret_sudo_cache")
             with open(cache_file, 'w') as f:
                 f.write(password)
-        except:
+        except Exception:
             pass
 
     @staticmethod
@@ -61,5 +61,5 @@ class SudoChecker:
             cache_file = os.path.expanduser("~/.zapret_sudo_cache")
             if os.path.exists(cache_file):
                 os.remove(cache_file)
-        except:
+        except Exception:
             pass
