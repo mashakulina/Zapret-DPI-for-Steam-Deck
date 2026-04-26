@@ -107,6 +107,47 @@ echo "Copying files to temp directory..."
 cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null || true
 cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
 
+# ОБЪЕДИНЯЕМ ОСНОВНЫЕ И USER-СПИСКИ В ОДИН ФАЙЛ
+# Это исключает зависимость от порядка повторяющихся --hostlist/--hostlist-exclude/--ipset-exclude.
+merge_unique_lists() {
+    local out_file="$1"
+    shift
+    local inputs=("$@")
+
+    : > "$out_file"
+    local existing=()
+    for file in "${inputs[@]}"; do
+        [ -f "$file" ] || continue
+        existing+=("$file")
+    done
+
+    if [ "${#existing[@]}" -gt 0 ]; then
+        awk '
+            {
+                sub(/\r$/, "");
+                if (!seen[$0]++) print $0
+            }
+        ' "${existing[@]}" > "$out_file"
+    fi
+}
+
+merge_unique_lists \
+    "$TEMP_DIR/list-general_merged.txt" \
+    "$TEMP_DIR/list-general.txt" \
+    "$TEMP_DIR/list-general_user.txt"
+merge_unique_lists \
+    "$TEMP_DIR/list-exclude_merged.txt" \
+    "$TEMP_DIR/list-exclude.txt" \
+    "$TEMP_DIR/list-exclude_user.txt"
+merge_unique_lists \
+    "$TEMP_DIR/ipset-exclude_merged.txt" \
+    "$TEMP_DIR/ipset-exclude.txt" \
+    "$TEMP_DIR/ipset-exclude_user.txt"
+merge_unique_lists \
+    "$TEMP_DIR/ipset-all_merged.txt" \
+    "$TEMP_DIR/ipset-all.txt" \
+    "$TEMP_DIR/ipset-all_user.txt"
+
 # ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
 GAME_FILTER_TCP_VALUE="12"  # значение по умолчанию для TCP
 GAME_FILTER_UDP_VALUE="12"  # значение по умолчанию для UDP
@@ -134,15 +175,15 @@ fi
 
 while IFS= read -r line; do
     # ЗАМЕНЯЕМ ПУТИ НА ВРЕМЕННЫЕ
-    line="${line//\{list_general\}/$TEMP_DIR/list-general.txt}"
-    line="${line//\{list_exclude\}/$TEMP_DIR/list-exclude.txt}"
-    line="${line//\{ipset_exclude\}/$TEMP_DIR/ipset-exclude.txt}"
+    line="${line//\{list_general\}/$TEMP_DIR/list-general_merged.txt}"
+    line="${line//\{list_exclude\}/$TEMP_DIR/list-exclude_merged.txt}"
+    line="${line//\{ipset_exclude\}/$TEMP_DIR/ipset-exclude_merged.txt}"
     line="${line//\{list_google\}/$TEMP_DIR/list-google.txt}"
-    line="${line//\{ipset_all\}/$TEMP_DIR/ipset-all.txt}"
-    line="${line//\{ipset_all_user\}/$TEMP_DIR/ipset-all_user.txt}"
-    line="${line//\{ipset_exclude_user\}/$TEMP_DIR/ipset-exclude_user.txt}"
-    line="${line//\{list_general_user\}/$TEMP_DIR/list-general_user.txt}"
-    line="${line//\{list_exclude_user\}/$TEMP_DIR/list-exclude_user.txt}"
+    line="${line//\{ipset_all\}/$TEMP_DIR/ipset-all_merged.txt}"
+    line="${line//\{ipset_all_user\}/$TEMP_DIR/ipset-all_merged.txt}"
+    line="${line//\{ipset_exclude_user\}/$TEMP_DIR/ipset-exclude_merged.txt}"
+    line="${line//\{list_general_user\}/$TEMP_DIR/list-general_merged.txt}"
+    line="${line//\{list_exclude_user\}/$TEMP_DIR/list-exclude_merged.txt}"
     line="${line//\{gw\}/$TEMP_DIR/gw.txt}"
     line="${line//\{other\}/$TEMP_DIR/other.txt}"
     line="${line//\{quicgoogle\}/$TEMP_DIR/quic_initial_www_google_com.bin}"
