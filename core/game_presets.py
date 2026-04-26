@@ -7,6 +7,10 @@
    При смене/снятии пресета плейсхолдеры возвращаются.
 
 2) Поле lines: дополнительные строки в начало config.txt (Guild Wars 2 и т.п.).
+
+3) Пресеты вроде Roblox / Fall Guys: без lines — при применении дополняют пользовательские
+   списки (Roblox: list-general.txt и ipset-all.txt; Fall Guys: list-general_user.txt и
+   ipset-all_user.txt из utils, см. gamefilter_window).
 """
 
 import os
@@ -44,13 +48,8 @@ GAME_PRESETS = {
         "game_filter_tcp": "{GameFilter}",
         "game_filter_udp": "49152-65535",
     },
-    "elite_dangerous": {
-        "name": "Elite Dangerous",
-        "lines": [
-            "--filter-tcp=443 --hostlist-domains=api.orerve.net,orerve.net,frontier.co.uk,frontierstore.net,auth.frontierstore.net,elitedangerous.com --dpi-desync=hostfakesplit --dpi-desync-hostfakesplit-mod=host=amd.com --dpi-desync-fooling=ts --new",
-        ],
-        "game_filter_tcp": "{GameFilter}",
-        "game_filter_udp": "4380,5100,19364,27000-27031,27036",
+    "fall_guys": {
+        "name": "Fall Guys (Epic)",
     },
 }
 

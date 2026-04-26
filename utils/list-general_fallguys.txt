@@ -1,0 +1,8 @@
+api.epicgames.dev
+api-gateway.europe.es-pio.net
+client2pubsub.europe.es-pio.net
+es-pio.net
+es-cf.net
+fallguys-prod-player-level.azureedge.net
+signaling-service-prod.eun1.live.rtcp.on.epicgames.com
+datarouter.ol.epicgames.com

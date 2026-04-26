@@ -288,6 +288,52 @@ class GamePresetWindow:
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(roblox_ipset)
 
+    def _apply_fallguys_domains(self):
+        """Добавляет домены Fall Guys в list-general_user.txt без дубликатов."""
+        source_path = os.path.join(self.manager_dir, "utils", "list-general_fallguys.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
+        source_domains = self._read_nonempty_lines(source_path)
+        if not source_domains:
+            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
+        current_domains = self._read_nonempty_lines(target_path)
+        merged_domains = sorted(set(current_domains).union(set(source_domains)))
+        self._write_lines(target_path, merged_domains)
+
+    def _remove_fallguys_domains(self):
+        """Удаляет домены Fall Guys из list-general_user.txt."""
+        source_path = os.path.join(self.manager_dir, "utils", "list-general_fallguys.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
+        source_domains = set(self._read_nonempty_lines(source_path))
+        if not source_domains:
+            return
+        current_domains = self._read_nonempty_lines(target_path)
+        filtered_domains = [domain for domain in current_domains if domain not in source_domains]
+        self._write_lines(target_path, filtered_domains)
+
+    def _apply_fallguys_ipset(self):
+        """Добавляет CIDR из utils/ipset-all_fallguys.txt в ipset-all_user.txt без дубликатов."""
+        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_fallguys.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
+        if not os.path.isfile(source_path):
+            raise FileNotFoundError(f"Файл не найден: {source_path}")
+        source_entries = self._read_nonempty_lines(source_path)
+        if not source_entries:
+            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
+        current_entries = self._read_nonempty_lines(target_path)
+        merged = sorted(set(current_entries).union(set(source_entries)))
+        self._write_lines(target_path, merged)
+
+    def _remove_fallguys_ipset(self):
+        """Удаляет из ipset-all_user.txt записи, совпадающие с utils/ipset-all_fallguys.txt."""
+        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_fallguys.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
+        source_set = set(self._read_nonempty_lines(source_path))
+        if not source_set:
+            return
+        current_entries = self._read_nonempty_lines(target_path)
+        filtered = [line for line in current_entries if line not in source_set]
+        self._write_lines(target_path, filtered)
+
     def _set_ipset_none(self):
         """Устанавливает IPSetFilter в none."""
         target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
@@ -308,6 +354,9 @@ class GamePresetWindow:
                 if active_before == "roblox":
                     self._remove_roblox_domains()
                     self._set_ipset_none()
+                elif active_before == "fall_guys":
+                    self._remove_fallguys_domains()
+                    self._remove_fallguys_ipset()
                 else:
                     remove_preset_lines_from_config(active_before, self.manager_dir)
                 restore_gamefilter_for_preset(active_before, self.manager_dir)
@@ -337,6 +386,9 @@ class GamePresetWindow:
             if active_before == "roblox":
                 self._remove_roblox_domains()
                 self._set_ipset_none()
+            elif active_before == "fall_guys":
+                self._remove_fallguys_domains()
+                self._remove_fallguys_ipset()
             else:
                 remove_preset_lines_from_config(active_before, self.manager_dir)
             restore_gamefilter_for_preset(active_before, self.manager_dir)
@@ -351,6 +403,9 @@ class GamePresetWindow:
             if preset_id == "roblox":
                 self._apply_roblox_domains()
                 self._apply_roblox_ipset()
+            elif preset_id == "fall_guys":
+                self._apply_fallguys_domains()
+                self._apply_fallguys_ipset()
             if lines:
                 existing = ""
                 if os.path.exists(config_path):
@@ -363,7 +418,13 @@ class GamePresetWindow:
                 self.main_window.show_status_message(f"Был выбран пресет для {name}", success=True)
             if hasattr(self.main_window, "update_game_filter_indicator"):
                 self.main_window.update_game_filter_indicator()
-            show_info(self.root, "Пресет", f"Был выбран пресет для {name}.")
+            info_text = f"Был выбран пресет для {name}."
+            if preset_id == "fall_guys":
+                info_text += (
+                    "\n\nПресет только для версии из Epic Games Store. "
+                    "Для Steam этот пресет не используйте — в настройках игры смените регион на США (восток)."
+                )
+            show_info(self.root, "Пресет", info_text)
             self.main_window.restart_zapret_after_preset(f"Пресет {name} применён")
         except Exception as e:
             show_error(self.root, "Ошибка", f"Не удалось применить пресет: {e}")
