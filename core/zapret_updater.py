@@ -3,6 +3,7 @@ import tempfile
 import tarfile
 import shutil
 import subprocess
+import threading
 import time
 from core.updater_base import BaseUpdater
 from core.manager_config import ZAPRET_CONFIG
@@ -33,31 +34,62 @@ class ZapretUpdater(BaseUpdater):
         return is_valve_steamos()
 
     def get_sudo_password(self, parent_window):
-        """Получает sudo пароль через окно"""
+        """Получает sudo пароль через окно.
+
+        Tkinter разрешает создавать окна и wait_window только в потоке с mainloop.
+        Обновление zapret запускается из фонового потока — диалог планируем через after(0).
+        """
         try:
             from ui.windows.sudo_password_window import SudoPasswordWindow
+        except Exception as e:
+            print(f"Ошибка импорта SudoPasswordWindow: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
-            # Создаем окно
+        if parent_window is None:
+            print("Нет родительского окна для диалога пароля")
+            return None
+
+        def _show_dialog():
             password_window = SudoPasswordWindow(
                 parent_window,
-                on_password_valid=lambda pwd: None  # Заглушка
+                on_password_valid=lambda pwd: None,
             )
+            return password_window.run()
 
-            # Получаем пароль из метода run()
-            password = password_window.run()
-
-            if password:
-                print("Sudo пароль получен")
-                return password
+        try:
+            if threading.current_thread() is threading.main_thread():
+                password = _show_dialog()
             else:
-                print("Пользователь отменил ввод пароля")
-                return None
+                holder = [None]
+                done = threading.Event()
 
+                def _on_main():
+                    try:
+                        holder[0] = _show_dialog()
+                    except Exception as e:
+                        print(f"Ошибка при получении sudo пароля: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        holder[0] = None
+                    finally:
+                        done.set()
+
+                parent_window.after(0, _on_main)
+                done.wait()
+                password = holder[0]
         except Exception as e:
             print(f"Ошибка при получении sudo пароля: {e}")
             import traceback
             traceback.print_exc()
             return None
+
+        if password:
+            print("Sudo пароль получен")
+            return password
+        print("Пользователь отменил ввод пароля")
+        return None
 
     def run_with_sudo(self, command, password, description=""):
         """Выполняет команду с sudo"""
