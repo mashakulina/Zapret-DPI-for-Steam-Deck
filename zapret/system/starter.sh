@@ -191,6 +191,7 @@ while IFS= read -r line; do
     line="${line//\{tls4pda\}/$TEMP_DIR/tls_clienthello_4pda_to.bin}"
     line="${line//\{tlsmax\}/$TEMP_DIR/tls_clienthello_max_ru.bin}"
     line="${line//\{stun\}/$TEMP_DIR/stun.bin}"
+    line="${line//\{dbankcloud\}/$TEMP_DIR/quic_initial_dbankcloud_ru.bin}"
 
     # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ ПРОТОКОЛА
     if [[ "$line" == *"--filter-tcp"* && "$line" == *"{GameFilter}"* ]]; then
