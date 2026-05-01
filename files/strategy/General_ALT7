@@ -1,5 +1,5 @@
 --filter-udp=443 --hostlist={list_general} --hostlist={list_general_user} --hostlist-exclude={list_exclude} --hostlist-exclude={list_exclude_user} --ipset-exclude={ipset_exclude} --ipset-exclude={ipset_exclude_user} --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic={quicgoogle} --new
---filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6 --new
+--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord={dbankcloud} --dpi-desync-fake-stun={dbankcloud} --dpi-desync-repeats=6 --new
 --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media --dpi-desync=multisplit --dpi-desync-split-pos=2,sniext+1 --dpi-desync-split-seqovl=679 --dpi-desync-split-seqovl-pattern={tlsgoogle} --new
 --filter-tcp=443 --hostlist={list_google} --ip-id=zero --dpi-desync=multisplit --dpi-desync-split-pos=2,sniext+1 --dpi-desync-split-seqovl=679 --dpi-desync-split-seqovl-pattern={tlsgoogle} --new
 --filter-tcp=80,443 --hostlist={list_general} --hostlist={list_general_user} --hostlist-exclude={list_exclude} --hostlist-exclude={list_exclude_user} --ipset-exclude={ipset_exclude} --ipset-exclude={ipset_exclude_user} --dpi-desync=multisplit --dpi-desync-split-pos=2,sniext+1 --dpi-desync-split-seqovl=679 --dpi-desync-split-seqovl-pattern={tlsgoogle} --new
