@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import tempfile
 import tarfile
@@ -5,8 +7,11 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.request
+
 from core.updater_base import BaseUpdater
-from core.manager_config import ZAPRET_CONFIG
+from core.manager_config import ZAPRET_CONFIG, VERSION_CONFIG
+from core.manager_updater import ManagerUpdater
 from core.platform_info import (
     is_valve_steamos,
     distro_log_label,
@@ -301,6 +306,12 @@ class ZapretUpdater(BaseUpdater):
                         if result and result['returncode'] == 0:
                             self.run_with_sudo(['chmod', '+x', '/opt/zapret/nfqws'], password)
 
+            self.run_with_sudo(
+                ['bash', '-c', 'echo "iptables" > /opt/zapret/FWTYPE'],
+                password,
+                "Создание файла FWTYPE...",
+            )
+
             # Устанавливаем права на файлы
             self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
 
@@ -485,6 +496,66 @@ WantedBy=multi-user.target
         print("Система успешно заблокирована")
         return True
 
+    def install_zapret_from_local_bundle(self, bundle_root, password, progress_callback=None):
+        """
+        Устанавливает службу из bundle_root/zapret/ (system/, bins/).
+        Вызывать после stop_and_remove_zapret и наката файлов менеджера.
+        """
+        zapret_sub = os.path.join(bundle_root, "zapret")
+        if not os.path.isdir(os.path.join(zapret_sub, "system")):
+            print("В пакете нет каталога zapret/system")
+            return False
+        if not self.copy_zapret_files(zapret_sub, password, progress_callback):
+            return False
+        self.update_manager_config(bundle_root)
+        if not self.create_service_file(password, progress_callback):
+            return False
+        if not self.enable_service(password, progress_callback):
+            return False
+        self.lock_steamos_system(password)
+        return True
+
+    def install_zapret_service_from_bundle_root(
+        self, bundle_root: str, password: str, progress_callback=None
+    ) -> bool:
+        """
+        Только служба Zapret из распакованного полного пакета (каталог с main.py и zapret/).
+        Без обновления файлов менеджера в домашней папке.
+        """
+        if not is_valid_bundle_root(bundle_root):
+            print("Неверный корень полного пакета (нужны main.py и zapret/system)")
+            return False
+        if not self.stop_and_remove_zapret(password, progress_callback):
+            return False
+        zapret_sub = os.path.join(bundle_root, "zapret")
+        if not os.path.isdir(os.path.join(zapret_sub, "system")):
+            print("В пакете нет каталога zapret/system")
+            try:
+                self.lock_steamos_system(password)
+            except Exception:
+                pass
+            return False
+        if not self.copy_zapret_files(zapret_sub, password, progress_callback):
+            try:
+                self.lock_steamos_system(password)
+            except Exception:
+                pass
+            return False
+        if not self.create_service_file(password, progress_callback):
+            try:
+                self.lock_steamos_system(password)
+            except Exception:
+                pass
+            return False
+        if not self.enable_service(password, progress_callback):
+            try:
+                self.lock_steamos_system(password)
+            except Exception:
+                pass
+            return False
+        self.lock_steamos_system(password)
+        return True
+
     def update_zapret(self, download_url, parent_window, progress_callback=None):
         """Выполняет обновление zapret службы"""
         print(f"=== ЗАПУСК ОБНОВЛЕНИЯ ZAPRET ===")
@@ -558,3 +629,172 @@ WantedBy=multi-user.target
                 pass
 
             return False
+
+
+# --- Полный пакет (менеджер + служба, один архив) ---
+
+BUNDLE_DIR_NAME = "zapret_updater"
+
+
+def is_valid_bundle_root(path: str) -> bool:
+    """В корне пакета: main.py и zapret/system/ (bins — в zapret/bins/)."""
+    return bool(
+        path
+        and os.path.isfile(os.path.join(path, "main.py"))
+        and os.path.isdir(os.path.join(path, "zapret", "system"))
+    )
+
+
+def find_bundle_root(extract_dir: str) -> str | None:
+    """
+    Корень пакета после распаковки:
+
+    1) Сам ``extract_dir``, если архив собран изнутри папки пакета (``tar ... .``) —
+       в корне сразу ``main.py`` и ``zapret/system/``.
+    2) Иначе подкаталог ``zapret_updater/`` (без учёта регистра), если архив
+       собран как ``tar ... zapret_updater``.
+    """
+    if is_valid_bundle_root(extract_dir):
+        return extract_dir
+
+    candidates: list[str] = []
+    direct = os.path.join(extract_dir, BUNDLE_DIR_NAME)
+    if os.path.isdir(direct):
+        candidates.append(direct)
+    try:
+        for name in os.listdir(extract_dir):
+            if name.lower() == BUNDLE_DIR_NAME.lower():
+                p = os.path.join(extract_dir, name)
+                if os.path.isdir(p) and p not in candidates:
+                    candidates.append(p)
+    except OSError:
+        pass
+
+    for cand in candidates:
+        if is_valid_bundle_root(cand):
+            return cand
+    return None
+
+
+def validate_bundle_structure(bundle_root: str) -> bool:
+    if is_valid_bundle_root(bundle_root):
+        return True
+    mp = os.path.join(bundle_root, "main.py")
+    if not os.path.isfile(mp):
+        print(f"В пакете нет main.py в корне: {bundle_root!r}")
+    else:
+        print(f"Нет каталога zapret/system в: {bundle_root!r}")
+    return False
+
+
+def read_bundle_manifest(
+    version_url: str | None = None, timeout: float = 10
+) -> tuple[str | None, str | None]:
+    """Первая и вторая строки version.txt: версия и URL архива полного пакета."""
+    url = version_url or VERSION_CONFIG["version_url"]
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            content = response.read().decode("utf-8").strip()
+        lines = content.split("\n")
+        if len(lines) >= 2:
+            ver = lines[0].strip()
+            download = lines[1].strip()
+            if download:
+                return ver, download
+    except Exception as e:
+        print(f"Манифест полного пакета недоступен ({url}): {e}")
+    return None, None
+
+
+def get_bundle_download_url(
+    version_url: str | None = None, timeout: float = 10
+) -> str | None:
+    _, dl = read_bundle_manifest(version_url=version_url, timeout=timeout)
+    return dl
+
+
+class ZapretBundleUpdater(BaseUpdater):
+    def __init__(self):
+        super().__init__(
+            version_url=VERSION_CONFIG["version_url"],
+            current_version=VERSION_CONFIG["current_version"],
+            name="Zapret DPI Manager",
+            silent_http_404=True,
+        )
+
+    def update_bundle(self, download_url, parent_window, progress_callback=None):
+        """Скачивает один архив, обновляет менеджер (без zapret/) и службу из zapret/."""
+        print("=== ПОЛНОЕ ОБНОВЛЕНИЕ (МЕНЕДЖЕР + СЛУЖБА) ===")
+        zapret_u = ZapretUpdater()
+        password = zapret_u.get_sudo_password(parent_window)
+        if not password:
+            if progress_callback:
+                progress_callback("Пароль не введён, отмена обновления", None)
+            return False
+
+        temp_dir = tempfile.mkdtemp(prefix="zapret_bundle_")
+        try:
+            if progress_callback:
+                progress_callback("Остановка службы и подготовка...", 5)
+            if not zapret_u.stop_and_remove_zapret(password, progress_callback):
+                return False
+
+            archive_path = os.path.join(temp_dir, "bundle.tar.gz")
+            extract_dir = os.path.join(temp_dir, "extracted")
+            os.makedirs(extract_dir, exist_ok=True)
+
+            if progress_callback:
+                progress_callback("Скачивание полного пакета...", 15)
+
+            def download_progress(count, block_size, total_size):
+                if progress_callback and total_size > 0:
+                    pct = min(int(count * block_size * 100 / total_size), 100)
+                    progress_callback(f"Скачивание... {pct}%", 15 + int(25 * pct / 100))
+
+            urllib.request.urlretrieve(download_url, archive_path, download_progress)
+
+            if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+                print("Архив пустой или не скачан")
+                return False
+
+            if progress_callback:
+                progress_callback("Распаковка архива...", 45)
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=extract_dir)
+
+            bundle_root = find_bundle_root(extract_dir)
+            if not bundle_root or not validate_bundle_structure(bundle_root):
+                print(
+                    "Неверная структура архива обновления: нужны main.py и zapret/system/ "
+                    "(и zapret/bins/), либо то же внутри папки zapret_updater/."
+                )
+                return False
+
+            manager_u = ManagerUpdater()
+            if not manager_u.apply_from_directory(
+                bundle_root,
+                progress_callback,
+                extra_exclude_prefixes=["zapret"],
+            ):
+                return False
+
+            if not zapret_u.install_zapret_from_local_bundle(
+                bundle_root, password, progress_callback
+            ):
+                return False
+
+            if progress_callback:
+                progress_callback("Полное обновление завершено", 100)
+            return True
+        except Exception as e:
+            print(f"Ошибка полного обновления: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                if password:
+                    zapret_u.lock_steamos_system(password)
+            except Exception:
+                pass
+            return False
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
