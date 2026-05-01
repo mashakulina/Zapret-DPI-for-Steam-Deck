@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.request
 import threading
 import time
 import tkinter as tk
@@ -15,6 +16,12 @@ from tkinter import messagebox
 
 from core.dpi_utils import place_toplevel_centered_on_parent
 from core.manager_config import RELEASES_URL
+from core.zapret_updater import (
+    ZapretUpdater,
+    find_bundle_root,
+    get_bundle_download_url,
+    validate_bundle_structure,
+)
 from core.platform_info import (
     is_valve_steamos,
     distro_log_label,
@@ -44,7 +51,7 @@ class ZapretChecker:
         self.home_dir = os.path.expanduser("~")  # Динамическое определение домашней директории
         self.is_steamos = self.check_if_steamos()  # Только Valve SteamOS
 
-        # Из manager_config.py
+        # Резерв, если манифест полного пакета (version.txt) недоступен
         self.zapret_archive_url = f"{RELEASES_URL}/zapret.tar.gz"
 
         # Список обязательных файлов для zapret
@@ -645,6 +652,59 @@ WantedBy=multi-user.target
             print(f"Ошибка при включении службы: {e}")
             return False
 
+    def _install_zapret_from_full_bundle(self, bundle_url: str, temp_dir: str) -> bool:
+        """Скачивает тот же полный пакет, что и обновление менеджера; ставит только службу."""
+        archive_path = os.path.join(temp_dir, "bundle.tar.gz")
+        extract_dir = os.path.join(temp_dir, "bundle_extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+
+        self.current_task = "download"
+        try:
+            self.update_progress("Скачивание полного пакета...", 10)
+
+            def reporthook(block_count, block_size, total_size):
+                if total_size > 0 and self.progress_window:
+                    pct = 10 + min(25, int(block_count * block_size * 25 / total_size))
+                    self.update_progress(f"Скачивание полного пакета… {pct}%", pct)
+
+            urllib.request.urlretrieve(bundle_url, archive_path, reporthook)
+        except Exception as e:
+            self.log_debug(f"Ошибка скачивания полного пакета: {e}")
+            return False
+
+        if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
+            self.log_debug("Архив полного пакета пуст или отсутствует")
+            return False
+
+        self.current_task = "extract"
+        self.update_progress("Распаковка полного пакета...", 35)
+        try:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=extract_dir)
+        except Exception as e:
+            self.log_debug(f"Ошибка распаковки полного пакета: {e}")
+            return False
+
+        bundle_root = find_bundle_root(extract_dir)
+        if not bundle_root or not validate_bundle_structure(bundle_root):
+            self.log_debug("Неверная структура полного пакета")
+            return False
+
+        zu = ZapretUpdater()
+        pwd = self.sudo_password
+
+        def pc(msg, pct):
+            if pct is not None:
+                self.update_progress(msg, min(100, max(0, int(pct))))
+            else:
+                self.update_progress(msg, self.get_current_progress())
+
+        self.current_task = "copy_files"
+        if not zu.install_zapret_service_from_bundle_root(bundle_root, pwd, pc):
+            self.log_debug("Не удалось установить службу из полного пакета")
+            return False
+        return True
+
     def install_zapret(self):
         """Основная функция установки zapret"""
         self.log_debug("=== НАЧАЛО УСТАНОВКИ ZAPRET ===")
@@ -690,7 +750,31 @@ WantedBy=multi-user.target
                 else:
                     self.log_debug("Пропускаем разблокировку на не-SteamOS системе")
 
-            # 1. Скачиваем архив
+            bundle_url = get_bundle_download_url()
+            bundle_ok = False
+            if bundle_url:
+                self.log_debug(f"Установка службы из полного пакета (version.txt): {bundle_url}")
+                bundle_ok = self._install_zapret_from_full_bundle(bundle_url, temp_dir)
+                if bundle_ok:
+                    self.update_progress("Блокировка системы...", 95)
+                    self.lock_readonly_system()
+                    if self.progress_window:
+                        self.close_progress_window()
+                    self.log_debug("=== УСТАНОВКА ZAPRET УСПЕШНО ЗАВЕРШЕНА ===")
+                    self.show_info(
+                        "Успешная установка",
+                        "Zapret успешно установлен из полного пакета обновления и запущен!\n"
+                        "Служба добавлена в автозагрузку.\n\n"
+                        + (
+                            "Статус: активен"
+                            if self.is_zapret_running()
+                            else "Статус: требует ручного запуска"
+                        ),
+                    )
+                    return True
+                self.log_debug("Полный пакет не подошёл, пробуем отдельный архив zapret.tar.gz…")
+
+            # 1. Скачиваем архив (legacy)
             self.update_progress("Скачивание архива Zapret...", 10)
             archive_path = self.download_archive(temp_dir)
 
