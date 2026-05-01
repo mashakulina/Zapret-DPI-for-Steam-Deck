@@ -6,7 +6,7 @@ RELEASES_URL = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/release
 # Полный пакет обновления (менеджер + служба), манифест на GitHub (raw)
 VERSION_CONFIG = {
     "version_url": f"{GITHUB_RAW_URL}/version.txt",
-    "current_version": "2.7.7.3",
+    "current_version": "2.7.7.4",
 }
 
 # Конфигурация менеджера
@@ -14,7 +14,7 @@ MANAGER_CONFIG = {
     # URL файла с версией менеджера
     "version_url": f"{GITHUB_RAW_URL}/manager_version.txt",
     # Текущая версия менеджера
-    "current_version": "2.7.7.3"
+    "current_version": "2.7.7.4"
 }
 
 # Конфигурация zapret службы
