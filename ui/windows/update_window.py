@@ -1,7 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import threading
+from core.manager_config import VERSION_CONFIG
 from core.manager_updater import ManagerUpdater
+from core.zapret_updater import ZapretBundleUpdater
 from core.zapret_updater import ZapretUpdater
 from ui.components.button_styler import create_hover_button
 from ui.components.custom_messagebox import ask_yesno
@@ -18,14 +20,18 @@ class UpdateWindow:
         self.setup_window()
 
         # Инициализируем обновлялки
+        self.bundle_updater = ZapretBundleUpdater()
         self.manager_updater = ManagerUpdater()
         self.zapret_updater = ZapretUpdater()
 
         # Флаги наличия обновлений
+        self.bundle_update_available = False
         self.manager_update_available = False
         self.zapret_update_available = False
+        self.bundle_update_data = None
         self.manager_update_data = None
         self.zapret_update_data = None
+        self.bundle_version = None
         self.manager_version = None
         self.zapret_version = None
 
@@ -63,10 +69,7 @@ class UpdateWindow:
         info_frame = tk.Frame(main_frame, bg='#182030')
         info_frame.pack(fill=tk.X, pady=(0, 15))
 
-        # Текущие версии
-        versions_text = f"Текущие версии:\n"
-        versions_text += f"• Менеджер: {self.manager_updater.current_version}\n"
-        versions_text += f"• Служба Zapret: {self.zapret_updater.current_version}"
+        versions_text = f"Версия программы: {VERSION_CONFIG['current_version']}"
 
         self.version_label = tk.Label(info_frame, text=versions_text,
                                      font=("Arial", 11), fg='#5BA06A', bg='#182030',
@@ -131,11 +134,13 @@ class UpdateWindow:
 
     def check_or_update(self):
         """Проверяет обновления или выполняет обновление"""
-        if not self.manager_update_available and not self.zapret_update_available:
-            # Нет обновлений - проверяем
+        if (
+            not self.bundle_update_available
+            and not self.manager_update_available
+            and not self.zapret_update_available
+        ):
             self.check_updates()
         else:
-            # Есть обновления - показываем диалог
             self.show_update_dialog()
 
     def check_updates(self):
@@ -152,40 +157,53 @@ class UpdateWindow:
         try:
             self.log_message("🔍 Начинаю проверку обновлений...")
 
-            # Проверяем обновления для менеджера
-            manager_version, manager_data = self.manager_updater.check_for_updates()
-
-            # Проверяем обновления для zapret
-            zapret_version, zapret_data = self.zapret_updater.check_for_updates()
-
             has_updates = False
 
-            # Обрабатываем результаты для менеджера
-            if manager_version:
-                self.manager_update_available = True
-                self.manager_version = manager_version
-                self.manager_update_data = manager_data
-                self.log_message(f"📢 Доступно обновление менеджера: v{manager_version}")
-                has_updates = True
-            else:
+            bundle_version, bundle_data = self.bundle_updater.check_for_updates()
+            if bundle_version:
+                self.bundle_update_available = True
+                self.bundle_version = bundle_version
+                self.bundle_update_data = bundle_data
                 self.manager_update_available = False
-                self.log_message("✅ Менеджер: установлена последняя версия")
-
-            # Обрабатываем результаты для zapret
-            if zapret_version:
-                self.zapret_update_available = True
-                self.zapret_version = zapret_version
-                self.zapret_update_data = zapret_data
-                self.log_message(f"📢 Доступно обновление zapret службы: v{zapret_version}")
+                self.zapret_update_available = False
+                self.manager_update_data = None
+                self.zapret_update_data = None
+                self.log_message(f"📢 Доступно полное обновление: v{bundle_version}")
                 has_updates = True
             else:
-                self.zapret_update_available = False
-                self.log_message("✅ Служба Zapret: установлена последняя версия")
+                self.bundle_update_available = False
+                self.bundle_update_data = None
+                self.bundle_version = None
+                self.log_message(
+                    "✅ Полный пакет актуален (при необходимости проверяются отдельные каналы)"
+                )
+
+            if not self.bundle_update_available:
+                manager_version, manager_data = self.manager_updater.check_for_updates()
+                if manager_version:
+                    self.manager_update_available = True
+                    self.manager_version = manager_version
+                    self.manager_update_data = manager_data
+                    self.log_message(f"📢 Доступно обновление менеджера: v{manager_version}")
+                    has_updates = True
+                else:
+                    self.manager_update_available = False
+                    self.log_message("✅ Менеджер: установлена последняя версия")
+
+                zapret_version, zapret_data = self.zapret_updater.check_for_updates()
+                if zapret_version:
+                    self.zapret_update_available = True
+                    self.zapret_version = zapret_version
+                    self.zapret_update_data = zapret_data
+                    self.log_message(f"📢 Доступно обновление zapret службы: v{zapret_version}")
+                    has_updates = True
+                else:
+                    self.zapret_update_available = False
+                    self.log_message("✅ Служба Zapret: установлена последняя версия")
 
             if not has_updates:
                 self.log_message("\n🎉 Все компоненты обновлены до последних версий!")
             else:
-                # Обновляем кнопку
                 self.root.after(0, self.update_action_button)
 
         except Exception as e:
@@ -195,15 +213,17 @@ class UpdateWindow:
 
     def update_action_button(self):
         """Обновляет текст и действие кнопки"""
-        if self.manager_update_available or self.zapret_update_available:
-            # Определяем, что будем обновлять
-            if self.manager_update_available and self.zapret_update_available:
+        if self.bundle_update_available or self.manager_update_available or self.zapret_update_available:
+            if self.bundle_update_available:
+                text = f"Обновить полный пакет до v{self.bundle_version}"
+                color = '#15354D'
+            elif self.manager_update_available and self.zapret_update_available:
                 text = "Обновить все компоненты"
                 color = '#15354D'
             elif self.manager_update_available:
                 text = f"Обновить менеджер до v{self.manager_version}"
                 color = '#15354D'
-            else:  # только zapret
+            else:
                 text = f"Обновить zapret до v{self.zapret_version}"
                 color = '#15354D'
 
@@ -221,8 +241,9 @@ class UpdateWindow:
 
     def show_update_dialog(self):
         """Показывает диалог выбора обновления"""
-        # Определяем, какие обновления доступны
         updates = []
+        if self.bundle_update_available:
+            updates.append(f"• Полное обновление: v{self.bundle_version}")
         if self.manager_update_available:
             updates.append(f"• Менеджер: v{self.manager_version}")
         if self.zapret_update_available:
@@ -247,6 +268,29 @@ class UpdateWindow:
             self.log_message("\n🔄 Начинаю обновление компонентов...")
 
             success_count = 0
+
+            if self.bundle_update_available and self.bundle_update_data:
+                self.log_message(f"\n📦 Полное обновление до v{self.bundle_version}...")
+                download_url = self.bundle_update_data.get("download_url")
+                if download_url:
+
+                    def progress_callback(message, percent):
+                        if percent is not None:
+                            self.log_message(f"   [{percent}%] {message}")
+                        else:
+                            self.log_message(f"   {message}")
+
+                    success = self.bundle_updater.update_bundle(
+                        download_url, self.root, progress_callback
+                    )
+                    if success:
+                        self.log_message(f"✅ Полное обновление до v{self.bundle_version} завершено!")
+                        success_count += 1
+                        self.bundle_update_available = False
+                    else:
+                        self.log_message("❌ Не удалось выполнить полное обновление")
+                else:
+                    self.log_message("❌ URL полного пакета не найден")
 
             # Обновляем менеджер, если есть обновление
             if self.manager_update_available and self.manager_update_data:
@@ -298,14 +342,11 @@ class UpdateWindow:
                 else:
                     self.log_message("❌ URL для скачивания zapret не найден")
 
-            # Подводим итоги
-            self.log_message(f"\n📊 Обновление завершено. Успешно: {success_count}/2")
+            self.log_message(f"\n📊 Обновление завершено. Успешных шагов: {success_count}")
 
-            # Если обновлялся менеджер, предлагаем перезапуск
-            if self.manager_update_available == False and success_count > 0:
+            if success_count > 0:
                 self.root.after(0, self.restart_manager)
             else:
-                # Обновляем кнопку
                 self.root.after(0, self.update_action_button)
 
         except Exception as e:
@@ -354,6 +395,7 @@ class UpdateProgressWindow:
         self.window = None
         self.is_updating = False
         self.manager_updated = False  # Флаг, что менеджер был обновлен
+        self.bundle_updater = ZapretBundleUpdater()
 
     def run(self):
         """Запускает окно прогресса"""
@@ -455,6 +497,10 @@ class UpdateProgressWindow:
                         self.manager_updated = True
                 elif updater_class == 'ZapretUpdater':
                     success = self._update_zapret(download_url, task_name, overall_progress, total_tasks, i)
+                elif updater_class == 'ZapretBundleUpdater':
+                    success = self._update_bundle(download_url, task_name, overall_progress, total_tasks, i)
+                    if success:
+                        self.manager_updated = True
                 else:
                     success = False
                     print(f"❌ Неизвестный класс обновления: {updater_class}")
@@ -618,6 +664,47 @@ class UpdateProgressWindow:
             import traceback
             traceback.print_exc()
             return False
+
+    def _update_bundle(self, download_url, task_name, base_progress, total_tasks, task_index):
+        """Полное обновление менеджера и службы одним архивом."""
+        try:
+            progress_map = {
+                "Остановка": 10,
+                "Скачивание": 25,
+                "Распаковка": 40,
+                "Применение обновления менеджера": 55,
+                "Копирование файлов системы": 60,
+                "Копирование бинарных": 70,
+                "Создание службы systemd": 80,
+                "Обновление systemd": 85,
+                "Включение автозапуска": 90,
+                "Запуск службы": 95,
+                "Полное обновление завершено": 100,
+            }
+
+            def progress_callback(message, percent):
+                step_progress = percent if percent is not None else 0
+                for key, value in progress_map.items():
+                    if key in message:
+                        step_progress = value
+                        break
+                task_internal_progress = step_progress
+                task_weight = 100 / total_tasks
+                previous_tasks_progress = task_index * task_weight
+                current_task_progress = task_internal_progress * (task_weight / 100)
+                overall_progress = int(previous_tasks_progress + current_task_progress)
+                self.window.after(0, lambda p=overall_progress: self._update_progress_bar(p))
+                self.window.after(0, lambda: self._update_progress_message(message, step_progress))
+
+            print("  📦 Полное обновление пакета...")
+            return self.bundle_updater.update_bundle(download_url, self.window, progress_callback)
+
+        except Exception as e:
+            print(f"  ❌ Ошибка полного обновления: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def _update_task_info(self, text):
         """Обновляет информацию о текущей задаче"""
         self.window.after(0, lambda: self.task_label.config(text=text))

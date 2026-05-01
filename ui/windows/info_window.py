@@ -12,7 +12,7 @@ from core.dpi_utils import (
     place_toplevel_centered_on_parent,
 )
 from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale, winfo_dpi
-from core.manager_config import MANAGER_CONFIG, ZAPRET_CONFIG
+from core.manager_config import VERSION_CONFIG
 _last_available_site = None
 _last_check_time = 0
 
@@ -37,14 +37,6 @@ def setup_window_properties(self):
             self.root.iconphoto(True, icon)
     except Exception as e:
         print(f"Не удалось установить иконку: {e}")
-
-def get_manager_version():
-    """Получает версию менеджера"""
-    return MANAGER_CONFIG.get("current_version", "Неизвестно")
-
-def get_zapret_version():
-    """Получает версию менеджера"""
-    return ZAPRET_CONFIG.get("current_version", "Неизвестно")
 
 def clean_ansi_codes(text):
     """Очищает текст от ANSI escape sequences"""
@@ -162,11 +154,8 @@ def show_info_dialog(parent):
     versions_frame = tk.Frame(content_frame, bg='#182030')
     versions_frame.pack(fill=tk.X)
 
-    # Версия zapret и менеджера в одну строку
-    zapret_version = get_zapret_version()
-    manager_version = get_manager_version()
-
-    version_text = f"Zapret DPI Manager: {manager_version} | Zapret DPI: {zapret_version}"
+    program_version = VERSION_CONFIG.get("current_version", "Неизвестно")
+    version_text = f"Zapret DPI Manager · {program_version}"
     version_label = tk.Label(versions_frame, text=version_text,
                            font=("Arial", 9), fg='#5BA06A', bg='#182030')
     version_label.pack(anchor=tk.CENTER)

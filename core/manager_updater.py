@@ -36,19 +36,24 @@ class ManagerUpdater(BaseUpdater):
             os.path.join(self.manager_dir, item) for item in self.exclude_from_update
         ]
 
-    def should_exclude(self, file_path, extracted_root):
+    def should_exclude(self, file_path, extracted_root, extra_exclude_prefixes=None):
         """Проверяет, нужно ли исключить файл из обновления"""
-        # Получаем относительный путь от корня распакованного архива
-        rel_path = os.path.relpath(file_path, extracted_root)
+        rel_path = os.path.relpath(file_path, extracted_root).replace("\\", "/")
 
-        # Проверяем, находится ли файл в списке исключений
+        for prefix in extra_exclude_prefixes or ():
+            p = prefix.strip("/").replace("\\", "/")
+            if not p:
+                continue
+            if rel_path == p or rel_path.startswith(p + "/"):
+                return True
+
         for exclude in self.exclude_from_update:
-            if rel_path == exclude or rel_path.startswith(exclude + '/'):
+            if rel_path == exclude or rel_path.startswith(exclude + "/"):
                 return True
 
         return False
 
-    def copy_with_exclusions(self, src_dir, dst_dir, progress_callback=None):
+    def copy_with_exclusions(self, src_dir, dst_dir, progress_callback=None, extra_exclude_prefixes=None):
         """
         Копирует файлы из src_dir в dst_dir с заменой,
         исключая файлы из списка exclude_from_update
@@ -61,7 +66,7 @@ class ManagerUpdater(BaseUpdater):
             for root, dirs, files in os.walk(src_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    if not self.should_exclude(file_path, src_dir):
+                    if not self.should_exclude(file_path, src_dir, extra_exclude_prefixes):
                         total_files += 1
 
             print(f"Всего файлов для копирования: {total_files}")
@@ -76,7 +81,7 @@ class ManagerUpdater(BaseUpdater):
                     src_file = os.path.join(root, file)
 
                     # Пропускаем исключенные файлы
-                    if self.should_exclude(src_file, src_dir):
+                    if self.should_exclude(src_file, src_dir, extra_exclude_prefixes):
                         print(f"Пропускаю (исключен): {os.path.relpath(src_file, src_dir)}")
                         continue
 
@@ -167,17 +172,7 @@ class ManagerUpdater(BaseUpdater):
             if not success:
                 raise Exception("Ошибка при копировании файлов")
 
-            # Шаг 6: Устанавливаем права на выполнение
-            if progress_callback:
-                progress_callback("Настройка прав...", 96)
-
-            # Устанавливаем права на выполнение для Python файлов
-            for root, dirs, files in os.walk(self.manager_dir):
-                for file in files:
-                    if file.endswith('.py'):
-                        file_path = os.path.join(root, file)
-                        os.chmod(file_path, 0o755)
-                        print(f"Установлены права на выполнение: {file_path}")
+            self.apply_execute_bits_to_py_files(progress_callback)
 
             # Шаг 7: Очищаем временные файлы
             shutil.rmtree(temp_dir)
@@ -196,6 +191,41 @@ class ManagerUpdater(BaseUpdater):
             # В случае ошибки не нужно восстанавливать файлы,
             # так как оригинальная директория не была удалена
 
+            return False
+
+    def apply_execute_bits_to_py_files(self, progress_callback=None):
+        if progress_callback:
+            progress_callback("Настройка прав...", 96)
+        for root, dirs, files in os.walk(self.manager_dir):
+            for file in files:
+                if file.endswith(".py"):
+                    file_path = os.path.join(root, file)
+                    os.chmod(file_path, 0o755)
+                    print(f"Установлены права на выполнение: {file_path}")
+
+    def apply_from_directory(
+        self,
+        update_root,
+        progress_callback=None,
+        extra_exclude_prefixes=None,
+    ):
+        """Накатывает файлы менеджера из уже распакованной директории (без скачивания)."""
+        try:
+            print(f"Накат менеджера из: {update_root}")
+            if progress_callback:
+                progress_callback("Применение обновления менеджера...", 70)
+            if not self.copy_with_exclusions(
+                update_root, self.manager_dir, progress_callback, extra_exclude_prefixes
+            ):
+                return False
+            self.apply_execute_bits_to_py_files(progress_callback)
+            if progress_callback:
+                progress_callback("Обновление менеджера завершено", 100)
+            return True
+        except Exception as e:
+            print(f"Ошибка наката менеджера: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def restart_manager(self):
