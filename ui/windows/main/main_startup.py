@@ -104,63 +104,30 @@ class MainStartupMixin:
         thread.start()
 
     def _check_updates_using_updater(self):
-        """Проверяет обновления с использованием существующего Updater'а"""
+        """Проверяет обновления единого пакета (version.txt → zapret_updater.tar.gz)."""
         try:
-            from core.manager_updater import ManagerUpdater
-            from core.zapret_updater import ZapretUpdater
+            bundle_update_info = None
 
-            manager_update_info = None
-            zapret_update_info = None
-
-            # Проверка обновления менеджера
             try:
-                manager_updater = ManagerUpdater()
-                latest_version, update_info = manager_updater.check_for_updates()
+                from core.zapret_updater import ZapretBundleUpdater
 
-                if latest_version and update_info:
-                    manager_update_info = {
-                        'current': manager_updater.current_version,
-                        'available': latest_version,
-                        'name': 'менеджера'
+                bundle_u = ZapretBundleUpdater()
+                latest_b, info_b = bundle_u.check_for_updates()
+                if latest_b and info_b:
+                    bundle_update_info = {
+                        "current": bundle_u.current_version,
+                        "available": latest_b,
+                        "name": "Zapret DPI Manager",
                     }
-                    print(f"🔄 Обновление менеджера найдено: {manager_updater.current_version} → {latest_version}")
-                else:
-                    print(f"✅ Версия менеджера актуальна: {manager_updater.current_version}")
-
             except Exception as e:
-                print(f"⚠️ Не удалось проверить обновление менеджера: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"⚠️ Проверка полного обновления: {e}")
 
-            # Проверка обновления службы Zapret
-            try:
-                zapret_updater = ZapretUpdater()
-                latest_version, update_info = zapret_updater.check_for_updates()
-
-                if latest_version and update_info:
-                    zapret_update_info = {
-                        'current': zapret_updater.current_version,
-                        'available': latest_version,
-                        'name': 'zapret службы'
-                    }
-                    print(f"🔄 Обновление службы Zapret найдено: {zapret_updater.current_version} → {latest_version}")
-                else:
-                    print(f"✅ Версия службы Zapret актуальна: {zapret_updater.current_version}")
-
-            except Exception as e:
-                print(f"⚠️ Не удалось проверить обновление службы Zapret: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Показываем уведомление если есть обновления
-            if manager_update_info or zapret_update_info:
-                print(f"\n🎯 Найдены обновления! Показываю уведомление...")
-                self.root.after(0, lambda: self.show_update_notification(
-                    manager_update_info,
-                    zapret_update_info
-                ))
+            if bundle_update_info:
+                print("\n🎯 Найдено полное обновление! Показываю уведомление...")
+                bi = bundle_update_info
+                self.root.after(0, lambda b=bi: self.show_update_notification(b))
             else:
-                print(f"\n✅ Все компоненты обновлены")
+                print("\n✅ Все компоненты обновлены")
 
         except Exception as e:
             print(f"❌ Ошибка при проверке обновлений: {e}")

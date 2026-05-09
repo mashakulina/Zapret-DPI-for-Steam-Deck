@@ -21,22 +21,19 @@ class UpdateNotificationHost(Protocol):
 
 def show_update_notification_dialog(
     host: UpdateNotificationHost,
-    manager_update_info: dict[str, Any] | None,
-    zapret_update_info: dict[str, Any] | None,
+    bundle_update_info: dict[str, Any] | None,
 ) -> None:
-    """Показывает окно уведомления об обновлениях с номерами версий"""
+    """Показывает окно уведомления о доступном полном обновлении"""
+    if not bundle_update_info:
+        return
+
     _d_layout = float(dampened_hi_dpi_factor(warning_dialog_scale(host.root)))
     _d_font = float(dampened_hi_dpi_factor(logical_ui_scale(host.root)))
     scale_layout = [_d_layout]
     scale_font = [_d_font]
     f = scale_layout[0]
 
-    if manager_update_info and zapret_update_info:
-        title = "Доступны обновления"
-    elif manager_update_info:
-        title = "Доступно обновление менеджера"
-    else:
-        title = "Доступно обновление службы Zapret"
+    title = "Доступно полное обновление"
 
     font_targets: list[tuple[tk.Misc, float, bool]] = []
 
@@ -102,196 +99,57 @@ def show_update_notification_dialog(
     updates_frame = tk.Frame(main_frame, bg='#182030')
     updates_frame.pack(fill=tk.X, pady=(0, 0))
 
-    if manager_update_info and zapret_update_info:
-        manager_frame = tk.Frame(updates_frame, bg='#182030')
-        manager_frame.pack(fill=tk.X, pady=(0, p_block))
+    bundle_frame = tk.Frame(updates_frame, bg='#182030')
+    bundle_frame.pack(fill=tk.X, pady=(0, p_block))
 
-        header_frame = tk.Frame(manager_frame, bg='#182030')
-        header_frame.pack(fill=tk.X, pady=(0, p_small))
+    header_frame = tk.Frame(bundle_frame, bg='#182030')
+    header_frame.pack(fill=tk.X, pady=(0, p_small))
 
-        manager_name = tk.Label(
-            header_frame,
-            text="Zapret DPI Manager",
-            font=("Arial", _fz(12), "bold"),
-            fg='#0a84ff',
-            bg='#182030',
-        )
-        _reg_font(manager_name, 12.0, True)
-        manager_name.pack(pady=(0, 0))
+    bundle_name = tk.Label(
+        header_frame,
+        text="Менеджер и служба Zapret",
+        font=("Arial", _fz(12), "bold"),
+        fg='#0a84ff',
+        bg='#182030',
+    )
+    _reg_font(bundle_name, 12.0, True)
+    bundle_name.pack(pady=(0, 0))
 
-        versions_frame = tk.Frame(manager_frame, bg='#182030')
-        versions_frame.pack(fill=tk.X, pady=p_small)
+    versions_frame = tk.Frame(bundle_frame, bg='#182030')
+    versions_frame.pack(fill=tk.X, pady=p_small)
 
-        center_container = tk.Frame(versions_frame, bg='#182030')
-        center_container.pack(expand=True)
+    center_container = tk.Frame(versions_frame, bg='#182030')
+    center_container.pack(expand=True)
 
-        current_version_label = tk.Label(
-            center_container,
-            text=f"Текущая версия: {manager_update_info['current']}",
-            font=("Arial", _fz(11)),
-            fg='#AAAAAA',
-            bg='#182030',
-        )
-        _reg_font(current_version_label, 11.0, False)
-        current_version_label.pack(side=tk.LEFT, padx=(0, 10))
+    current_version_label = tk.Label(
+        center_container,
+        text=f"{bundle_update_info['current']}",
+        font=("Arial", _fz(11)),
+        fg='#AAAAAA',
+        bg='#182030',
+    )
+    _reg_font(current_version_label, 11.0, False)
+    current_version_label.pack(side=tk.LEFT, padx=(0, 10))
 
-        arrow_label = tk.Label(
-            center_container,
-            text="→",
-            font=("Arial", _fz(11)),
-            fg='white',
-            bg='#182030',
-        )
-        _reg_font(arrow_label, 11.0, False)
-        arrow_label.pack(side=tk.LEFT)
+    arrow_label = tk.Label(
+        center_container,
+        text="→",
+        font=("Arial", _fz(11)),
+        fg='white',
+        bg='#182030',
+    )
+    _reg_font(arrow_label, 11.0, False)
+    arrow_label.pack(side=tk.LEFT)
 
-        new_version_label = tk.Label(
-            center_container,
-            text=f"Новая версия: {manager_update_info['available']}",
-            font=("Arial", _fz(11), "bold"),
-            fg='#30d158',
-            bg='#182030',
-        )
-        _reg_font(new_version_label, 11.0, True)
-        new_version_label.pack(side=tk.LEFT, padx=(10, 0))
-
-        zapret_frame = tk.Frame(updates_frame, bg='#182030')
-        zapret_frame.pack(fill=tk.X, pady=(0, p_block))
-
-        header_frame = tk.Frame(zapret_frame, bg='#182030')
-        header_frame.pack(fill=tk.X, pady=(0, p_small))
-
-        zapret_name = tk.Label(
-            header_frame,
-            text="Служба Zapret",
-            font=("Arial", _fz(12), "bold"),
-            fg='#0a84ff',
-            bg='#182030',
-        )
-        _reg_font(zapret_name, 12.0, True)
-        zapret_name.pack(pady=(0, 0))
-
-        versions_frame = tk.Frame(zapret_frame, bg='#182030')
-        versions_frame.pack(fill=tk.X, pady=p_small)
-
-        center_container = tk.Frame(versions_frame, bg='#182030')
-        center_container.pack(expand=True)
-
-        current_version_label = tk.Label(
-            center_container,
-            text=f"Текущая версия: {zapret_update_info['current']}",
-            font=("Arial", _fz(11)),
-            fg='#AAAAAA',
-            bg='#182030',
-        )
-        _reg_font(current_version_label, 11.0, False)
-        current_version_label.pack(side=tk.LEFT, padx=(0, 10))
-
-        arrow_label = tk.Label(
-            center_container,
-            text="→",
-            font=("Arial", _fz(11)),
-            fg='white',
-            bg='#182030',
-        )
-        _reg_font(arrow_label, 11.0, False)
-        arrow_label.pack(side=tk.LEFT)
-
-        new_version_label = tk.Label(
-            center_container,
-            text=f"Новая версия: {zapret_update_info['available']}",
-            font=("Arial", _fz(11), "bold"),
-            fg='#30d158',
-            bg='#182030',
-        )
-        _reg_font(new_version_label, 11.0, True)
-        new_version_label.pack(side=tk.LEFT, padx=(10, 0))
-
-    elif manager_update_info:
-        manager_frame = tk.Frame(updates_frame, bg='#182030')
-        manager_frame.pack(fill=tk.X, pady=(0, p_block))
-
-        header_frame = tk.Frame(manager_frame, bg='#182030')
-        header_frame.pack(fill=tk.X, pady=(0, p_small))
-
-        versions_frame = tk.Frame(manager_frame, bg='#182030')
-        versions_frame.pack(fill=tk.X, pady=p_small)
-
-        center_container = tk.Frame(versions_frame, bg='#182030')
-        center_container.pack(expand=True)
-
-        current_version_label = tk.Label(
-            center_container,
-            text=f"Текущая версия: {manager_update_info['current']}",
-            font=("Arial", _fz(11)),
-            fg='#AAAAAA',
-            bg='#182030',
-        )
-        _reg_font(current_version_label, 11.0, False)
-        current_version_label.pack(side=tk.LEFT, padx=(0, 10))
-
-        arrow_label = tk.Label(
-            center_container,
-            text="→",
-            font=("Arial", _fz(11)),
-            fg='white',
-            bg='#182030',
-        )
-        _reg_font(arrow_label, 11.0, False)
-        arrow_label.pack(side=tk.LEFT)
-
-        new_version_label = tk.Label(
-            center_container,
-            text=f"Новая версия: {manager_update_info['available']}",
-            font=("Arial", _fz(11), "bold"),
-            fg='#30d158',
-            bg='#182030',
-        )
-        _reg_font(new_version_label, 11.0, True)
-        new_version_label.pack(side=tk.LEFT, padx=(10, 0))
-
-    elif zapret_update_info:
-        zapret_frame = tk.Frame(updates_frame, bg='#182030')
-        zapret_frame.pack(fill=tk.X, pady=(0, p_block))
-
-        header_frame = tk.Frame(zapret_frame, bg='#182030')
-        header_frame.pack(fill=tk.X, pady=(0, p_small))
-
-        versions_frame = tk.Frame(zapret_frame, bg='#182030')
-        versions_frame.pack(fill=tk.X, pady=p_small)
-
-        center_container = tk.Frame(versions_frame, bg='#182030')
-        center_container.pack(expand=True)
-
-        current_version_label = tk.Label(
-            center_container,
-            text=f"Текущая версия: {zapret_update_info['current']}",
-            font=("Arial", _fz(11)),
-            fg='#AAAAAA',
-            bg='#182030',
-        )
-        _reg_font(current_version_label, 11.0, False)
-        current_version_label.pack(side=tk.LEFT, padx=(0, 10))
-
-        arrow_label = tk.Label(
-            center_container,
-            text="→",
-            font=("Arial", _fz(11)),
-            fg='white',
-            bg='#182030',
-        )
-        _reg_font(arrow_label, 11.0, False)
-        arrow_label.pack(side=tk.LEFT)
-
-        new_version_label = tk.Label(
-            center_container,
-            text=f"Новая версия: {zapret_update_info['available']}",
-            font=("Arial", _fz(11), "bold"),
-            fg='#30d158',
-            bg='#182030',
-        )
-        _reg_font(new_version_label, 11.0, True)
-        new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+    new_version_label = tk.Label(
+        center_container,
+        text=f"Новая версия: {bundle_update_info['available']}",
+        font=("Arial", _fz(11), "bold"),
+        fg='#30d158',
+        bg='#182030',
+    )
+    _reg_font(new_version_label, 11.0, True)
+    new_version_label.pack(side=tk.LEFT, padx=(10, 0))
 
     buttons_frame = tk.Frame(main_frame, bg='#182030')
     buttons_frame.pack(fill=tk.X, pady=(0, p_btn_frame))
@@ -493,4 +351,3 @@ def show_update_notification_dialog(
         pass
 
     notification_window.protocol("WM_DELETE_WINDOW", notification_window.destroy)
-
