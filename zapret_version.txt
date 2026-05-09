@@ -1,2 +1,0 @@
-2.6.4
-https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/zapret.tar.gz

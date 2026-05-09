@@ -1,16 +1,14 @@
-import os
-import tempfile
-import tarfile
-import shutil
 import urllib.request
 import urllib.error
 
+from core.app_logging import get_error_logger
+
+
 class BaseUpdater:
-    def __init__(self, version_url, current_version, name="Объект", silent_http_404=False):
+    def __init__(self, version_url, current_version, name="Объект"):
         self.version_url = version_url
         self.current_version = current_version
         self.name = name
-        self.silent_http_404 = silent_http_404
 
     def check_for_updates(self):
         """Проверяет наличие обновлений через простой txt файл"""
@@ -31,17 +29,14 @@ class BaseUpdater:
 
             return None, None
 
-        except urllib.error.HTTPError as e:
-            if self.silent_http_404 and e.code == 404:
-                print(
-                    "Манифест полного обновления (version.txt) недоступен на сервере — "
-                    "проверяю обновления менеджера и службы по отдельности."
-                )
-                return None, None
-            print(f"Error checking updates for {self.name}: {e}")
-            return None, None
         except Exception as e:
             print(f"Error checking updates for {self.name}: {e}")
+            get_error_logger().error(
+                "Проверка обновлений (%s): %s",
+                self.name,
+                e,
+                exc_info=True,
+            )
             return None, None
 
     def is_newer_version(self, latest, current):

@@ -7,10 +7,12 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 
+from core.app_logging import get_error_logger
 from core.updater_base import BaseUpdater
-from core.manager_config import ZAPRET_CONFIG, VERSION_CONFIG
+from core.manager_config import VERSION_CONFIG
 from core.manager_updater import ManagerUpdater
 from core.platform_info import (
     is_valve_steamos,
@@ -24,9 +26,9 @@ from core.platform_info import (
 class ZapretUpdater(BaseUpdater):
     def __init__(self):
         super().__init__(
-            version_url=ZAPRET_CONFIG["version_url"],
-            current_version=ZAPRET_CONFIG["current_version"],
-            name="zapret службы"
+            version_url=VERSION_CONFIG["version_url"],
+            current_version=VERSION_CONFIG["current_version"],
+            name="zapret службы",
         )
         self.is_steamos = self.check_if_steamos()
 
@@ -102,7 +104,6 @@ class ZapretUpdater(BaseUpdater):
             if description:
                 print(f"Выполнение: {description}")
 
-            # Добавляем sudo в начало команды
             sudo_cmd = ['sudo', '-S'] + command
 
             process = subprocess.Popen(
@@ -147,7 +148,6 @@ class ZapretUpdater(BaseUpdater):
             (['rm', '-rf', '/opt/zapret/'], "Удаление директории zapret")
         ]
 
-        # Добавляем команду для разблокировки SteamOS только если это SteamOS
         if self.is_steamos:
             commands.insert(0, (['steamos-readonly', 'disable'], "Отключение защиты SteamOS"))
 
@@ -161,66 +161,9 @@ class ZapretUpdater(BaseUpdater):
 
         return True
 
-    def download_archive(self, download_url, temp_dir, password, progress_callback=None):
-        """Скачивает архив zapret"""
-        try:
-            # Создаем временный файл для архива
-            archive_path = os.path.join(temp_dir, "zapret.tar.gz")
-
-            if progress_callback:
-                progress_callback("Скачивание архива Zapret...", 10)
-
-            # Скачиваем через curl
-            result = self.run_with_sudo(
-                ['curl', '-L', '-o', archive_path, download_url],
-                password,
-                "Скачивание архива Zapret..."
-            )
-
-            if not result or result['returncode'] != 0:
-                print(f"Ошибка скачивания: {result['stderr'] if result else 'No result'}")
-                return None
-
-            # Проверяем, что архив существует и не пустой
-            if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
-                print("Скачанный архив пустой или не существует")
-                return None
-
-            if progress_callback:
-                progress_callback("Архив успешно скачан", 20)
-
-            return archive_path
-
-        except Exception as e:
-            print(f"Ошибка при скачивании архива: {e}")
-            return None
-
-    def extract_archive(self, archive_path, temp_dir, password, progress_callback=None):
-        """Извлекает архив zapret"""
-        try:
-            if progress_callback:
-                progress_callback("Извлечение архива...", 30)
-
-            extract_dir = os.path.join(temp_dir, "zapret_extracted")
-            os.makedirs(extract_dir, exist_ok=True)
-
-            # Извлекаем архив
-            with tarfile.open(archive_path, 'r:gz') as tar:
-                tar.extractall(path=extract_dir)
-
-            if progress_callback:
-                progress_callback("Архив успешно извлечен", 40)
-
-            return extract_dir
-
-        except Exception as e:
-            print(f"Ошибка при извлечении архива: {e}")
-            return None
-
     def copy_zapret_files(self, extract_dir, password, progress_callback=None):
         """Копирует файлы zapret в /opt/zapret"""
         try:
-            # Создаем директорию /opt/zapret если не существует
             if progress_callback:
                 progress_callback("Создание директории /opt/zapret...", 50)
 
@@ -234,7 +177,6 @@ class ZapretUpdater(BaseUpdater):
                 print("Не удалось создать /opt/zapret")
                 return False
 
-            # Ищем папку system в распакованном архиве
             system_dir = None
             for root, dirs, files in os.walk(extract_dir):
                 if 'system' in dirs:
@@ -245,11 +187,9 @@ class ZapretUpdater(BaseUpdater):
                 print("Не найдена папка 'system' в архиве")
                 return False
 
-            # Копируем файлы из system в /opt/zapret
             if progress_callback:
                 progress_callback("Копирование файлов системы...", 60)
 
-            # Копируем все файлы из system
             for item in os.listdir(system_dir):
                 src = os.path.join(system_dir, item)
                 dst = os.path.join('/opt/zapret', item)
@@ -270,7 +210,6 @@ class ZapretUpdater(BaseUpdater):
                 if not result or result['returncode'] != 0:
                     print(f"Не удалось скопировать {item}")
 
-            # Копируем бинарный файл nfqws для текущей архитектуры
             if progress_callback:
                 progress_callback("Копирование бинарных файлов...", 70)
 
@@ -286,7 +225,6 @@ class ZapretUpdater(BaseUpdater):
 
             bin_dir_name = bin_dirs.get(arch)
             if bin_dir_name:
-                # Ищем папку bins
                 bins_dir = None
                 for root, dirs, files in os.walk(extract_dir):
                     if 'bins' in dirs:
@@ -312,7 +250,6 @@ class ZapretUpdater(BaseUpdater):
                 "Создание файла FWTYPE...",
             )
 
-            # Устанавливаем права на файлы
             self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
 
             return True
@@ -324,7 +261,6 @@ class ZapretUpdater(BaseUpdater):
     def update_manager_config(self, extract_dir):
         """Обновляет файл конфигурации менеджера"""
         try:
-            # Ищем файл manager_config.py в архиве
             config_path = None
 
             for root, dirs, files in os.walk(extract_dir):
@@ -336,14 +272,11 @@ class ZapretUpdater(BaseUpdater):
                 print("Файл manager_config.py не найден в архиве")
                 return
 
-            # Определяем домашнюю директорию текущего пользователя
             home_dir = os.path.expanduser("~")
 
-            # Формируем путь к менеджеру (предполагаем, что он в Zapret_DPI_Manager в домашней директории)
             target_dir = os.path.join(home_dir, "Zapret_DPI_Manager", "core")
             target_path = os.path.join(target_dir, "manager_config.py")
 
-            # Копируем файл
             os.makedirs(target_dir, exist_ok=True)
             shutil.copy2(config_path, target_path)
 
@@ -374,7 +307,6 @@ ExecStop=/bin/bash /opt/zapret/stopper.sh
 WantedBy=multi-user.target
 """
 
-            # Создаем временный файл
             temp_service = tempfile.NamedTemporaryFile(mode='w', delete=False)
             temp_service.write(service_content)
             temp_service.close()
@@ -424,7 +356,6 @@ WantedBy=multi-user.target
             if progress_callback:
                 progress_callback("Обновление systemd...", 85)
 
-            # Обновляем systemd
             result = self.run_with_sudo(
                 ['systemctl', 'daemon-reload'],
                 password,
@@ -435,7 +366,6 @@ WantedBy=multi-user.target
                 print("Не удалось обновить systemd")
                 return False
 
-            # Включаем автозапуск
             if progress_callback:
                 progress_callback("Включение автозапуска...", 90)
 
@@ -447,9 +377,7 @@ WantedBy=multi-user.target
 
             if not result or result['returncode'] != 0:
                 print("Не удалось включить автозапуск")
-                # Продолжаем, даже если не удалось включить автозапуск
 
-            # Запускаем службу
             if progress_callback:
                 progress_callback("Запуск службы...", 95)
 
@@ -462,7 +390,6 @@ WantedBy=multi-user.target
             if progress_callback:
                 progress_callback("Служба успешно запущена", 100)
 
-            # Проверяем статус
             time.sleep(2)
             check_result = self.run_with_sudo(
                 ['systemctl', 'is-active', 'zapret'],
@@ -556,80 +483,6 @@ WantedBy=multi-user.target
         self.lock_steamos_system(password)
         return True
 
-    def update_zapret(self, download_url, parent_window, progress_callback=None):
-        """Выполняет обновление zapret службы"""
-        print(f"=== ЗАПУСК ОБНОВЛЕНИЯ ZAPRET ===")
-        if self.is_steamos:
-            print("Режим Valve SteamOS (readonly, pacman)")
-        else:
-            print(f"Дистрибутив: {distro_log_label()}")
-
-        password = self.get_sudo_password(parent_window)
-        if not password:
-            if progress_callback:
-                progress_callback("❌ Пароль не введен, отмена обновления", None)
-            return False
-
-        try:
-            # Останавливаем и удаляем старую версию
-            if not self.stop_and_remove_zapret(password, progress_callback):
-                return False
-
-            # Создаем временную директорию
-            temp_dir = tempfile.mkdtemp()
-
-            # Скачиваем архив
-            archive_path = self.download_archive(download_url, temp_dir, password, progress_callback)
-            if not archive_path:
-                shutil.rmtree(temp_dir)
-                return False
-
-            # Распаковываем архив
-            extract_dir = self.extract_archive(archive_path, temp_dir, password, progress_callback)
-            if not extract_dir:
-                shutil.rmtree(temp_dir)
-                return False
-
-            # Копируем файлы
-            if not self.copy_zapret_files(extract_dir, password, progress_callback):
-                shutil.rmtree(temp_dir)
-                return False
-
-            # Обновляем файл конфигурации менеджера
-            self.update_manager_config(extract_dir)
-
-            # Создаем службу
-            if not self.create_service_file(password, progress_callback):
-                shutil.rmtree(temp_dir)
-                return False
-
-            # Включаем и запускаем службу
-            if not self.enable_service(password, progress_callback):
-                shutil.rmtree(temp_dir)
-                return False
-
-            # Блокируем файловую систему SteamOS (только для SteamOS)
-            self.lock_steamos_system(password)
-
-            # Очищаем временные файлы
-            shutil.rmtree(temp_dir)
-
-            return True
-
-        except Exception as e:
-            print(f"Ошибка обновления zapret: {e}")
-            import traceback
-            traceback.print_exc()
-
-            # Даже при ошибке пытаемся заблокировать систему SteamOS
-            try:
-                if password:
-                    self.lock_steamos_system(password)
-            except Exception:
-                pass
-
-            return False
-
 
 # --- Полный пакет (менеджер + служба, один архив) ---
 
@@ -676,6 +529,42 @@ def find_bundle_root(extract_dir: str) -> str | None:
     return None
 
 
+def download_http_to_file(
+    url: str,
+    dest_path: str,
+    *,
+    timeout: float = 120.0,
+    reporthook=None,
+) -> None:
+    """
+    Скачивает URL в файл с таймаутом (в отличие от urlretrieve).
+
+    reporthook(blocknum, block_size, total_size) — как у urlretrieve;
+    total_size = -1, если размер неизвестен (нет Content-Length).
+    """
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Zapret-DPI-Manager/2"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        cl = resp.headers.get("Content-Length")
+        try:
+            total_size = int(cl) if cl else -1
+        except (TypeError, ValueError):
+            total_size = -1
+        block_size = 64 * 1024
+        blocknum = 0
+        with open(dest_path, "wb") as out:
+            while True:
+                chunk = resp.read(block_size)
+                if not chunk:
+                    break
+                out.write(chunk)
+                blocknum += 1
+                if reporthook:
+                    reporthook(blocknum, block_size, total_size)
+
+
 def validate_bundle_structure(bundle_root: str) -> bool:
     if is_valid_bundle_root(bundle_root):
         return True
@@ -703,6 +592,12 @@ def read_bundle_manifest(
                 return ver, download
     except Exception as e:
         print(f"Манифест полного пакета недоступен ({url}): {e}")
+        get_error_logger().error(
+            "Манифест полного пакета недоступен (%s): %s",
+            url,
+            e,
+            exc_info=True,
+        )
     return None, None
 
 
@@ -719,7 +614,6 @@ class ZapretBundleUpdater(BaseUpdater):
             version_url=VERSION_CONFIG["version_url"],
             current_version=VERSION_CONFIG["current_version"],
             name="Zapret DPI Manager",
-            silent_http_404=True,
         )
 
     def update_bundle(self, download_url, parent_window, progress_callback=None):
@@ -751,10 +645,37 @@ class ZapretBundleUpdater(BaseUpdater):
                     pct = min(int(count * block_size * 100 / total_size), 100)
                     progress_callback(f"Скачивание... {pct}%", 15 + int(25 * pct / 100))
 
-            urllib.request.urlretrieve(download_url, archive_path, download_progress)
+            try:
+                download_http_to_file(
+                    download_url,
+                    archive_path,
+                    timeout=120.0,
+                    reporthook=download_progress,
+                )
+            except urllib.error.URLError as e:
+                reason = e.reason
+                detail = str(reason) if reason is not None else str(e)
+                msg = (
+                    "Не удалось скачать архив обновления. Проверьте интернет и DNS. "
+                    f"({detail})"
+                )
+                print(msg)
+                get_error_logger().error(
+                    "Скачивание bundle (%s): %s",
+                    download_url,
+                    msg,
+                    exc_info=True,
+                )
+                if progress_callback:
+                    progress_callback(msg, None)
+                return False
 
             if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
                 print("Архив пустой или не скачан")
+                get_error_logger().error(
+                    "Архив обновления пустой или отсутствует после скачивания: %s",
+                    download_url,
+                )
                 return False
 
             if progress_callback:
@@ -767,6 +688,9 @@ class ZapretBundleUpdater(BaseUpdater):
                 print(
                     "Неверная структура архива обновления: нужны main.py и zapret/system/ "
                     "(и zapret/bins/), либо то же внутри папки zapret_updater/."
+                )
+                get_error_logger().error(
+                    "Неверная структура архива обновления (ожидались main.py и zapret/system/)"
                 )
                 return False
 
@@ -788,8 +712,7 @@ class ZapretBundleUpdater(BaseUpdater):
             return True
         except Exception as e:
             print(f"Ошибка полного обновления: {e}")
-            import traceback
-            traceback.print_exc()
+            get_error_logger().exception("Ошибка полного обновления (bundle)")
             try:
                 if password:
                     zapret_u.lock_steamos_system(password)

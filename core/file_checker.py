@@ -11,8 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox
 
+from core.app_logging import get_error_logger
 from core.dpi_utils import place_toplevel_centered_on_parent
-from core.manager_config import RELEASES_URL
+from core.zapret_updater import find_bundle_root, get_bundle_download_url
 
 
 class ZapretFileChecker:
@@ -29,8 +30,9 @@ class ZapretFileChecker:
         self.sudo_password = None
         self.debug_log = []  # Лог для дебага
 
-        # URL архива с zapret
-        self.zapret_archive_url = f"{RELEASES_URL}/zapret_manager.tar.gz"
+        # URL единого архива (zapret_updater.tar.gz) подтягивается по требованию
+        # из version.txt — отдельных fallback-каналов нет.
+        self.zapret_archive_url: str | None = None
 
         # Базовые пути
         self.home_dir = Path.home()
@@ -258,17 +260,24 @@ class ZapretFileChecker:
 
         return missing_files, missing_dirs
     def download_archive(self, temp_dir):
-        """Скачивает архив zapret_manager"""
+        """Скачивает единый архив zapret_updater.tar.gz по ссылке из version.txt"""
         self.current_task = "download"
 
         try:
-            # Создаем временный файл для архива
-            archive_path = os.path.join(temp_dir, "zapret_manager.tar.gz")
+            if not self.zapret_archive_url:
+                self.zapret_archive_url = get_bundle_download_url()
 
-            # Скачиваем через curl
+            if not self.zapret_archive_url:
+                self.log_debug("Не удалось получить URL архива из version.txt")
+                get_error_logger().error(
+                    "Восстановление файлов менеджера: не удалось получить URL из version.txt"
+                )
+                return None
+
+            archive_path = os.path.join(temp_dir, "zapret_updater.tar.gz")
+
             self.update_progress("Скачивание архива...", 40)
 
-            # Используем curl для скачивания
             curl_cmd = ['curl', '-L', '-o', archive_path, self.zapret_archive_url]
 
             if self.sudo_password:
@@ -288,12 +297,21 @@ class ZapretFileChecker:
                 }
 
             if not result or result['returncode'] != 0:
-                self.log_debug(f"Ошибка скачивания: {result['stderr'] if result else 'No result'}")
+                err = result['stderr'] if result else 'No result'
+                self.log_debug(f"Ошибка скачивания: {err}")
+                get_error_logger().error(
+                    "Восстановление файлов менеджера: ошибка curl (%s): %s",
+                    self.zapret_archive_url,
+                    err,
+                )
                 return None
 
             # Проверяем, что архив существует и не пустой
             if not os.path.exists(archive_path) or os.path.getsize(archive_path) == 0:
                 self.log_debug("Скачанный архив пустой или не существует")
+                get_error_logger().error(
+                    "Восстановление файлов менеджера: архив пуст или отсутствует после curl"
+                )
                 return None
 
             self.update_progress("Архив успешно скачан", 50)
@@ -301,6 +319,7 @@ class ZapretFileChecker:
 
         except Exception as e:
             self.log_debug(f"Ошибка при скачивании архива: {e}")
+            get_error_logger().exception("Восстановление файлов менеджера: скачивание архива")
             return None
 
     def extract_archive(self, archive_path, temp_dir):
@@ -344,19 +363,11 @@ class ZapretFileChecker:
         # Восстанавливаем недостающие файлы
         self.update_progress("Восстановление файлов...", 70)
 
-        # Ищем папку с распакованными файлами
-        extracted_root = Path(extract_dir)
-        source_dir = None
-
-        # Пытаемся найти корневую папку с файлами
-        for item in extracted_root.iterdir():
-            if item.is_dir() and "Zapret_DPI_Manager" in item.name:
-                source_dir = item
-                break
-
-        if not source_dir:
-            # Если не нашли, используем саму extract_dir
-            source_dir = extracted_root
+        bundle_root = find_bundle_root(str(extract_dir))
+        if bundle_root:
+            source_dir = Path(bundle_root)
+        else:
+            source_dir = Path(extract_dir)
 
         self.log_debug(f"Источник для восстановления: {source_dir}")
 
