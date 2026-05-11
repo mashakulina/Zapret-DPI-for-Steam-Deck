@@ -11,6 +11,7 @@ from core.game_filter_settings import (
     GAMEFILTER_PROTOCOL_BOTH,
     GAMEFILTER_PROTOCOL_TCP,
     GAMEFILTER_PROTOCOL_UDP,
+    disable_standalone_gamefilter,
     normalize_game_filter_protocol_mode,
     read_game_filter_protocol_mode,
     write_game_filter_protocol_mode,
@@ -25,6 +26,81 @@ from core.game_presets import (
     substitute_gamefilter_in_config,
     restore_gamefilter_for_preset,
 )
+
+
+def _preset_read_nonempty_lines(path):
+    """Читает непустые строки файла без комментариев."""
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+
+def _preset_write_lines(path, lines):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        if lines:
+            f.write("\n".join(lines) + "\n")
+        else:
+            f.write("")
+
+
+def _preset_remove_roblox_domains(manager_dir):
+    source_path = os.path.join(manager_dir, "utils", "list-general_roblox.txt")
+    target_path = os.path.join(manager_dir, "files", "lists", "list-general.txt")
+    source_domains = set(_preset_read_nonempty_lines(source_path))
+    if not source_domains:
+        return
+    current_domains = _preset_read_nonempty_lines(target_path)
+    filtered_domains = [domain for domain in current_domains if domain not in source_domains]
+    _preset_write_lines(target_path, filtered_domains)
+
+
+def _preset_remove_fallguys_domains(manager_dir):
+    source_path = os.path.join(manager_dir, "utils", "list-general_fallguys.txt")
+    target_path = os.path.join(manager_dir, "files", "lists", "list-general_user.txt")
+    source_domains = set(_preset_read_nonempty_lines(source_path))
+    if not source_domains:
+        return
+    current_domains = _preset_read_nonempty_lines(target_path)
+    filtered_domains = [domain for domain in current_domains if domain not in source_domains]
+    _preset_write_lines(target_path, filtered_domains)
+
+
+def _preset_remove_fallguys_ipset(manager_dir):
+    source_path = os.path.join(manager_dir, "utils", "ipset-all_fallguys.txt")
+    target_path = os.path.join(manager_dir, "files", "lists", "ipset-all_user.txt")
+    source_set = set(_preset_read_nonempty_lines(source_path))
+    if not source_set:
+        return
+    current_entries = _preset_read_nonempty_lines(target_path)
+    filtered = [line for line in current_entries if line not in source_set]
+    _preset_write_lines(target_path, filtered)
+
+
+def _preset_set_ipset_none(manager_dir):
+    target_path = os.path.join(manager_dir, "files", "lists", "ipset-all.txt")
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write("203.0.113.113/32")
+
+
+def clear_active_game_preset_disk(manager_dir: str) -> None:
+    """Снимает активный пресет с диска (без перезапуска службы и без диалогов)."""
+    active_before = get_active_preset_id(manager_dir)
+    if active_before:
+        if active_before == "roblox":
+            _preset_remove_roblox_domains(manager_dir)
+            _preset_set_ipset_none(manager_dir)
+        elif active_before == "fall_guys":
+            _preset_remove_fallguys_domains(manager_dir)
+            _preset_remove_fallguys_ipset(manager_dir)
+        else:
+            remove_preset_lines_from_config(active_before, manager_dir)
+        if active_before == "elite_dangerous":
+            _preset_set_ipset_none(manager_dir)
+        restore_gamefilter_for_preset(active_before, manager_dir)
+    clear_active_preset(manager_dir)
 
 
 class GameFilterProtocolModeWindow:
@@ -182,7 +258,17 @@ class GameFilterWindow:
             fg='white',
             bg='#182030'
         )
-        title_label.pack(pady=(15, 30))
+        title_label.pack(pady=(15, 8))
+
+        tk.Label(
+            main_frame,
+            text="Отдельный GameFilter и пресет игры не используются одновременно.",
+            font=("Arial", 9),
+            fg="#aaaaaa",
+            bg="#182030",
+            justify=tk.CENTER,
+            wraplength=340,
+        ).pack(pady=(0, 18))
 
         button_style = {
             'font': ('Arial', 11),
@@ -333,7 +419,17 @@ class GamePresetWindow:
             fg='white',
             bg='#182030'
         )
-        title_label.pack(pady=(15, 20))
+        title_label.pack(pady=(15, 8))
+
+        tk.Label(
+            main_frame,
+            text="При выборе пресета отдельный GameFilter будет выключен.",
+            font=("Arial", 9),
+            fg="#aaaaaa",
+            bg="#182030",
+            justify=tk.CENTER,
+            wraplength=340,
+        ).pack(pady=(0, 14))
 
         check_frame = tk.Frame(main_frame, bg='#182030')
         check_frame.pack(fill=tk.X, pady=(0, 20))
@@ -407,19 +503,11 @@ class GamePresetWindow:
 
     def _read_nonempty_lines(self, path):
         """Читает непустые строки файла без комментариев."""
-        if not os.path.isfile(path):
-            return []
-        with open(path, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        return _preset_read_nonempty_lines(path)
 
     def _write_lines(self, path, lines):
         """Записывает строки в файл, по одной на строку."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            if lines:
-                f.write("\n".join(lines) + "\n")
-            else:
-                f.write("")
+        _preset_write_lines(path, lines)
 
     def _apply_roblox_domains(self):
         """Добавляет домены Roblox в list-general.txt без дубликатов."""
@@ -434,14 +522,7 @@ class GamePresetWindow:
 
     def _remove_roblox_domains(self):
         """Удаляет домены Roblox из list-general.txt."""
-        source_path = os.path.join(self.manager_dir, "utils", "list-general_roblox.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
-        source_domains = set(self._read_nonempty_lines(source_path))
-        if not source_domains:
-            return
-        current_domains = self._read_nonempty_lines(target_path)
-        filtered_domains = [domain for domain in current_domains if domain not in source_domains]
-        self._write_lines(target_path, filtered_domains)
+        _preset_remove_roblox_domains(self.manager_dir)
 
     def _apply_roblox_ipset(self):
         """Заменяет ipset-all.txt данными Roblox."""
@@ -468,14 +549,7 @@ class GamePresetWindow:
 
     def _remove_fallguys_domains(self):
         """Удаляет домены Fall Guys из list-general_user.txt."""
-        source_path = os.path.join(self.manager_dir, "utils", "list-general_fallguys.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
-        source_domains = set(self._read_nonempty_lines(source_path))
-        if not source_domains:
-            return
-        current_domains = self._read_nonempty_lines(target_path)
-        filtered_domains = [domain for domain in current_domains if domain not in source_domains]
-        self._write_lines(target_path, filtered_domains)
+        _preset_remove_fallguys_domains(self.manager_dir)
 
     def _apply_fallguys_ipset(self):
         """Добавляет CIDR из utils/ipset-all_fallguys.txt в ipset-all_user.txt без дубликатов."""
@@ -492,21 +566,11 @@ class GamePresetWindow:
 
     def _remove_fallguys_ipset(self):
         """Удаляет из ipset-all_user.txt записи, совпадающие с utils/ipset-all_fallguys.txt."""
-        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_fallguys.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
-        source_set = set(self._read_nonempty_lines(source_path))
-        if not source_set:
-            return
-        current_entries = self._read_nonempty_lines(target_path)
-        filtered = [line for line in current_entries if line not in source_set]
-        self._write_lines(target_path, filtered)
+        _preset_remove_fallguys_ipset(self.manager_dir)
 
     def _set_ipset_none(self):
         """Устанавливает IPSetFilter в none."""
-        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, "w", encoding="utf-8") as f:
-            f.write("203.0.113.113/32")
+        _preset_set_ipset_none(self.manager_dir)
 
     def _apply_ipset_loaded(self):
         """Копирует utils/ipset-all.txt в files/lists/ipset-all.txt (режим loaded в IPSet Filter)."""
@@ -528,20 +592,7 @@ class GamePresetWindow:
         selected = [pid for pid, var in self.preset_vars.items() if var.get()]
 
         if not selected:
-            active_before = get_active_preset_id(self.manager_dir)
-            if active_before:
-                if active_before == "roblox":
-                    self._remove_roblox_domains()
-                    self._set_ipset_none()
-                elif active_before == "fall_guys":
-                    self._remove_fallguys_domains()
-                    self._remove_fallguys_ipset()
-                else:
-                    remove_preset_lines_from_config(active_before, self.manager_dir)
-                if active_before == "elite_dangerous":
-                    self._set_ipset_none()
-                restore_gamefilter_for_preset(active_before, self.manager_dir)
-            clear_active_preset(self.manager_dir)
+            clear_active_game_preset_disk(self.manager_dir)
             show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
             if hasattr(self.main_window, "show_status_message"):
                 self.main_window.show_status_message("Применение пресетов снято", success=True)
@@ -555,6 +606,17 @@ class GamePresetWindow:
         if preset_id not in GAME_PRESETS:
             show_error(self.root, "Ошибка", "Пресет не найден.")
             return
+
+        had_standalone_gf = self.main_window.is_game_filter_enabled()
+        disable_standalone_gamefilter(self.manager_dir)
+        if had_standalone_gf:
+            if hasattr(self.main_window, "show_status_message"):
+                self.main_window.show_status_message(
+                    "Отдельный GameFilter выключен: используется только пресет игры",
+                    warning=True,
+                )
+            if hasattr(self.main_window, "update_game_filter_indicator"):
+                self.main_window.update_game_filter_indicator()
 
         preset = GAME_PRESETS[preset_id]
         lines = preset.get("lines") or []

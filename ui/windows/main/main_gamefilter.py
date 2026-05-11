@@ -3,9 +3,9 @@ import os
 import threading
 import tkinter as tk
 
-from ui.windows.gamefilter_window import GameFilterWindow
+from ui.windows.gamefilter_window import GameFilterWindow, clear_active_game_preset_disk
 from ui.windows.main.main_gamefilter_warning import show_game_filter_warning_dialog
-from core.game_presets import get_active_preset_id
+from core.game_presets import get_active_preset_id, get_manager_dir
 from core.game_filter_settings import (
     read_game_filter_protocol_mode,
     remove_game_filter_protocol_mode_file,
@@ -115,6 +115,16 @@ class MainGameFilterMixin:
                 status_message = "Game Filter выключен"
                 print("🎮🔴 Game Filter выключен")
             else:
+                # Отдельный GameFilter и пресет игры не используются одновременно
+                had_preset = get_active_preset_id() is not None
+                clear_active_game_preset_disk(get_manager_dir())
+                if had_preset:
+                    self.show_status_message(
+                        "Активный пресет игры снят (несовместим с отдельным GameFilter)",
+                        warning=True,
+                    )
+                    self.update_game_filter_indicator()
+
                 # Создаем файл (включаем)
                 # Сначала создаем директорию если не существует
                 directory = os.path.dirname(self.game_filter_file)

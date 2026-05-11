@@ -57,3 +57,23 @@ def remove_game_filter_protocol_mode_file(manager_dir: str | None = None) -> Non
         pass
     except OSError:
         pass
+
+
+def get_game_filter_enable_file(manager_dir: str | None = None) -> str:
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+    return os.path.join(manager_dir, "utils", "gamefilter.enable")
+
+
+def disable_standalone_gamefilter(manager_dir: str | None = None) -> None:
+    """Выключает отдельный GameFilter (маркер и режим TCP/UDP). Без перезапуска службы."""
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+    enable_path = get_game_filter_enable_file(manager_dir)
+    try:
+        os.remove(enable_path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+    remove_game_filter_protocol_mode_file(manager_dir)
