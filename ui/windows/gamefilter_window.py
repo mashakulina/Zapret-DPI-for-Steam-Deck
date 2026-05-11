@@ -7,6 +7,14 @@ from ui.components.button_styler import create_hover_button
 from ui.windows.main.protocols import MainWindowActions
 from ui.components.custom_messagebox import show_info, show_error
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.game_filter_settings import (
+    GAMEFILTER_PROTOCOL_BOTH,
+    GAMEFILTER_PROTOCOL_TCP,
+    GAMEFILTER_PROTOCOL_UDP,
+    normalize_game_filter_protocol_mode,
+    read_game_filter_protocol_mode,
+    write_game_filter_protocol_mode,
+)
 from core.game_presets import (
     GAME_PRESETS,
     get_active_preset_id,
@@ -17,6 +25,128 @@ from core.game_presets import (
     substitute_gamefilter_in_config,
     restore_gamefilter_for_preset,
 )
+
+
+class GameFilterProtocolModeWindow:
+    """Отдельное окно: выбор TCP/UDP для подстановки {GameFilter} в службе."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        on_confirm,
+        initial_mode: str | None = None,
+        title: str = "Режим протокола",
+        hint: str = "Игровые порты ({GameFilter}) в службе:",
+        confirm_text: str = "Далее",
+    ):
+        self._parent = parent
+        self._on_confirm = on_confirm
+        self.root = tk.Toplevel(parent)
+        self.root.title(title)
+        self.root.configure(bg="#182030")
+        self.root.transient(parent)
+        self.root.resizable(False, False)
+        self.root.protocol("WM_DELETE_WINDOW", self._cancel)
+
+        main = tk.Frame(self.root, bg="#182030", padx=18, pady=14)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            main,
+            text=hint,
+            font=("Arial", 10),
+            fg="#cccccc",
+            bg="#182030",
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        start = (
+            normalize_game_filter_protocol_mode(initial_mode)
+            if initial_mode is not None
+            else read_game_filter_protocol_mode(get_manager_dir())
+        )
+        self._var = tk.StringVar(value=start)
+        rb_style = {
+            "font": ("Arial", 10),
+            "fg": "white",
+            "bg": "#182030",
+            "selectcolor": "#1E4A6E",
+            "activebackground": "#182030",
+            "activeforeground": "#4fc3f7",
+            "highlightthickness": 0,
+            "cursor": "hand2",
+            "variable": self._var,
+        }
+        proto_frame = tk.Frame(main, bg="#182030")
+        proto_frame.pack(fill=tk.X, pady=(0, 16))
+        tk.Radiobutton(
+            proto_frame,
+            text="Включить TCP и UDP",
+            value=GAMEFILTER_PROTOCOL_BOTH,
+            **rb_style,
+        ).pack(anchor=tk.W, pady=3)
+        tk.Radiobutton(
+            proto_frame,
+            text="Включить только TCP",
+            value=GAMEFILTER_PROTOCOL_TCP,
+            **rb_style,
+        ).pack(anchor=tk.W, pady=3)
+        tk.Radiobutton(
+            proto_frame,
+            text="Включить только UDP",
+            value=GAMEFILTER_PROTOCOL_UDP,
+            **rb_style,
+        ).pack(anchor=tk.W, pady=3)
+
+        btn_style = {
+            "font": ("Arial", 11),
+            "bg": "#15354D",
+            "fg": "white",
+            "bd": 0,
+            "padx": 18,
+            "pady": 8,
+            "width": 12,
+            "highlightthickness": 0,
+            "cursor": "hand2",
+        }
+        row = tk.Frame(main, bg="#182030")
+        row.pack(fill=tk.X)
+        ok_btn = create_hover_button(
+            row,
+            text=confirm_text,
+            command=self._confirm,
+            **btn_style,
+        )
+        ok_btn.pack(side=tk.LEFT, padx=(0, 10))
+        back_btn = create_hover_button(
+            row,
+            text="Назад",
+            command=self._cancel,
+            **btn_style,
+        )
+        back_btn.pack(side=tk.LEFT)
+
+        place_toplevel_centered_on_parent(
+            self.root, parent, min_width=300, min_height=240, margin_width=8, margin_height=12
+        )
+
+    def _confirm(self) -> None:
+        mode = self._var.get()
+        self.root.destroy()
+        self._on_confirm(mode)
+
+    def _cancel(self) -> None:
+        self.root.destroy()
+
+    def run_modal(self) -> None:
+        self.root.update_idletasks()
+        self.root.update()
+        try:
+            self.root.grab_set()
+        except tk.TclError:
+            pass
+        self._parent.wait_window(self.root)
 
 
 class GameFilterWindow:
@@ -76,6 +206,13 @@ class GameFilterWindow:
 
         # Кнопка Включить/Выключить GameFilter в зависимости от состояния
         if self.main_window.is_game_filter_enabled():
+            apply_mode_btn = create_hover_button(
+                main_frame,
+                text="Режим TCP/UDP…",
+                command=self._open_protocol_window_for_apply,
+                **button_style,
+            )
+            apply_mode_btn.pack(pady=(0, 8))
             enable_gf_btn = create_hover_button(
                 main_frame,
                 text="Выключить GameFilter",
@@ -100,9 +237,37 @@ class GameFilterWindow:
         back_btn.pack(pady=(10, 0))
 
     def enable_game_filter(self):
-        """Закрывает окно и запускает включение GameFilter через предупреждение в main_window."""
+        """Открывает окно выбора протокола, затем предупреждение и включение Game Filter."""
+        win = GameFilterProtocolModeWindow(
+            self.root,
+            title="Включение Game Filter",
+            hint="Игровые порты ({GameFilter}) в службе:",
+            confirm_text="Далее",
+            on_confirm=self._after_protocol_chosen_for_enable,
+        )
+        win.run_modal()
+
+    def _after_protocol_chosen_for_enable(self, mode: str) -> None:
         self.close_window()
-        self.main_window._show_game_filter_warning()
+        self.main_window._show_game_filter_warning(mode)
+
+    def _open_protocol_window_for_apply(self) -> None:
+        """Game Filter уже включён: выбор режима, sudo, запись и перезапуск."""
+        win = GameFilterProtocolModeWindow(
+            self.root,
+            title="Режим TCP/UDP",
+            hint="Игровые порты ({GameFilter}) в службе:",
+            confirm_text="Применить",
+            on_confirm=self._after_protocol_chosen_for_apply,
+        )
+        win.run_modal()
+
+    def _after_protocol_chosen_for_apply(self, mode: str) -> None:
+        if not self.main_window.ensure_sudo_password():
+            return
+        write_game_filter_protocol_mode(mode, get_manager_dir())
+        self.close_window()
+        self.main_window.restart_zapret_after_preset("Режим протокола Game Filter обновлён")
 
     def disable_game_filter(self):
         """Выключение GameFilter: sudo, переключение, перезапуск службы."""

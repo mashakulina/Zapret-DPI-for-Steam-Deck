@@ -13,6 +13,7 @@ from core.dpi_utils import (
     center_toplevel_on_screen,
     set_window_size_to_fit_content,
 )
+from core.game_filter_settings import normalize_game_filter_protocol_mode
 from core.tk_scale_lab_helpers import warning_dialog_scale
 
 
@@ -22,11 +23,12 @@ class GameFilterWarningHost(Protocol):
     def hide_game_filter_tooltip(self, event=None) -> None: ...
     def hide_icon_tooltip(self, event=None) -> None: ...
     def hide_status_tooltip(self, event=None) -> None: ...
-    def _on_warning_accept(self, warning_window: tk.Toplevel) -> None: ...
+    def _on_warning_accept(self, warning_window: tk.Toplevel, protocol_mode: str = "both") -> None: ...
 
 
-def show_game_filter_warning_dialog(host: GameFilterWarningHost) -> None:
+def show_game_filter_warning_dialog(host: GameFilterWarningHost, protocol_mode: str = "both") -> None:
     """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
+    protocol_mode = normalize_game_filter_protocol_mode(protocol_mode)
 
     # Закрываем все всплывающие подсказки перед показом окна
     host.hide_game_filter_tooltip()
@@ -250,7 +252,7 @@ def show_game_filter_warning_dialog(host: GameFilterWarningHost) -> None:
     enable_button = tk.Button(
         buttons_center_frame,
         text="Включить",
-        command=lambda: host._on_warning_accept(warning_window),
+        command=lambda: host._on_warning_accept(warning_window, protocol_mode),
         **button_style
     )
     enable_button.pack(side=tk.LEFT, padx=(0, 10))

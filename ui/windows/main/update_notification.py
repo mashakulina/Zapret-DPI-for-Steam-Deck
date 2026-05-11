@@ -33,7 +33,7 @@ def show_update_notification_dialog(
     scale_font = [_d_font]
     f = scale_layout[0]
 
-    title = "Доступно полное обновление"
+    title = "Доступно обновление"
 
     font_targets: list[tuple[tk.Misc, float, bool]] = []
 
@@ -123,7 +123,7 @@ def show_update_notification_dialog(
 
     current_version_label = tk.Label(
         center_container,
-        text=f"{bundle_update_info['current']}",
+        text=f"Текущая версия: {bundle_update_info['current']}",
         font=("Arial", _fz(11)),
         fg='#AAAAAA',
         bg='#182030',

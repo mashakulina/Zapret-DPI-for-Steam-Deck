@@ -749,7 +749,7 @@ class StrategyTesterWindow:
             # Записываем в config.txt
             config_path = self.project_root / "config.txt"
             with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+                f.write(content + ("\n" if content and not content.endswith("\n") else ""))
 
             # Записываем имя стратегии в name_strategy.txt
             name_strategy_path = self.project_root / "utils" / "name_strategy.txt"

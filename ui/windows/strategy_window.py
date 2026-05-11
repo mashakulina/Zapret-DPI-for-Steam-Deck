@@ -397,9 +397,9 @@ class StrategyWindow:
                 with open(name_strategy_file, 'w', encoding='utf-8') as f:
                     f.write(f"{self.selected_strategy}")
 
-                # Записываем содержимое стратегии в config.txt
+                # Записываем содержимое стратегии в config.txt        
                 with open(config_file, 'w', encoding='utf-8') as f:
-                    f.write(strategy_content)
+                    f.write(strategy_content + ("\n" if strategy_content else ""))
 
                 # Если активен игровой пресет, применяем его к новому config.txt.
                 reapply_active_preset_to_config(manager_dir)

@@ -6,6 +6,22 @@ import tkinter as tk
 from ui.windows.gamefilter_window import GameFilterWindow
 from ui.windows.main.main_gamefilter_warning import show_game_filter_warning_dialog
 from core.game_presets import get_active_preset_id
+from core.game_filter_settings import (
+    read_game_filter_protocol_mode,
+    remove_game_filter_protocol_mode_file,
+    write_game_filter_protocol_mode,
+    GAMEFILTER_PROTOCOL_BOTH,
+    GAMEFILTER_PROTOCOL_TCP,
+    GAMEFILTER_PROTOCOL_UDP,
+)
+
+
+def _game_filter_protocol_label(mode: str) -> str:
+    if mode == GAMEFILTER_PROTOCOL_TCP:
+        return "только TCP"
+    if mode == GAMEFILTER_PROTOCOL_UDP:
+        return "только UDP"
+    return "TCP и UDP"
 
 
 class MainGameFilterMixin:
@@ -29,7 +45,12 @@ class MainGameFilterMixin:
 
         # Определяем текст в зависимости от состояния
         if self.is_game_filter_enabled():
-            status_text = "GameFilter включен\nНажмите для выключения"
+            mode = read_game_filter_protocol_mode()
+            status_text = (
+                "GameFilter включен\n"
+                f"Подстановка {{GameFilter}}: {_game_filter_protocol_label(mode)}\n"
+                "Нажмите для настроек / выключения"
+            )
         else:
             status_text = "GameFilter выключен\nНажмите для включения"
 
@@ -65,11 +86,11 @@ class MainGameFilterMixin:
         gamefilter_window = GameFilterWindow(self.root, self)
         gamefilter_window.run()
 
-    def _show_game_filter_warning(self):
+    def _show_game_filter_warning(self, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH):
         """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
-        show_game_filter_warning_dialog(self)
+        show_game_filter_warning_dialog(self, protocol_mode)
 
-    def _on_warning_accept(self, warning_window):
+    def _on_warning_accept(self, warning_window, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH):
         """Обработчик нажатия на кнопку 'Понятно, включить'"""
         warning_window.destroy()
 
@@ -78,9 +99,9 @@ class MainGameFilterMixin:
             return
 
         # Выполняем включение Game Filter
-        self._perform_game_filter_toggle()
+        self._perform_game_filter_toggle(protocol_mode_for_enable=protocol_mode)
 
-    def _perform_game_filter_toggle(self):
+    def _perform_game_filter_toggle(self, protocol_mode_for_enable: str | None = None):
         """Выполняет фактическое переключение Game Filter"""
         try:
             # Получаем текущее состояние
@@ -89,6 +110,7 @@ class MainGameFilterMixin:
             if was_enabled:
                 # Удаляем файл (выключаем)
                 os.remove(self.game_filter_file)
+                remove_game_filter_protocol_mode_file()
                 new_icon = "⌨"
                 status_message = "Game Filter выключен"
                 print("🎮🔴 Game Filter выключен")
@@ -103,9 +125,14 @@ class MainGameFilterMixin:
                 with open(self.game_filter_file, 'w') as f:
                     pass  # Просто создаем пустой файл
 
+                mode = protocol_mode_for_enable or GAMEFILTER_PROTOCOL_BOTH
+                write_game_filter_protocol_mode(mode)
+
                 new_icon = "⌨"
-                status_message = "Game Filter включен"
-                print("🎮🟢 Game Filter включен")
+                status_message = (
+                    f"Game Filter включен ({_game_filter_protocol_label(mode)})"
+                )
+                print(f"🎮🟢 Game Filter включен, режим: {mode}")
 
             # Меняем иконку
             self.game_filter_indicator.config(text=new_icon)
