@@ -152,11 +152,29 @@ merge_unique_lists \
 GAME_FILTER_TCP_VALUE="12"  # значение по умолчанию для TCP
 GAME_FILTER_UDP_VALUE="12"  # значение по умолчанию для UDP
 GAME_FILTER_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.enable"
+GAME_FILTER_MODE_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.mode"
+GAME_FILTER_MODE="both"
+if [ -f "$GAME_FILTER_MODE_FILE" ]; then
+    GAME_FILTER_MODE=$(head -n 1 "$GAME_FILTER_MODE_FILE" | tr -d '\r\n' | tr '[:upper:]' '[:lower:]')
+fi
+if [ "$GAME_FILTER_MODE" != "tcp" ] && [ "$GAME_FILTER_MODE" != "udp" ] && [ "$GAME_FILTER_MODE" != "both" ]; then
+    GAME_FILTER_MODE="both"
+fi
 
 if [ -f "$GAME_FILTER_FILE" ]; then
-    echo "Game filter enabled file found. Using game ports range."
-    GAME_FILTER_TCP_VALUE="80,443,27015,27036"
-    GAME_FILTER_UDP_VALUE="3000-3010,27015,27031-27036"
+    echo "Game filter enabled file found. Using game ports range (mode: $GAME_FILTER_MODE)."
+    GAME_FILTER_TCP_PORTS="80,443,27000-27100"
+    GAME_FILTER_UDP_PORTS="3000-3010,5050-5060,27000-27100"
+    if [ "$GAME_FILTER_MODE" = "tcp" ]; then
+        GAME_FILTER_TCP_VALUE="$GAME_FILTER_TCP_PORTS"
+        GAME_FILTER_UDP_VALUE="12"
+    elif [ "$GAME_FILTER_MODE" = "udp" ]; then
+        GAME_FILTER_TCP_VALUE="12"
+        GAME_FILTER_UDP_VALUE="$GAME_FILTER_UDP_PORTS"
+    else
+        GAME_FILTER_TCP_VALUE="$GAME_FILTER_TCP_PORTS"
+        GAME_FILTER_UDP_VALUE="$GAME_FILTER_UDP_PORTS"
+    fi
 else
     echo "Game filter enabled file not found. Using default value 12."
 fi
@@ -173,7 +191,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-while IFS= read -r line; do
+while IFS= read -r line || [[ -n "$line" ]]; do
     # ЗАМЕНЯЕМ ПУТИ НА ВРЕМЕННЫЕ
     line="${line//\{list_general\}/$TEMP_DIR/list-general_merged.txt}"
     line="${line//\{list_exclude\}/$TEMP_DIR/list-exclude_merged.txt}"
