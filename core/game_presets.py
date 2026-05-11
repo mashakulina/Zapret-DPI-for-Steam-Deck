@@ -51,6 +51,14 @@ GAME_PRESETS = {
     "fall_guys": {
         "name": "Fall Guys (Epic)",
     },
+    "elite_dangerous": {
+        "name": "Elite Dangerous",
+        "lines": [
+            "--filter-tcp=443 --hostlist-domains=api.orerve.net,orerve.net,frontier.co.uk,frontierstore.net,auth.frontierstore.net,elitedangerous.com --dpi-desync=hostfakesplit --dpi-desync-hostfakesplit-mod=host=amd.com --dpi-desync-fooling=ts --new",
+        ],
+        "game_filter_tcp": "{GameFilter}",
+        "game_filter_udp": "4380,5100,19364,27000-27031,27036",
+    },
 }
 
 def get_manager_dir():

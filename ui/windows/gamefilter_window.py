@@ -508,6 +508,18 @@ class GamePresetWindow:
         with open(target_path, "w", encoding="utf-8") as f:
             f.write("203.0.113.113/32")
 
+    def _apply_ipset_loaded(self):
+        """Копирует utils/ipset-all.txt в files/lists/ipset-all.txt (режим loaded в IPSet Filter)."""
+        source_path = os.path.join(self.manager_dir, "utils", "ipset-all.txt")
+        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
+        if not os.path.isfile(source_path):
+            raise FileNotFoundError(f"Файл не найден: {source_path}")
+        with open(source_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
     def apply_preset(self):
         """Применяет выбранный пресет: файл-маркер в utils и запись в config.txt."""
         if not self.main_window.ensure_sudo_password():
@@ -526,6 +538,8 @@ class GamePresetWindow:
                     self._remove_fallguys_ipset()
                 else:
                     remove_preset_lines_from_config(active_before, self.manager_dir)
+                if active_before == "elite_dangerous":
+                    self._set_ipset_none()
                 restore_gamefilter_for_preset(active_before, self.manager_dir)
             clear_active_preset(self.manager_dir)
             show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
@@ -558,6 +572,8 @@ class GamePresetWindow:
                 self._remove_fallguys_ipset()
             else:
                 remove_preset_lines_from_config(active_before, self.manager_dir)
+            if active_before == "elite_dangerous":
+                self._set_ipset_none()
             restore_gamefilter_for_preset(active_before, self.manager_dir)
 
         set_active_preset(preset_id, self.manager_dir)
@@ -573,6 +589,8 @@ class GamePresetWindow:
             elif preset_id == "fall_guys":
                 self._apply_fallguys_domains()
                 self._apply_fallguys_ipset()
+            elif preset_id == "elite_dangerous":
+                self._apply_ipset_loaded()
             if lines:
                 existing = ""
                 if os.path.exists(config_path):
