@@ -3,6 +3,7 @@ import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.strategy_data import natural_sort_key
 from ui.windows.strategy_window import StrategyWindow
 from ui.windows.custom_strategy_window import CustomStrategyWindow
 from ui.windows.strategy_tester_window import StrategyTesterWindow
@@ -237,7 +238,7 @@ class StrategySelectionWindow:
 
                 # Сортируем и фильтруем
                 sorted_files = []
-                for file in sorted(strategy_files):
+                for file in sorted(strategy_files, key=natural_sort_key):
                     if not file.startswith('.'):
                         sorted_files.append(file)
 

@@ -1,5 +1,11 @@
 import os
+import re
 from core.game_presets import reapply_active_preset_to_config
+
+
+def natural_sort_key(text):
+    """Ключ сортировки: числовые фрагменты сравниваются как числа (ALT9 < ALT10)."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r'(\d+)', text)]
 
 # Данные стратегий для сборки своей стратегии
 STRATEGY_OPTIONS = {

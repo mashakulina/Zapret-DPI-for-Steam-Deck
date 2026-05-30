@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 import re
 import os
+from core.strategy_data import natural_sort_key
 
 class StrategyTester:
     """
@@ -1238,8 +1239,8 @@ class StrategyTester:
                     if strategy_name not in strategies:
                         strategies.append(strategy_name)
 
-            # Сортируем по алфавиту
-            strategies.sort()
+            # Сортируем с учётом чисел в имени (ALT9 < ALT10)
+            strategies.sort(key=natural_sort_key)
 
             print(f"  Найдено стратегий: {len(strategies)}")
             for strategy in strategies:

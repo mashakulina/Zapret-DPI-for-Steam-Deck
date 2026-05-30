@@ -6,6 +6,7 @@ from core.service_manager import ServiceManager
 from core.game_presets import reapply_active_preset_to_config
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from core.dpi_utils import place_toplevel_centered_on_parent
+from core.strategy_data import natural_sort_key
 
 class StrategyWindow:
     def __init__(self, parent):
@@ -285,7 +286,7 @@ class StrategyWindow:
                                 if os.path.isfile(os.path.join(strategy_dir, f))]
 
                 sorted_files = []
-                for file in sorted(strategy_files):
+                for file in sorted(strategy_files, key=natural_sort_key):
                     if not file.startswith('.'):
                         sorted_files.append(file)
 
