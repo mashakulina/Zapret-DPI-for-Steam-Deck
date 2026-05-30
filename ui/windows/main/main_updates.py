@@ -35,7 +35,7 @@ class MainUpdatesMixin:
                         'updater_class': 'ZapretBundleUpdater',
                         'download_url': bundle_info.get('download_url'),
                     })
-                    print("🔄 Доступно полное обновление")
+                    print("🔄 Доступно обновление")
             except Exception as e:
                 print(f"⚠️ Проверка обновления: {e}")
 

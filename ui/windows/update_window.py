@@ -134,7 +134,7 @@ class UpdateWindow:
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
         main_frame.pack(fill=tk.X)
 
-        tk.Label(main_frame, text="Обновление компонентов",
+        tk.Label(main_frame, text="Обновление",
                 font=("Arial", 14, "bold"), fg='white', bg='#182030').pack(anchor=tk.CENTER, pady=(0, 15))
 
         info_frame = tk.Frame(main_frame, bg='#182030')
@@ -253,7 +253,7 @@ class UpdateWindow:
         """Обновляет текст и действие кнопки"""
         if self.bundle_update_available:
             self.action_btn.config(
-                text=f"Обновить полный пакет до v{self.bundle_version}",
+                text=f"Обновить до v{self.bundle_version}",
                 bg='#15354D',
                 command=self.show_update_dialog,
             )
@@ -283,7 +283,7 @@ class UpdateWindow:
             success_count = 0
 
             if self.bundle_update_available and self.bundle_update_data:
-                self.log_message(f"\n📦 Полное обновление до v{self.bundle_version}...")
+                self.log_message(f"\n📦 Обновление до v{self.bundle_version}...")
                 download_url = self.bundle_update_data.get("download_url")
                 if download_url:
 
@@ -297,13 +297,13 @@ class UpdateWindow:
                         download_url, self.root, progress_callback
                     )
                     if success:
-                        self.log_message(f"✅ Полное обновление до v{self.bundle_version} завершено!")
+                        self.log_message(f"✅ Обновление до v{self.bundle_version} завершено!")
                         success_count += 1
                         self.bundle_update_available = False
                     else:
-                        self.log_message("❌ Не удалось выполнить полное обновление")
+                        self.log_message("❌ Не удалось выполнить обновление")
                 else:
-                    self.log_message("❌ URL полного пакета не найден")
+                    self.log_message("❌ URL пакета не найден")
 
             self.log_message(f"\n📊 Обновление завершено. Успешных шагов: {success_count}")
 
