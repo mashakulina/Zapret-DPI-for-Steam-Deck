@@ -119,6 +119,14 @@ class MainStartupMixin:
                         "available": latest_b,
                         "name": "Zapret DPI Manager",
                     }
+                    try:
+                        from core.github_release import fetch_release_notes_for_version
+
+                        notes = fetch_release_notes_for_version(latest_b)
+                        if notes:
+                            bundle_update_info["release_notes"] = notes
+                    except Exception as e:
+                        print(f"⚠️ Описание релиза (GitHub API): {e}")
             except Exception as e:
                 print(f"⚠️ Проверка полного обновления: {e}")
 

@@ -11,9 +11,23 @@ from core.dpi_utils import (
 )
 
 
+def append_release_notes_to_log(log_fn, version: str | None, notes: str | None) -> None:
+    """Пишет описание релиза в лог окна обновления."""
+    text = (notes or "").strip()
+    if not text:
+        return
+    ver = (version or "").strip()
+    header = f"📋 Описание релиза v{ver}:" if ver else "📋 Описание релиза:"
+    log_fn(header)
+    for line in text.splitlines():
+        log_fn(line)
+    log_fn("")
+
+
 class UpdateWindow:
-    def __init__(self, parent):
+    def __init__(self, parent, *, pending_update=None):
         self.parent = parent
+        self.pending_update = pending_update
         self.root = tk.Toplevel(parent)
         self.setup_window()
 
@@ -37,6 +51,78 @@ class UpdateWindow:
             margin_height=12,
         )
         center_toplevel_on_parent(self.root, self.parent)
+
+        if self.pending_update:
+            self.root.after_idle(self._apply_pending_update)
+
+    def _apply_pending_update(self):
+        """Подставляет данные из уведомления о старте и показывает описание в логе."""
+        pu = self.pending_update
+        if not pu:
+            return
+        available = pu.get("available")
+        if not available:
+            return
+
+        self.clear_log()
+        notes = (pu.get("release_notes") or "").strip()
+        if notes:
+            append_release_notes_to_log(self.log_message, available, notes)
+        else:
+            thread = threading.Thread(
+                target=self._fetch_and_log_notes_thread,
+                args=(available,),
+                daemon=True,
+            )
+            thread.start()
+
+        download_url = pu.get("download_url")
+        if download_url:
+            self.bundle_version = available
+            self.bundle_update_available = True
+            self.bundle_update_data = {"download_url": download_url}
+            self.update_action_button()
+        else:
+            thread = threading.Thread(
+                target=self._resolve_pending_download_url,
+                args=(available,),
+                daemon=True,
+            )
+            thread.start()
+
+    def _resolve_pending_download_url(self, version: str) -> None:
+        try:
+            bundle_version, bundle_data = self.bundle_updater.check_for_updates()
+            if bundle_version and bundle_data and bundle_data.get("download_url"):
+
+                def _apply():
+                    self.bundle_version = bundle_version
+                    self.bundle_update_available = True
+                    self.bundle_update_data = bundle_data
+                    self.update_action_button()
+
+                self.root.after(0, _apply)
+        except Exception as e:
+            self.root.after(
+                0,
+                lambda err=e: self.log_message(f"⚠️ Не удалось подготовить обновление: {err}"),
+            )
+
+    def _fetch_and_log_notes_thread(self, version: str) -> None:
+        try:
+            from core.github_release import fetch_release_notes_for_version
+
+            notes = fetch_release_notes_for_version(version)
+
+            def _append():
+                append_release_notes_to_log(self.log_message, version, notes)
+
+            self.root.after(0, _append)
+        except Exception as e:
+            self.root.after(
+                0,
+                lambda err=e: self.log_message(f"⚠️ Не удалось загрузить описание релиза: {err}"),
+            )
 
     def setup_window(self):
         self.root.title("Обновление")
@@ -114,6 +200,15 @@ class UpdateWindow:
         """Очищает лог"""
         self.log_text.delete(1.0, tk.END)
 
+    def _log_release_notes_from_api(self, version: str) -> None:
+        try:
+            from core.github_release import fetch_release_notes_for_version
+
+            notes = fetch_release_notes_for_version(version)
+            append_release_notes_to_log(self.log_message, version, notes)
+        except Exception as e:
+            self.log_message(f"⚠️ Не удалось загрузить описание релиза: {e}")
+
     def check_or_update(self):
         """Проверяет обновления или выполняет обновление"""
         if not self.bundle_update_available:
@@ -141,6 +236,7 @@ class UpdateWindow:
                 self.bundle_version = bundle_version
                 self.bundle_update_data = bundle_data
                 self.log_message(f"📢 Доступно полное обновление: v{bundle_version}")
+                self._log_release_notes_from_api(bundle_version)
                 self.root.after(0, self.update_action_button)
             else:
                 self.bundle_update_available = False
@@ -238,8 +334,8 @@ class UpdateWindow:
         self.root.wait_window()
 
 
-def show_update_window(parent):
-    window = UpdateWindow(parent)
+def show_update_window(parent, *, pending_update=None):
+    window = UpdateWindow(parent, pending_update=pending_update)
     window.run()
 
 

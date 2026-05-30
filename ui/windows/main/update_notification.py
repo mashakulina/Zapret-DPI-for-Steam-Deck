@@ -1,10 +1,12 @@
 """Окно уведомления об обновлениях (вынесено из MainUpdatesMixin)."""
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from typing import Any, Protocol
 
 from core.dpi_utils import center_toplevel_on_parent, fit_toplevel_to_content
+from core.github_release import sanitize_text_for_display
 from core.tk_scale_lab_helpers import (
     dampened_hi_dpi_factor,
     logical_ui_scale,
@@ -82,7 +84,7 @@ def show_update_notification_dialog(
         wraplength=max(120, int(round(330 * f))),
     )
     _reg_font(info_label, 11.0, False)
-    info_label.pack(pady=(0, p_info_gap), fill=tk.X)
+    info_label.pack(pady=(0, int(max(6, round(8 * f)))), fill=tk.X)
 
     def _sync_info_wrap(_event=None):
         try:
@@ -150,6 +152,67 @@ def show_update_notification_dialog(
     )
     _reg_font(new_version_label, 11.0, True)
     new_version_label.pack(side=tk.LEFT, padx=(10, 0))
+
+    _release_notes = sanitize_text_for_display(bundle_update_info.get("release_notes") or "")
+    _notes_lines = max(4, int(round(5 * f)))
+
+    changes_caption = tk.Label(
+        main_frame,
+        text="Список изменений:",
+        font=("Arial", _fz(10), "bold"),
+        fg='#AAAAAA',
+        bg='#182030',
+        anchor=tk.W,
+    )
+    _reg_font(changes_caption, 10.0, True)
+    changes_caption.pack(fill=tk.X, pady=(p_block, int(max(4, round(4 * f)))))
+
+    notes_text = tk.Text(
+        main_frame,
+        height=_notes_lines,
+        width=42,
+        bg='#15354D',
+        fg='#CCCCCC',
+        wrap=tk.WORD,
+        font=("Arial", _fz(9)),
+        highlightthickness=0,
+        borderwidth=0,
+        relief=tk.FLAT,
+        cursor="arrow",
+    )
+    notes_text.pack(fill=tk.X, pady=(0, p_info_gap))
+    notes_text.insert("1.0", _release_notes or "Загрузка описания…")
+    notes_text.config(state=tk.DISABLED)
+
+    def _set_notes_content(text: str) -> None:
+        try:
+            notes_text.config(state=tk.NORMAL)
+            notes_text.delete("1.0", tk.END)
+            notes_text.insert("1.0", sanitize_text_for_display(text))
+            notes_text.config(state=tk.DISABLED)
+        except tk.TclError:
+            pass
+
+    if not _release_notes:
+        _avail_ver = bundle_update_info.get("available")
+
+        def _fetch_notes_bg() -> None:
+            loaded = ""
+            try:
+                from core.github_release import fetch_release_notes_for_version
+
+                loaded = (fetch_release_notes_for_version(_avail_ver) or "").strip()
+            except Exception:
+                pass
+            if not loaded:
+                loaded = "Описание релиза недоступно (проверьте интернет)."
+            else:
+                stored = getattr(host, "_last_bundle_update_info", None)
+                if isinstance(stored, dict):
+                    stored["release_notes"] = loaded
+            host.root.after(0, lambda t=loaded: _set_notes_content(t))
+
+        threading.Thread(target=_fetch_notes_bg, daemon=True).start()
 
     buttons_frame = tk.Frame(main_frame, bg='#182030')
     buttons_frame.pack(fill=tk.X, pady=(0, p_btn_frame))

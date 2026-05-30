@@ -1,4 +1,5 @@
 GITHUB_BASE_URL = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck"
+GITHUB_API_REPO = "mashakulina/Zapret-DPI-for-Steam-Deck"
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/mashakulina/Zapret-DPI-for-Steam-Deck/main"
 
 RELEASES_URL = "https://github.com/mashakulina/Zapret-DPI-for-Steam-Deck/releases/latest/download/"

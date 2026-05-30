@@ -178,8 +178,7 @@ class MainUISettingsMixin:
 
     def open_update_settings(self):
         """Открывает окно обновления Zapret"""
-        update_window = show_update_window(self.root)
-        update_window.run()
+        show_update_window(self.root)
 
     def uninstall_zapret(self):
         """Запускает удаление Zapret"""

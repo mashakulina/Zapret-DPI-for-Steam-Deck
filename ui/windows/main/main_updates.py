@@ -7,14 +7,16 @@ from ui.windows.main.update_notification import show_update_notification_dialog
 class MainUpdatesMixin:
     def show_update_notification(self, bundle_update_info):
         """Показывает окно уведомления об обновлениях с номерами версий"""
+        self._last_bundle_update_info = bundle_update_info
         show_update_notification_dialog(self, bundle_update_info)
 
     def open_update_window(self, notification_window):
-        """Открывает окно обновления и закрывает уведомление"""
+        """Открывает окно обновления с логом (описание релиза) и закрывает уведомление"""
         notification_window.destroy()
+        pending = getattr(self, "_last_bundle_update_info", None)
+        from ui.windows.update_window import show_update_window
 
-        thread = threading.Thread(target=self._prepare_and_show_updates, daemon=True)
-        thread.start()
+        self.root.after(0, lambda p=pending: show_update_window(self.root, pending_update=p))
 
     def _prepare_and_show_updates(self):
         """Подготавливает и показывает окно обновления"""
