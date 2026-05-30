@@ -28,7 +28,7 @@ class AutoSelectionWindow:
         self.root.grab_set()
 
         # Обработчик закрытия окна
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.protocol("WM_DELETE_WINDOW", self.go_back)
 
     def setup_ui(self):
         """Настройка интерфейса"""
@@ -75,7 +75,7 @@ class AutoSelectionWindow:
         back_button = create_hover_button(
             main_frame,
             text="Назад",
-            command=self.on_close,
+            command=self.go_back,
             **button_style
         )
         back_button.pack(pady=(10, 0))
@@ -101,6 +101,11 @@ class AutoSelectionWindow:
     def on_close(self):
         """Закрывает окно"""
         self.root.destroy()
+
+    def go_back(self):
+        """Возвращает к окну «Сменить стратегию»"""
+        self.on_close()
+        StrategySelectorWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""
@@ -133,7 +138,7 @@ class StrategySelectionWindow:
         self.root.grab_set()
 
         # Обработчик закрытия окна
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.protocol("WM_DELETE_WINDOW", self.go_back)
 
     def setup_ui(self):
         """Настройка интерфейса"""
@@ -213,7 +218,7 @@ class StrategySelectionWindow:
         back_button = create_hover_button(
             center_frame,
             text="Назад",
-            command=self.on_close,
+            command=self.go_back,
             **button_style
         )
         back_button.pack(side=tk.LEFT)
@@ -346,6 +351,11 @@ class StrategySelectionWindow:
     def on_close(self):
         """Закрывает окно"""
         self.root.destroy()
+
+    def go_back(self):
+        """Возвращает к окну «Автоподбор стратегий»"""
+        self.on_close()
+        AutoSelectionWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""

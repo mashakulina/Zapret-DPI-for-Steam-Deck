@@ -157,7 +157,7 @@ class StrategyWindow:
         back_button = create_hover_button(
             center_frame,
             text="Назад",
-            command=self.close_window,
+            command=self.go_back,
             **button_style
         )
         back_button.pack(side=tk.LEFT)
@@ -460,6 +460,12 @@ class StrategyWindow:
     def close_window(self):
         """Закрывает окно"""
         self.root.destroy()
+
+    def go_back(self):
+        """Возвращает к окну «Сменить стратегию»"""
+        self.close_window()
+        from ui.windows.strategy_selector_window import StrategySelectorWindow
+        StrategySelectorWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""

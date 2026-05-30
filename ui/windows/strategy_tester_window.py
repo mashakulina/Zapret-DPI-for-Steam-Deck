@@ -866,3 +866,6 @@ class StrategyTesterWindow:
 
         if self.window:
             self.window.destroy()
+
+        from ui.windows.strategy_selector_window import AutoSelectionWindow
+        AutoSelectionWindow(self.parent).run()
