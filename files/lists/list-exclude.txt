@@ -110,3 +110,6 @@ www.origin.com
 api.origin.com
 assets1.origin.com
 accounts3.origin.com
+max.ru
+vk.com
+steamcommunity.com
