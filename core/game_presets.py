@@ -8,9 +8,9 @@
 
 2) Поле lines: дополнительные строки в начало config.txt (Guild Wars 2 и т.п.).
 
-3) Пресеты вроде Roblox / Fall Guys: без lines — при применении дополняют пользовательские
-   списки (Roblox: list-general.txt и ipset-all.txt; Fall Guys: list-general_user.txt и
-   ipset-all_user.txt из utils/for games/, см. gamefilter_window).
+3) Пресеты вроде Roblox / Transformice / Fall Guys: без lines или с lines — при применении
+   дополняют list-general_user.txt и ipset-all_user.txt данными из utils/for games/;
+   при снятии удаляются только строки из файлов игры, пользовательские записи сохраняются.
 """
 
 import os

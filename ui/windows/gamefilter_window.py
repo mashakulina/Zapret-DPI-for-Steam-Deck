@@ -46,37 +46,70 @@ def _preset_write_lines(path, lines):
             f.write("")
 
 
-def _preset_remove_roblox_domains(manager_dir):
-    source_path = games_data_file(manager_dir, "list-general_roblox.txt")
-    target_path = os.path.join(manager_dir, "files", "lists", "list-general.txt")
+def _list_general_user_path(manager_dir):
+    return os.path.join(manager_dir, "files", "lists", "list-general_user.txt")
+
+
+def _ipset_all_user_path(manager_dir):
+    return os.path.join(manager_dir, "files", "lists", "ipset-all_user.txt")
+
+
+def _preset_remove_list_general_user_domains(manager_dir, games_list_file):
+    source_path = games_data_file(manager_dir, games_list_file)
     source_domains = set(_preset_read_nonempty_lines(source_path))
     if not source_domains:
         return
-    current_domains = _preset_read_nonempty_lines(target_path)
+    current_domains = _preset_read_nonempty_lines(_list_general_user_path(manager_dir))
     filtered_domains = [domain for domain in current_domains if domain not in source_domains]
-    _preset_write_lines(target_path, filtered_domains)
+    _preset_write_lines(_list_general_user_path(manager_dir), filtered_domains)
 
 
-def _preset_remove_fallguys_domains(manager_dir):
-    source_path = games_data_file(manager_dir, "list-general_fallguys.txt")
-    target_path = os.path.join(manager_dir, "files", "lists", "list-general_user.txt")
-    source_domains = set(_preset_read_nonempty_lines(source_path))
+def _preset_apply_list_general_user_domains(manager_dir, games_list_file):
+    source_path = games_data_file(manager_dir, games_list_file)
+    source_domains = _preset_read_nonempty_lines(source_path)
     if not source_domains:
-        return
-    current_domains = _preset_read_nonempty_lines(target_path)
-    filtered_domains = [domain for domain in current_domains if domain not in source_domains]
-    _preset_write_lines(target_path, filtered_domains)
+        raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
+    current_domains = _preset_read_nonempty_lines(_list_general_user_path(manager_dir))
+    merged_domains = sorted(set(current_domains).union(set(source_domains)))
+    _preset_write_lines(_list_general_user_path(manager_dir), merged_domains)
 
 
-def _preset_remove_fallguys_ipset(manager_dir):
-    source_path = games_data_file(manager_dir, "ipset-all_fallguys.txt")
-    target_path = os.path.join(manager_dir, "files", "lists", "ipset-all_user.txt")
+def _preset_remove_ipset_user_entries(manager_dir, games_ipset_file):
+    source_path = games_data_file(manager_dir, games_ipset_file)
     source_set = set(_preset_read_nonempty_lines(source_path))
     if not source_set:
         return
-    current_entries = _preset_read_nonempty_lines(target_path)
+    current_entries = _preset_read_nonempty_lines(_ipset_all_user_path(manager_dir))
     filtered = [line for line in current_entries if line not in source_set]
-    _preset_write_lines(target_path, filtered)
+    _preset_write_lines(_ipset_all_user_path(manager_dir), filtered)
+
+
+def _preset_apply_ipset_user_entries(manager_dir, games_ipset_file):
+    source_path = games_data_file(manager_dir, games_ipset_file)
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError(f"Файл не найден: {source_path}")
+    source_entries = _preset_read_nonempty_lines(source_path)
+    if not source_entries:
+        raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
+    current_entries = _preset_read_nonempty_lines(_ipset_all_user_path(manager_dir))
+    merged = sorted(set(current_entries).union(set(source_entries)))
+    _preset_write_lines(_ipset_all_user_path(manager_dir), merged)
+
+
+def _preset_remove_roblox_domains(manager_dir):
+    _preset_remove_list_general_user_domains(manager_dir, "list-general_roblox.txt")
+
+
+def _preset_remove_roblox_ipset(manager_dir):
+    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_roblox.txt")
+
+
+def _preset_remove_fallguys_domains(manager_dir):
+    _preset_remove_list_general_user_domains(manager_dir, "list-general_fallguys.txt")
+
+
+def _preset_remove_fallguys_ipset(manager_dir):
+    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_fallguys.txt")
 
 
 def _preset_set_ipset_none(manager_dir):
@@ -92,7 +125,7 @@ def clear_active_game_preset_disk(manager_dir: str) -> None:
     if active_before:
         if active_before == "roblox":
             _preset_remove_roblox_domains(manager_dir)
-            _preset_set_ipset_none(manager_dir)
+            _preset_remove_roblox_ipset(manager_dir)
         elif active_before == "fall_guys":
             _preset_remove_fallguys_domains(manager_dir)
             _preset_remove_fallguys_ipset(manager_dir)
@@ -511,62 +544,35 @@ class GamePresetWindow:
         _preset_write_lines(path, lines)
 
     def _apply_roblox_domains(self):
-        """Добавляет домены Roblox в list-general.txt без дубликатов."""
-        source_path = games_data_file(self.manager_dir, "list-general_roblox.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
-        source_domains = self._read_nonempty_lines(source_path)
-        if not source_domains:
-            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
-        current_domains = self._read_nonempty_lines(target_path)
-        merged_domains = sorted(set(current_domains).union(set(source_domains)))
-        self._write_lines(target_path, merged_domains)
+        """Добавляет домены Roblox в list-general_user.txt без дубликатов."""
+        _preset_apply_list_general_user_domains(self.manager_dir, "list-general_roblox.txt")
 
     def _remove_roblox_domains(self):
-        """Удаляет домены Roblox из list-general.txt."""
+        """Удаляет домены Roblox из list-general_user.txt."""
         _preset_remove_roblox_domains(self.manager_dir)
 
     def _apply_roblox_ipset(self):
-        """Заменяет ipset-all.txt данными Roblox."""
-        source_path = games_data_file(self.manager_dir, "ipset-all_roblox.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
-        if not os.path.isfile(source_path):
-            raise FileNotFoundError(f"Файл не найден: {source_path}")
-        with open(source_path, "r", encoding="utf-8") as f:
-            roblox_ipset = f.read()
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, "w", encoding="utf-8") as f:
-            f.write(roblox_ipset)
+        """Добавляет CIDR Roblox в ipset-all_user.txt без дубликатов."""
+        _preset_apply_ipset_user_entries(self.manager_dir, "ipset-all_roblox.txt")
+
+    def _remove_roblox_ipset(self):
+        """Удаляет из ipset-all_user.txt записи Roblox."""
+        _preset_remove_roblox_ipset(self.manager_dir)
 
     def _apply_fallguys_domains(self):
         """Добавляет домены Fall Guys в list-general_user.txt без дубликатов."""
-        source_path = games_data_file(self.manager_dir, "list-general_fallguys.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
-        source_domains = self._read_nonempty_lines(source_path)
-        if not source_domains:
-            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
-        current_domains = self._read_nonempty_lines(target_path)
-        merged_domains = sorted(set(current_domains).union(set(source_domains)))
-        self._write_lines(target_path, merged_domains)
+        _preset_apply_list_general_user_domains(self.manager_dir, "list-general_fallguys.txt")
 
     def _remove_fallguys_domains(self):
         """Удаляет домены Fall Guys из list-general_user.txt."""
         _preset_remove_fallguys_domains(self.manager_dir)
 
     def _apply_fallguys_ipset(self):
-        """Добавляет CIDR из utils/for games/ipset-all_fallguys.txt в ipset-all_user.txt без дубликатов."""
-        source_path = games_data_file(self.manager_dir, "ipset-all_fallguys.txt")
-        target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
-        if not os.path.isfile(source_path):
-            raise FileNotFoundError(f"Файл не найден: {source_path}")
-        source_entries = self._read_nonempty_lines(source_path)
-        if not source_entries:
-            raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
-        current_entries = self._read_nonempty_lines(target_path)
-        merged = sorted(set(current_entries).union(set(source_entries)))
-        self._write_lines(target_path, merged)
+        """Добавляет CIDR Fall Guys в ipset-all_user.txt без дубликатов."""
+        _preset_apply_ipset_user_entries(self.manager_dir, "ipset-all_fallguys.txt")
 
     def _remove_fallguys_ipset(self):
-        """Удаляет из ipset-all_user.txt записи, совпадающие с utils/for games/ipset-all_fallguys.txt."""
+        """Удаляет из ipset-all_user.txt записи Fall Guys."""
         _preset_remove_fallguys_ipset(self.manager_dir)
 
     def _set_ipset_none(self):
@@ -629,7 +635,7 @@ class GamePresetWindow:
         if active_before and active_before != preset_id:
             if active_before == "roblox":
                 self._remove_roblox_domains()
-                self._set_ipset_none()
+                self._remove_roblox_ipset()
             elif active_before == "fall_guys":
                 self._remove_fallguys_domains()
                 self._remove_fallguys_ipset()
