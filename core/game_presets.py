@@ -10,7 +10,7 @@
 
 3) Пресеты вроде Roblox / Fall Guys: без lines — при применении дополняют пользовательские
    списки (Roblox: list-general.txt и ipset-all.txt; Fall Guys: list-general_user.txt и
-   ipset-all_user.txt из utils, см. gamefilter_window).
+   ipset-all_user.txt из utils/for games/, см. gamefilter_window).
 """
 
 import os
@@ -64,6 +64,11 @@ GAME_PRESETS = {
 def get_manager_dir():
     """Каталог менеджера (Zapret_DPI_Manager)."""
     return os.path.expanduser("~/Zapret_DPI_Manager")
+
+
+def games_data_file(manager_dir, filename):
+    """Путь к файлу данных игрового пресета в utils/for games/."""
+    return os.path.join(manager_dir, "utils", "for games", filename)
 
 
 def get_preset_marker_path(preset_id, manager_dir=None):

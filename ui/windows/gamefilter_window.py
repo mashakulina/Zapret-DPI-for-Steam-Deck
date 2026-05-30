@@ -23,6 +23,7 @@ from core.game_presets import (
     clear_active_preset,
     remove_preset_lines_from_config,
     get_manager_dir,
+    games_data_file,
     substitute_gamefilter_in_config,
     restore_gamefilter_for_preset,
 )
@@ -46,7 +47,7 @@ def _preset_write_lines(path, lines):
 
 
 def _preset_remove_roblox_domains(manager_dir):
-    source_path = os.path.join(manager_dir, "utils", "list-general_roblox.txt")
+    source_path = games_data_file(manager_dir, "list-general_roblox.txt")
     target_path = os.path.join(manager_dir, "files", "lists", "list-general.txt")
     source_domains = set(_preset_read_nonempty_lines(source_path))
     if not source_domains:
@@ -57,7 +58,7 @@ def _preset_remove_roblox_domains(manager_dir):
 
 
 def _preset_remove_fallguys_domains(manager_dir):
-    source_path = os.path.join(manager_dir, "utils", "list-general_fallguys.txt")
+    source_path = games_data_file(manager_dir, "list-general_fallguys.txt")
     target_path = os.path.join(manager_dir, "files", "lists", "list-general_user.txt")
     source_domains = set(_preset_read_nonempty_lines(source_path))
     if not source_domains:
@@ -68,7 +69,7 @@ def _preset_remove_fallguys_domains(manager_dir):
 
 
 def _preset_remove_fallguys_ipset(manager_dir):
-    source_path = os.path.join(manager_dir, "utils", "ipset-all_fallguys.txt")
+    source_path = games_data_file(manager_dir, "ipset-all_fallguys.txt")
     target_path = os.path.join(manager_dir, "files", "lists", "ipset-all_user.txt")
     source_set = set(_preset_read_nonempty_lines(source_path))
     if not source_set:
@@ -511,7 +512,7 @@ class GamePresetWindow:
 
     def _apply_roblox_domains(self):
         """Добавляет домены Roblox в list-general.txt без дубликатов."""
-        source_path = os.path.join(self.manager_dir, "utils", "list-general_roblox.txt")
+        source_path = games_data_file(self.manager_dir, "list-general_roblox.txt")
         target_path = os.path.join(self.manager_dir, "files", "lists", "list-general.txt")
         source_domains = self._read_nonempty_lines(source_path)
         if not source_domains:
@@ -526,7 +527,7 @@ class GamePresetWindow:
 
     def _apply_roblox_ipset(self):
         """Заменяет ipset-all.txt данными Roblox."""
-        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_roblox.txt")
+        source_path = games_data_file(self.manager_dir, "ipset-all_roblox.txt")
         target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all.txt")
         if not os.path.isfile(source_path):
             raise FileNotFoundError(f"Файл не найден: {source_path}")
@@ -538,7 +539,7 @@ class GamePresetWindow:
 
     def _apply_fallguys_domains(self):
         """Добавляет домены Fall Guys в list-general_user.txt без дубликатов."""
-        source_path = os.path.join(self.manager_dir, "utils", "list-general_fallguys.txt")
+        source_path = games_data_file(self.manager_dir, "list-general_fallguys.txt")
         target_path = os.path.join(self.manager_dir, "files", "lists", "list-general_user.txt")
         source_domains = self._read_nonempty_lines(source_path)
         if not source_domains:
@@ -552,8 +553,8 @@ class GamePresetWindow:
         _preset_remove_fallguys_domains(self.manager_dir)
 
     def _apply_fallguys_ipset(self):
-        """Добавляет CIDR из utils/ipset-all_fallguys.txt в ipset-all_user.txt без дубликатов."""
-        source_path = os.path.join(self.manager_dir, "utils", "ipset-all_fallguys.txt")
+        """Добавляет CIDR из utils/for games/ipset-all_fallguys.txt в ipset-all_user.txt без дубликатов."""
+        source_path = games_data_file(self.manager_dir, "ipset-all_fallguys.txt")
         target_path = os.path.join(self.manager_dir, "files", "lists", "ipset-all_user.txt")
         if not os.path.isfile(source_path):
             raise FileNotFoundError(f"Файл не найден: {source_path}")
@@ -565,7 +566,7 @@ class GamePresetWindow:
         self._write_lines(target_path, merged)
 
     def _remove_fallguys_ipset(self):
-        """Удаляет из ipset-all_user.txt записи, совпадающие с utils/ipset-all_fallguys.txt."""
+        """Удаляет из ipset-all_user.txt записи, совпадающие с utils/for games/ipset-all_fallguys.txt."""
         _preset_remove_fallguys_ipset(self.manager_dir)
 
     def _set_ipset_none(self):
