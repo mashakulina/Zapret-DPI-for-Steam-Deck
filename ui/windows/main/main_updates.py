@@ -11,12 +11,10 @@ class MainUpdatesMixin:
         show_update_notification_dialog(self, bundle_update_info)
 
     def open_update_window(self, notification_window):
-        """Открывает окно обновления с логом (описание релиза) и закрывает уведомление"""
+        """Закрывает уведомление и запускает обновление (окно прогресса, как раньше)."""
         notification_window.destroy()
-        pending = getattr(self, "_last_bundle_update_info", None)
-        from ui.windows.update_window import show_update_window
-
-        self.root.after(0, lambda p=pending: show_update_window(self.root, pending_update=p))
+        thread = threading.Thread(target=self._prepare_and_show_updates, daemon=True)
+        thread.start()
 
     def _prepare_and_show_updates(self):
         """Подготавливает и показывает окно обновления"""
