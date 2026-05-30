@@ -8,9 +8,12 @@
 
 2) Поле lines: дополнительные строки в начало config.txt (Guild Wars 2 и т.п.).
 
-3) Пресеты вроде Roblox / Transformice / Fall Guys: без lines или с lines — при применении
-   дополняют list-general_user.txt и ipset-all_user.txt данными из utils/for games/;
+3) Пресеты вроде Roblox / Transformice / Fall Guys / Phasmophobia / Peak: без lines или с lines —
+   при применении дополняют list-general_user.txt и ipset-all_user.txt данными из utils/for games/;
    при снятии удаляются только строки из файлов игры, пользовательские записи сохраняются.
+
+4) Поле standalone_gamefilter_mode (например udp): при применении пресета автоматически включается
+   отдельный GameFilter с выбранным режимом подстановки {GameFilter}; при снятии — выключается.
 """
 
 import os
@@ -48,8 +51,23 @@ GAME_PRESETS = {
         "game_filter_tcp": "{GameFilter}",
         "game_filter_udp": "49152-65535",
     },
+    "transformice": {
+        "name": "Transformice",
+        "lines": [
+            "--filter-tcp=11801,12801,13801,14801 --ipset-ip=51.38.60.113/32,193.70.81.30/32 --dpi-desync=fake --dpi-desync-any-protocol=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=8 --dpi-desync-cutoff=n4 --new",
+            "--filter-tcp=80 --hostlist-domains=transformice.com,www.transformice.com,static.transformice.com,data.atelier801.com,atelier801.com --dpi-desync=fake --dpi-desync-fake-http={tlsmax} --dpi-desync-fooling=ts --dpi-desync-repeats=8 --new",
+        ],
+    },
     "fall_guys": {
         "name": "Fall Guys (Epic)",
+    },
+    "phasmophobia": {
+        "name": "Phasmophobia",
+        "standalone_gamefilter_mode": "udp",
+    },
+    "peak": {
+        "name": "Peak",
+        "standalone_gamefilter_mode": "udp",
     },
     "elite_dangerous": {
         "name": "Elite Dangerous",

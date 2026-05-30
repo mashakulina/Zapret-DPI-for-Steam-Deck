@@ -77,3 +77,14 @@ def disable_standalone_gamefilter(manager_dir: str | None = None) -> None:
     except OSError:
         pass
     remove_game_filter_protocol_mode_file(manager_dir)
+
+
+def enable_standalone_gamefilter(mode: str, manager_dir: str | None = None) -> None:
+    """Включает отдельный GameFilter с заданным режимом TCP/UDP. Без перезапуска службы."""
+    if manager_dir is None:
+        manager_dir = get_manager_dir()
+    enable_path = get_game_filter_enable_file(manager_dir)
+    os.makedirs(os.path.dirname(enable_path), exist_ok=True)
+    with open(enable_path, "w", encoding="utf-8"):
+        pass
+    write_game_filter_protocol_mode(mode, manager_dir)

@@ -12,6 +12,7 @@ from core.game_filter_settings import (
     GAMEFILTER_PROTOCOL_TCP,
     GAMEFILTER_PROTOCOL_UDP,
     disable_standalone_gamefilter,
+    enable_standalone_gamefilter,
     normalize_game_filter_protocol_mode,
     read_game_filter_protocol_mode,
     write_game_filter_protocol_mode,
@@ -104,12 +105,41 @@ def _preset_remove_roblox_ipset(manager_dir):
     _preset_remove_ipset_user_entries(manager_dir, "ipset-all_roblox.txt")
 
 
+def _preset_remove_transformice_domains(manager_dir):
+    _preset_remove_list_general_user_domains(manager_dir, "list-general_transformice.txt")
+
+
+def _preset_remove_transformice_ipset(manager_dir):
+    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_transformice.txt")
+
+
 def _preset_remove_fallguys_domains(manager_dir):
     _preset_remove_list_general_user_domains(manager_dir, "list-general_fallguys.txt")
 
 
 def _preset_remove_fallguys_ipset(manager_dir):
     _preset_remove_ipset_user_entries(manager_dir, "ipset-all_fallguys.txt")
+
+
+def _preset_remove_phasmophobia_domains(manager_dir):
+    _preset_remove_list_general_user_domains(manager_dir, "list-general_phasmophobia.txt")
+
+
+def _preset_remove_phasmophobia_ipset(manager_dir):
+    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_phasmophobia.txt")
+
+
+def _preset_remove_peak_domains(manager_dir):
+    _preset_remove_list_general_user_domains(manager_dir, "list-general_peak.txt")
+
+
+def _preset_remove_peak_ipset(manager_dir):
+    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_peak.txt")
+
+
+def _preset_disable_auto_gamefilter(manager_dir, preset_id):
+    if GAME_PRESETS.get(preset_id, {}).get("standalone_gamefilter_mode"):
+        disable_standalone_gamefilter(manager_dir)
 
 
 def _preset_set_ipset_none(manager_dir):
@@ -126,13 +156,24 @@ def clear_active_game_preset_disk(manager_dir: str) -> None:
         if active_before == "roblox":
             _preset_remove_roblox_domains(manager_dir)
             _preset_remove_roblox_ipset(manager_dir)
+        elif active_before == "transformice":
+            _preset_remove_transformice_domains(manager_dir)
+            _preset_remove_transformice_ipset(manager_dir)
+            remove_preset_lines_from_config(active_before, manager_dir)
         elif active_before == "fall_guys":
             _preset_remove_fallguys_domains(manager_dir)
             _preset_remove_fallguys_ipset(manager_dir)
+        elif active_before == "phasmophobia":
+            _preset_remove_phasmophobia_domains(manager_dir)
+            _preset_remove_phasmophobia_ipset(manager_dir)
+        elif active_before == "peak":
+            _preset_remove_peak_domains(manager_dir)
+            _preset_remove_peak_ipset(manager_dir)
         else:
             remove_preset_lines_from_config(active_before, manager_dir)
         if active_before == "elite_dangerous":
             _preset_set_ipset_none(manager_dir)
+        _preset_disable_auto_gamefilter(manager_dir, active_before)
         restore_gamefilter_for_preset(active_before, manager_dir)
     clear_active_preset(manager_dir)
 
@@ -559,6 +600,22 @@ class GamePresetWindow:
         """Удаляет из ipset-all_user.txt записи Roblox."""
         _preset_remove_roblox_ipset(self.manager_dir)
 
+    def _apply_transformice_domains(self):
+        """Добавляет домены Transformice в list-general_user.txt без дубликатов."""
+        _preset_apply_list_general_user_domains(self.manager_dir, "list-general_transformice.txt")
+
+    def _remove_transformice_domains(self):
+        """Удаляет домены Transformice из list-general_user.txt."""
+        _preset_remove_transformice_domains(self.manager_dir)
+
+    def _apply_transformice_ipset(self):
+        """Добавляет CIDR Transformice в ipset-all_user.txt без дубликатов."""
+        _preset_apply_ipset_user_entries(self.manager_dir, "ipset-all_transformice.txt")
+
+    def _remove_transformice_ipset(self):
+        """Удаляет из ipset-all_user.txt записи Transformice."""
+        _preset_remove_transformice_ipset(self.manager_dir)
+
     def _apply_fallguys_domains(self):
         """Добавляет домены Fall Guys в list-general_user.txt без дубликатов."""
         _preset_apply_list_general_user_domains(self.manager_dir, "list-general_fallguys.txt")
@@ -574,6 +631,38 @@ class GamePresetWindow:
     def _remove_fallguys_ipset(self):
         """Удаляет из ipset-all_user.txt записи Fall Guys."""
         _preset_remove_fallguys_ipset(self.manager_dir)
+
+    def _apply_phasmophobia_domains(self):
+        """Добавляет домены Phasmophobia в list-general_user.txt без дубликатов."""
+        _preset_apply_list_general_user_domains(self.manager_dir, "list-general_phasmophobia.txt")
+
+    def _remove_phasmophobia_domains(self):
+        """Удаляет домены Phasmophobia из list-general_user.txt."""
+        _preset_remove_phasmophobia_domains(self.manager_dir)
+
+    def _apply_phasmophobia_ipset(self):
+        """Добавляет CIDR Phasmophobia в ipset-all_user.txt без дубликатов."""
+        _preset_apply_ipset_user_entries(self.manager_dir, "ipset-all_phasmophobia.txt")
+
+    def _remove_phasmophobia_ipset(self):
+        """Удаляет из ipset-all_user.txt записи Phasmophobia."""
+        _preset_remove_phasmophobia_ipset(self.manager_dir)
+
+    def _apply_peak_domains(self):
+        """Добавляет домены Peak в list-general_user.txt без дубликатов."""
+        _preset_apply_list_general_user_domains(self.manager_dir, "list-general_peak.txt")
+
+    def _remove_peak_domains(self):
+        """Удаляет домены Peak из list-general_user.txt."""
+        _preset_remove_peak_domains(self.manager_dir)
+
+    def _apply_peak_ipset(self):
+        """Добавляет CIDR Peak в ipset-all_user.txt без дубликатов."""
+        _preset_apply_ipset_user_entries(self.manager_dir, "ipset-all_peak.txt")
+
+    def _remove_peak_ipset(self):
+        """Удаляет из ipset-all_user.txt записи Peak."""
+        _preset_remove_peak_ipset(self.manager_dir)
 
     def _set_ipset_none(self):
         """Устанавливает IPSetFilter в none."""
@@ -614,36 +703,54 @@ class GamePresetWindow:
             show_error(self.root, "Ошибка", "Пресет не найден.")
             return
 
-        had_standalone_gf = self.main_window.is_game_filter_enabled()
-        disable_standalone_gamefilter(self.manager_dir)
-        if had_standalone_gf:
-            if hasattr(self.main_window, "show_status_message"):
-                self.main_window.show_status_message(
-                    "Отдельный GameFilter выключен: используется только пресет игры",
-                    warning=True,
-                )
-            if hasattr(self.main_window, "update_game_filter_indicator"):
-                self.main_window.update_game_filter_indicator()
-
         preset = GAME_PRESETS[preset_id]
         lines = preset.get("lines") or []
         tcp = preset.get("game_filter_tcp")
         udp = preset.get("game_filter_udp")
         name = preset["name"]
+        auto_gf_mode = preset.get("standalone_gamefilter_mode")
 
         active_before = get_active_preset_id(self.manager_dir)
         if active_before and active_before != preset_id:
             if active_before == "roblox":
                 self._remove_roblox_domains()
                 self._remove_roblox_ipset()
+            elif active_before == "transformice":
+                self._remove_transformice_domains()
+                self._remove_transformice_ipset()
+                remove_preset_lines_from_config(active_before, self.manager_dir)
             elif active_before == "fall_guys":
                 self._remove_fallguys_domains()
                 self._remove_fallguys_ipset()
+            elif active_before == "phasmophobia":
+                self._remove_phasmophobia_domains()
+                self._remove_phasmophobia_ipset()
+            elif active_before == "peak":
+                self._remove_peak_domains()
+                self._remove_peak_ipset()
             else:
                 remove_preset_lines_from_config(active_before, self.manager_dir)
             if active_before == "elite_dangerous":
                 self._set_ipset_none()
+            _preset_disable_auto_gamefilter(self.manager_dir, active_before)
             restore_gamefilter_for_preset(active_before, self.manager_dir)
+
+        if auto_gf_mode:
+            enable_standalone_gamefilter(
+                normalize_game_filter_protocol_mode(auto_gf_mode),
+                self.manager_dir,
+            )
+        else:
+            had_standalone_gf = self.main_window.is_game_filter_enabled()
+            disable_standalone_gamefilter(self.manager_dir)
+            if had_standalone_gf:
+                if hasattr(self.main_window, "show_status_message"):
+                    self.main_window.show_status_message(
+                        "Отдельный GameFilter выключен: используется только пресет игры",
+                        warning=True,
+                    )
+                if hasattr(self.main_window, "update_game_filter_indicator"):
+                    self.main_window.update_game_filter_indicator()
 
         set_active_preset(preset_id, self.manager_dir)
 
@@ -655,9 +762,18 @@ class GamePresetWindow:
             if preset_id == "roblox":
                 self._apply_roblox_domains()
                 self._apply_roblox_ipset()
+            elif preset_id == "transformice":
+                self._apply_transformice_domains()
+                self._apply_transformice_ipset()
             elif preset_id == "fall_guys":
                 self._apply_fallguys_domains()
                 self._apply_fallguys_ipset()
+            elif preset_id == "phasmophobia":
+                self._apply_phasmophobia_domains()
+                self._apply_phasmophobia_ipset()
+            elif preset_id == "peak":
+                self._apply_peak_domains()
+                self._apply_peak_ipset()
             elif preset_id == "elite_dangerous":
                 self._apply_ipset_loaded()
             if lines:
