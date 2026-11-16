@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 # Добавляем путь к core для импорта strategy_tester
 sys.path.append(str(Path(__file__).parent.parent.parent / 'core'))
 
-from core.game_presets import reapply_active_preset_to_config
+from core.game_presets import reapply_active_preset_to_config, preset_switch_transaction
 
 class OutputRedirector:
     """Перенаправляет вывод print в GUI окно"""
@@ -45,6 +45,7 @@ class StrategyTesterWindow:
         self.project_root = Path(project_root)
         self.strategies_to_test = strategies_to_test  # Сохраняем переданные стратегии
         self.window = None
+        self.closed = threading.Event()
         self.testing = False
         self.results = []
         self.current_tester = None
@@ -74,6 +75,7 @@ class StrategyTesterWindow:
             return
 
         self.window = tk.Toplevel(self.parent)
+        self.window.bind("<Destroy>", self._on_destroy, add="+")
         self.window.title("Автоподбор стратегий")
         self.window.configure(bg='#182030')
 
@@ -83,7 +85,7 @@ class StrategyTesterWindow:
         )
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.window.mainloop()
+        self.window.wait_window()
 
 
 
@@ -266,10 +268,37 @@ class StrategyTesterWindow:
         else:
             self.stop_test()   # Останавливаем тест
 
+    def _on_destroy(self, event):
+        if event.widget is self.window:
+            self.closed.set()
+            self.testing = False
+
+    def _schedule_ui(self, callback, *args):
+        """Отбрасывает обновления закрытой страницы, в том числе уже в очереди."""
+        if self.closed.is_set():
+            return
+
+        def deliver():
+            if self.closed.is_set():
+                return
+            try:
+                if self.window is not None and self.window.winfo_exists():
+                    callback(*args)
+            except (tk.TclError, RuntimeError):
+                # Окно/интерпретатор могли закрыться во время доставки.
+                pass
+
+        try:
+            # Регистрируем callback на живом предке: destroy страницы не
+            # удалит Tcl-команду до обработки уже поставленного события.
+            self.parent.after(0, deliver)
+        except (tk.TclError, RuntimeError):
+            pass
+
     def log_message(self, message, color='white'):
         """Добавляет сообщение в область вывода (безопасно для потоков)"""
         # Используем after для безопасного обновления GUI из другого потока
-        self.window.after(0, self._log_message_thread_safe, message, color)
+        self._schedule_ui(self._log_message_thread_safe, message, color)
 
     def _log_message_thread_safe(self, message, color):
         """Безопасное добавление сообщения в главном потоке"""
@@ -331,6 +360,8 @@ class StrategyTesterWindow:
         password_window = SudoPasswordWindow(self.window)
         password = password_window.run()
 
+        if self.closed.is_set():
+            return
         if not password:
             self.log_message("❌ Тестирование отменено: не введен пароль sudo", "#ff3b30")
             return
@@ -430,7 +461,7 @@ class StrategyTesterWindow:
 
             # Проверяем, была ли остановка
             if not self.testing:
-                self.window.after(0, self.log_message, "\n⏹️ Тестирование остановлено пользователем", "#ff9500")
+                self._schedule_ui(self.log_message, "\n⏹️ Тестирование остановлено пользователем", "#ff9500")
                 return
 
             # Восстанавливаем stdout
@@ -636,7 +667,7 @@ class StrategyTesterWindow:
                 if report_path.exists():
                     html_files = list(report_path.glob("*.html"))
                     if html_files:
-                        self.window.after(0, lambda: self.report_button.config(state=tk.NORMAL))
+                        self._schedule_ui(lambda: self.report_button.config(state=tk.NORMAL))
                         latest_report = max(html_files, key=lambda x: x.stat().st_mtime)
                         self.log_message(f"\n📄 HTML отчет сохранен: {latest_report.name}", "#4fc3f7")
 
@@ -669,7 +700,7 @@ class StrategyTesterWindow:
                 pass
 
             # Восстанавливаем состояние кнопок
-            self.window.after(0, self.on_test_complete)
+            self._schedule_ui(self.on_test_complete)
     def on_test_complete(self):
         """Вызывается при завершении тестирования"""
         self.testing = False
@@ -745,18 +776,14 @@ class StrategyTesterWindow:
                 self.log_message(f"⚠️  Предупреждение: Файл может не быть валидным конфигом zapret", "#ff9500")
                 self.log_message("   Но все равно применяем...", "#ff9500")
 
-            # Все проверки пройдены, применяем стратегию
-            # Записываем в config.txt
             config_path = self.project_root / "config.txt"
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(content + ("\n" if content and not content.endswith("\n") else ""))
-
-            # Записываем имя стратегии в name_strategy.txt
             name_strategy_path = self.project_root / "utils" / "name_strategy.txt"
-            with open(name_strategy_path, 'w', encoding='utf-8') as f:
-                f.write(strategy_name)
-
-            reapply_active_preset_to_config(str(self.project_root))
+            with preset_switch_transaction(str(self.project_root)):
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    f.write(content + ("\n" if content and not content.endswith("\n") else ""))
+                with open(name_strategy_path, 'w', encoding='utf-8') as f:
+                    f.write(strategy_name)
+                reapply_active_preset_to_config(str(self.project_root))
 
             self.log_message(f"✅ Стратегия '{strategy_name}' применена автоматически", "#30d158")
             self.log_message(f"📝 Записана в: {config_path}", "#4fc3f7")
@@ -851,6 +878,7 @@ class StrategyTesterWindow:
 
     def on_close(self):
         """Закрывает окно"""
+        self.closed.set()
         self.testing = False
         # Очищаем сохраненный пароль
         if hasattr(self, 'current_password'):
@@ -866,6 +894,3 @@ class StrategyTesterWindow:
 
         if self.window:
             self.window.destroy()
-
-        from ui.windows.strategy_selector_window import AutoSelectionWindow
-        AutoSelectionWindow(self.parent).run()

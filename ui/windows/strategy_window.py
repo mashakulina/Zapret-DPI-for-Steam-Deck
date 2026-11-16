@@ -3,7 +3,7 @@ import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
 from core.service_manager import ServiceManager
-from core.game_presets import reapply_active_preset_to_config
+from core.game_presets import reapply_active_preset_to_config, preset_switch_transaction
 from ui.windows.sudo_password_window import SudoPasswordWindow
 from core.dpi_utils import place_toplevel_centered_on_parent
 from core.strategy_data import natural_sort_key
@@ -385,27 +385,13 @@ class StrategyWindow:
             with open(strategy_file, 'r', encoding='utf-8') as f:
                 strategy_content = f.read().strip()
 
-            # Проверяем, не пустой ли файл стратегии
-            if not strategy_content:
-                # Если файл стратегии пустой, очищаем оба файла
+            strategy_name = self.selected_strategy if strategy_content else "Не выбрано"
+            with preset_switch_transaction(manager_dir):
                 with open(name_strategy_file, 'w', encoding='utf-8') as f:
-                    f.write("")
-                with open(config_file, 'w', encoding='utf-8') as f:
-                    f.write("")
-                strategy_name = "Не выбрано"
-            else:
-                # Записываем имя стратегии в name_strategies.txt
-                with open(name_strategy_file, 'w', encoding='utf-8') as f:
-                    f.write(f"{self.selected_strategy}")
-
-                # Записываем содержимое стратегии в config.txt        
+                    f.write(self.selected_strategy if strategy_content else "")
                 with open(config_file, 'w', encoding='utf-8') as f:
                     f.write(strategy_content + ("\n" if strategy_content else ""))
-
-                # Если активен игровой пресет, применяем его к новому config.txt.
                 reapply_active_preset_to_config(manager_dir)
-
-                strategy_name = self.selected_strategy
 
             print(f"Стратегия '{strategy_name}' применена успешно")
 
@@ -464,8 +450,6 @@ class StrategyWindow:
     def go_back(self):
         """Возвращает к окну «Сменить стратегию»"""
         self.close_window()
-        from ui.windows.strategy_selector_window import StrategySelectorWindow
-        StrategySelectorWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""

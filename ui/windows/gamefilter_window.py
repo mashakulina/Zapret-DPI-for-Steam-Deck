@@ -4,9 +4,11 @@ import os
 import tkinter as tk
 
 from ui.components.button_styler import create_hover_button
+from ui.components.responsive_buttons import pack_responsive_buttons
 from ui.windows.main.protocols import MainWindowActions
 from ui.components.custom_messagebox import show_info, show_error
-from core.dpi_utils import place_toplevel_centered_on_parent
+from core.dpi_utils import application_tk_root, place_toplevel_centered_on_parent
+from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
 from core.game_filter_settings import (
     GAMEFILTER_PROTOCOL_BOTH,
     GAMEFILTER_PROTOCOL_TCP,
@@ -14,10 +16,17 @@ from core.game_filter_settings import (
     disable_standalone_gamefilter,
     normalize_game_filter_protocol_mode,
     read_game_filter_protocol_mode,
-    write_game_filter_protocol_mode,
+    read_game_filter_custom_ports,
+    validate_game_filter_custom_ports,
+    write_game_filter_settings,
 )
 from core.game_presets import (
-    GAME_PRESETS,
+    get_game_presets,
+    is_custom_preset,
+    apply_custom_preset,
+    clear_custom_preset,
+    validate_custom_preset,
+    preset_switch_transaction,
     get_active_preset_id,
     set_active_preset,
     clear_active_preset,
@@ -121,24 +130,156 @@ def _preset_set_ipset_none(manager_dir):
 
 def clear_active_game_preset_disk(manager_dir: str) -> None:
     """Снимает активный пресет с диска (без перезапуска службы и без диалогов)."""
-    active_before = get_active_preset_id(manager_dir)
-    if active_before:
-        if active_before == "roblox":
-            _preset_remove_roblox_domains(manager_dir)
-            _preset_remove_roblox_ipset(manager_dir)
-        elif active_before == "fall_guys":
-            _preset_remove_fallguys_domains(manager_dir)
-            _preset_remove_fallguys_ipset(manager_dir)
-        else:
-            remove_preset_lines_from_config(active_before, manager_dir)
-        if active_before == "elite_dangerous":
-            _preset_set_ipset_none(manager_dir)
-        restore_gamefilter_for_preset(active_before, manager_dir)
-    clear_active_preset(manager_dir)
+    with preset_switch_transaction(manager_dir):
+        active_before = get_active_preset_id(manager_dir)
+        if active_before:
+            if is_custom_preset(active_before, manager_dir):
+                clear_custom_preset(active_before, manager_dir)
+                clear_active_preset(manager_dir)
+                return
+            if active_before == "roblox":
+                _preset_remove_roblox_domains(manager_dir)
+                _preset_remove_roblox_ipset(manager_dir)
+            elif active_before == "fall_guys":
+                _preset_remove_fallguys_domains(manager_dir)
+                _preset_remove_fallguys_ipset(manager_dir)
+            else:
+                remove_preset_lines_from_config(active_before, manager_dir)
+            if active_before == "elite_dangerous":
+                _preset_set_ipset_none(manager_dir)
+            restore_gamefilter_for_preset(active_before, manager_dir)
+        clear_active_preset(manager_dir)
 
 
 class GameFilterProtocolModeWindow:
     """Отдельное окно: выбор TCP/UDP для подстановки {GameFilter} в службе."""
+
+    def _setup_dialog(self, title):
+        self._anchor = application_tk_root(self._parent) or self._parent
+        scale = max(float(warning_dialog_scale(self._anchor)),
+                    float(logical_ui_scale(self._anchor)))
+        self._s = lambda value: max(1, int(round(value * scale)))
+        self.root = tk.Toplevel(self._parent)
+        self.root.withdraw()
+        self.root.title(title)
+        self.root.configure(bg="#182030")
+        self.root.transient(self._anchor)
+        self.root.resizable(False, False)
+        self.root.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.root.bind("<Escape>", lambda event: self._cancel())
+        self._main = tk.Frame(self.root, bg="#182030", padx=self._s(18), pady=self._s(14))
+        self._main.pack(fill=tk.BOTH, expand=True)
+        self._footer = tk.Frame(self._main, bg="#182030")
+        self._footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(self._s(16), 0))
+        viewport = tk.Frame(self._main, bg="#182030")
+        viewport.pack(fill=tk.BOTH, expand=True)
+        self._canvas = tk.Canvas(viewport, bg="#182030", bd=0, highlightthickness=0,
+                                 width=1, height=1)
+        self._scrollbar = tk.Scrollbar(viewport, command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._canvas.pack(fill=tk.BOTH, expand=True)
+        self._body = tk.Frame(self._canvas, bg="#182030")
+        self._body_item = self._canvas.create_window((0, 0), window=self._body, anchor=tk.NW)
+        self._wrap_widgets = []
+        self._actions = []
+        self._actions_stacked = None
+        self._fitting = True
+        self._canvas.bind("<Configure>", self._resize_body)
+        self._body.bind("<Configure>", self._update_scroll)
+        self._footer.bind("<Configure>", lambda event: self._arrange_actions(event.width))
+        self.root.bind("<Button-4>", lambda event: self._canvas.yview_scroll(-1, "units"))
+        self.root.bind("<Button-5>", lambda event: self._canvas.yview_scroll(1, "units"))
+        self.root.bind("<MouseWheel>", lambda event: self._canvas.yview_scroll(-int(event.delta / 120), "units"))
+
+    def _wrap(self, widget, inset=0):
+        self._wrap_widgets.append((widget, inset))
+        return widget
+
+    def _label(self, text, *, color="#cccccc", bottom=8):
+        label = self._wrap(tk.Label(
+            self._body, text=text, font=("Arial", 10), bg="#182030", fg=color,
+            justify=tk.LEFT, anchor=tk.W, wraplength=self._s(460)))
+        label.pack(fill=tk.X, pady=(0, self._s(bottom)))
+        return label
+
+    def _action_buttons(self, actions):
+        style = dict(font=("Arial", 11), bg="#15354D", fg="white", bd=0,
+                     padx=self._s(18), pady=self._s(8), width=12,
+                     highlightthickness=0, cursor="hand2")
+        self._actions = [create_hover_button(self._footer, text=text, command=command, **style)
+                         for text, command in actions]
+        self._arrange_actions(sum(button.winfo_reqwidth() for button in self._actions)
+                              + 10 * (len(self._actions) - 1))
+
+    def _arrange_actions(self, width):
+        if not self._actions:
+            return
+        gap = 10
+        stacked = sum(button.winfo_reqwidth() for button in self._actions) + gap * (len(self._actions) - 1) > width
+        if stacked == self._actions_stacked:
+            return
+        self._actions_stacked = stacked
+        for index, button in enumerate(self._actions):
+            button.pack_forget()
+            button.pack(side=tk.TOP if stacked else tk.LEFT, anchor=tk.W,
+                        padx=(0, gap if not stacked and index < len(self._actions) - 1 else 0),
+                        pady=(0, gap if stacked and index < len(self._actions) - 1 else 0))
+
+    def _resize_body(self, event):
+        self._canvas.itemconfigure(self._body_item, width=event.width)
+        for widget, inset in self._wrap_widgets:
+            widget.configure(wraplength=max(40, event.width - self._s(inset)))
+        self._update_scroll()
+
+    def _update_scroll(self, event=None):
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        if self._fitting:
+            return
+        if self._body.winfo_reqheight() > self._canvas.winfo_height() + 1:
+            if not self._scrollbar.winfo_manager():
+                self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y, before=self._canvas)
+        elif self._scrollbar.winfo_manager():
+            self._scrollbar.pack_forget()
+            self._canvas.yview_moveto(0)
+
+    def _fit_dialog(self):
+        self._fitting = True
+        self._scrollbar.pack_forget()
+        self.root.update_idletasks()
+        max_width = max(1, self.root.winfo_screenwidth() - 32)
+        max_height = max(1, self.root.winfo_screenheight() - 80)
+        horizontal_margin = 2 * self._s(18)
+        available = max(1, max_width - horizontal_margin)
+        row_width = sum(button.winfo_reqwidth() for button in self._actions) + 10 * (len(self._actions) - 1)
+        action_width = row_width if row_width <= available else max(button.winfo_reqwidth() for button in self._actions)
+        content_width = min(max(self._body.winfo_reqwidth(), action_width), available)
+        self._arrange_actions(content_width)
+        self._canvas.configure(width=content_width)
+        self._canvas.itemconfigure(self._body_item, width=content_width)
+        for widget, inset in self._wrap_widgets:
+            widget.configure(wraplength=max(40, content_width - self._s(inset)))
+        self.root.update_idletasks()
+        chrome_height = 2 * self._s(14) + self._s(16) + self._footer.winfo_reqheight()
+        available_height = max(1, max_height - chrome_height)
+        overflow = self._body.winfo_reqheight() > available_height
+        bar_width = self._scrollbar.winfo_reqwidth() if overflow else 0
+        width = min(content_width + horizontal_margin + bar_width, max_width)
+        content_width = max(1, width - horizontal_margin - bar_width)
+        if overflow:
+            self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y, before=self._canvas)
+        self._canvas.configure(width=content_width)
+        self._canvas.itemconfigure(self._body_item, width=content_width)
+        for widget, inset in self._wrap_widgets:
+            widget.configure(wraplength=max(40, content_width - self._s(inset)))
+        self.root.update_idletasks()
+        content_height = min(self._body.winfo_reqheight(), available_height)
+        self._canvas.configure(height=content_height)
+        self.root.update_idletasks()
+        height = min(content_height + chrome_height, max_height)
+        place_toplevel_centered_on_parent(
+            self.root, self._anchor, fixed_content_size=(width, height), immediate=True)
+        self._fitting = False
+        self._update_scroll()
 
     def __init__(
         self,
@@ -149,27 +290,13 @@ class GameFilterProtocolModeWindow:
         title: str = "Режим протокола",
         hint: str = "Игровые порты ({GameFilter}) в службе:",
         confirm_text: str = "Далее",
+        on_back=None,
     ):
         self._parent = parent
         self._on_confirm = on_confirm
-        self.root = tk.Toplevel(parent)
-        self.root.title(title)
-        self.root.configure(bg="#182030")
-        self.root.transient(parent)
-        self.root.resizable(False, False)
-        self.root.protocol("WM_DELETE_WINDOW", self._cancel)
-
-        main = tk.Frame(self.root, bg="#182030", padx=18, pady=14)
-        main.pack(fill=tk.BOTH, expand=True)
-
-        tk.Label(
-            main,
-            text=hint,
-            font=("Arial", 10),
-            fg="#cccccc",
-            bg="#182030",
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(0, 8))
+        self._on_back = on_back
+        self._setup_dialog(title)
+        self._label(hint)
 
         start = (
             normalize_game_filter_protocol_mode(initial_mode)
@@ -185,69 +312,40 @@ class GameFilterProtocolModeWindow:
             "activebackground": "#182030",
             "activeforeground": "#4fc3f7",
             "highlightthickness": 0,
+            "bd": 0,
             "cursor": "hand2",
             "variable": self._var,
         }
-        proto_frame = tk.Frame(main, bg="#182030")
-        proto_frame.pack(fill=tk.X, pady=(0, 16))
-        tk.Radiobutton(
-            proto_frame,
-            text="Включить TCP и UDP",
-            value=GAMEFILTER_PROTOCOL_BOTH,
-            **rb_style,
-        ).pack(anchor=tk.W, pady=3)
-        tk.Radiobutton(
-            proto_frame,
-            text="Включить только TCP",
-            value=GAMEFILTER_PROTOCOL_TCP,
-            **rb_style,
-        ).pack(anchor=tk.W, pady=3)
-        tk.Radiobutton(
-            proto_frame,
-            text="Включить только UDP",
-            value=GAMEFILTER_PROTOCOL_UDP,
-            **rb_style,
-        ).pack(anchor=tk.W, pady=3)
-
-        btn_style = {
-            "font": ("Arial", 11),
-            "bg": "#15354D",
-            "fg": "white",
-            "bd": 0,
-            "padx": 18,
-            "pady": 8,
-            "width": 12,
-            "highlightthickness": 0,
-            "cursor": "hand2",
-        }
-        row = tk.Frame(main, bg="#182030")
-        row.pack(fill=tk.X)
-        ok_btn = create_hover_button(
-            row,
-            text=confirm_text,
-            command=self._confirm,
-            **btn_style,
-        )
-        ok_btn.pack(side=tk.LEFT, padx=(0, 10))
-        back_btn = create_hover_button(
-            row,
-            text="Назад",
-            command=self._cancel,
-            **btn_style,
-        )
-        back_btn.pack(side=tk.LEFT)
-
-        place_toplevel_centered_on_parent(
-            self.root, parent, min_width=300, min_height=240, margin_width=8, margin_height=12
-        )
+        for text, value in (("Включить TCP и UDP", GAMEFILTER_PROTOCOL_BOTH),
+                            ("Включить только TCP", GAMEFILTER_PROTOCOL_TCP),
+                            ("Включить только UDP", GAMEFILTER_PROTOCOL_UDP)):
+            radio = self._wrap(tk.Radiobutton(self._body, text=text, value=value, **rb_style), 30)
+            radio.pack(anchor=tk.W, pady=self._s(3))
+        self._action_buttons(((confirm_text, self._confirm), ("Назад", self._back)))
+        self._fit_dialog()
 
     def _confirm(self) -> None:
         mode = self._var.get()
-        self.root.destroy()
+        self._close()
         self._on_confirm(mode)
 
-    def _cancel(self) -> None:
+    def _close(self):
         self.root.destroy()
+        parent = getattr(self, "_parent", None)
+        if parent is not None:
+            try:
+                if parent.winfo_exists():
+                    parent.grab_set()
+            except tk.TclError:
+                pass
+
+    def _back(self) -> None:
+        self._close()
+        if self._on_back:
+            self._on_back()
+
+    def _cancel(self) -> None:
+        self._close()
 
     def run_modal(self) -> None:
         self.root.update_idletasks()
@@ -257,6 +355,104 @@ class GameFilterProtocolModeWindow:
         except tk.TclError:
             pass
         self._parent.wait_window(self.root)
+
+
+class GameFilterPortsChoiceWindow(GameFilterProtocolModeWindow):
+    """Первый шаг настройки: стандартные либо пользовательские порты."""
+
+    def __init__(self, parent, *, on_confirm, initial_custom=False):
+        self._parent = parent
+        self._on_confirm = on_confirm
+        self._on_back = None
+        self._setup_dialog("GameFilter: выбор портов")
+        self._var = tk.BooleanVar(self.root, value=initial_custom)
+        for text, value in (("Без указания портов", False), ("С указанием портов", True)):
+            radio = self._wrap(tk.Radiobutton(
+                self._body, text=text, value=value, variable=self._var,
+                bg="#182030", fg="white", selectcolor="#1E4A6E",
+                activebackground="#182030", activeforeground="white", cursor="hand2",
+                font=("Arial", 10), bd=0, highlightthickness=0), 30)
+            radio.pack(anchor=tk.W, pady=self._s(3))
+        self._action_buttons((("Далее", self._confirm), ("Отмена", self._cancel)))
+        self._fit_dialog()
+
+
+class GameFilterPortsWindow(GameFilterProtocolModeWindow):
+    """Ввод диапазонов; проверка выполняется до закрытия окна."""
+
+    def __init__(self, parent, *, mode, on_confirm, initial_ports=None, on_back=None):
+        self._parent = parent
+        self._on_confirm = on_confirm
+        self._on_back = on_back
+        self.mode = normalize_game_filter_protocol_mode(mode)
+        self._setup_dialog("GameFilter: диапазоны портов")
+        self._label("Порты 1–65535 через запятую или диапазон.\nНапример: 1000-2000,3000")
+        initial_ports = initial_ports or {}
+        self._shared = tk.BooleanVar(self.root, value=self.mode == "both" and initial_ports.get("tcp") == initial_ports.get("udp"))
+        self._entries = {}
+        if self.mode == "both":
+            shared_check = self._wrap(tk.Checkbutton(
+                self._body, text="Одинаковые порты для TCP и UDP", variable=self._shared,
+                command=self._update_fields, bg="#182030", fg="white", selectcolor="#1E4A6E",
+                activebackground="#182030", activeforeground="white", cursor="hand2",
+                font=("Arial", 10), bd=0, highlightthickness=0), 30)
+            shared_check.pack(anchor=tk.W, pady=(0, self._s(6)))
+        for protocol in ("tcp", "udp"):
+            if self.mode not in ("both", protocol):
+                continue
+            tk.Label(self._body, text=protocol.upper(), bg="#182030", fg="white", font=("Arial", 11)).pack(anchor=tk.W)
+            value = tk.StringVar(self.root, value=initial_ports.get(protocol, ""))
+            entry = tk.Entry(self._body, textvariable=value, font=("Arial", 11), width=32,
+                             bg="#2A3B5C", fg="white", insertbackground="white", bd=0,
+                             relief=tk.FLAT, highlightthickness=2, highlightbackground="#3A4B6C",
+                             highlightcolor="#4A8FE7", disabledbackground="#2A3B5C",
+                             disabledforeground="#8e8e93")
+            entry.pack(fill=tk.X, pady=(self._s(5), self._s(8)))
+            self._entries[protocol] = (value, entry)
+        self._error = self._label("", color="#ff3b30", bottom=6)
+        self._error.pack_forget()
+        self._action_buttons((("Применить", self._confirm), ("Назад", self._back), ("Отмена", self._cancel)))
+        self._udp_draft = initial_ports.get("udp", "")
+        self._shared_active = False
+        if self.mode == "both":
+            self._entries["tcp"][0].trace_add("write", self._sync_shared_ports)
+        self._update_fields()
+        self._fit_dialog()
+
+    def _sync_shared_ports(self, *_):
+        if self.mode == "both" and self._shared.get():
+            self._entries["udp"][0].set(self._entries["tcp"][0].get())
+
+    def _update_fields(self):
+        if self.mode == "both":
+            shared = self._shared.get()
+            if shared and not self._shared_active:
+                self._udp_draft = self._entries["udp"][0].get()
+            if shared:
+                self._sync_shared_ports()
+            elif self._shared_active:
+                self._entries["udp"][0].set(self._udp_draft)
+            self._shared_active = shared
+            self._entries["udp"][1].configure(state=tk.DISABLED if shared else tk.NORMAL)
+
+    def get_draft_ports(self):
+        ports = {key: value.get() for key, (value, _) in self._entries.items()}
+        if self.mode == "both" and self._shared.get():
+            ports["udp"] = ports["tcp"]
+        return ports
+
+    def _confirm(self):
+        ports = self.get_draft_ports()
+        try:
+            ports = validate_game_filter_custom_ports(self.mode, ports)
+        except ValueError as error:
+            self._error.configure(text=str(error))
+            if getattr(self, "_canvas", None) is not None:
+                self._error.pack(fill=tk.X, pady=(0, self._s(6)))
+                self._fit_dialog()
+            return
+        self._close()
+        self._on_confirm(ports)
 
 
 class GameFilterWindow:
@@ -296,7 +492,7 @@ class GameFilterWindow:
 
         tk.Label(
             main_frame,
-            text="Отдельный GameFilter и пресет игры не используются одновременно.",
+            text="Готовые игровые пресеты выключают отдельный GameFilter. Пользовательские пресеты восстанавливают сохранённые настройки.",
             font=("Arial", 9),
             fg="#aaaaaa",
             bg="#182030",
@@ -328,7 +524,7 @@ class GameFilterWindow:
         if self.main_window.is_game_filter_enabled():
             apply_mode_btn = create_hover_button(
                 main_frame,
-                text="Режим TCP/UDP…",
+                text="Режим и порты…",
                 command=self._open_protocol_window_for_apply,
                 **button_style,
             )
@@ -357,37 +553,108 @@ class GameFilterWindow:
         back_btn.pack(pady=(10, 0))
 
     def enable_game_filter(self):
-        """Открывает окно выбора протокола, затем предупреждение и включение Game Filter."""
-        win = GameFilterProtocolModeWindow(
-            self.root,
-            title="Включение Game Filter",
-            hint="Игровые порты ({GameFilter}) в службе:",
-            confirm_text="Далее",
-            on_confirm=self._after_protocol_chosen_for_enable,
-        )
-        win.run_modal()
+        self._open_settings_flow(False)
 
-    def _after_protocol_chosen_for_enable(self, mode: str) -> None:
+    def _open_settings_flow(self, editing, mode=None, ports=None):
+        if mode is None:
+            mode = read_game_filter_protocol_mode(get_manager_dir())
+            try:
+                ports = read_game_filter_custom_ports(get_manager_dir())
+            except ValueError as error:
+                show_error(self.root, "Ошибка портов GameFilter", f"{error}\nВыберите стандартные порты или задайте диапазоны заново.")
+                ports = None
+
+        # Each dialog finishes its modal wait before the next stage is opened.
+        # Keep drafts locally so Back never writes to disk or loses entered values.
+        stage = "choice"
+        custom = ports is not None
+        draft_ports = dict(ports or {})
+        while True:
+            result = {}
+
+            def confirm(value):
+                result.update(action="confirm", value=value)
+
+            def back():
+                result["action"] = "back"
+
+            if stage == "choice":
+                dialog = GameFilterPortsChoiceWindow(
+                    self.root, initial_custom=custom, on_confirm=confirm)
+            elif stage == "protocol":
+                dialog = GameFilterProtocolModeWindow(
+                    self.root, initial_mode=mode, title="GameFilter: режим и порты",
+                    on_confirm=confirm, on_back=back)
+            else:
+                dialog = GameFilterPortsWindow(
+                    self.root, mode=mode, initial_ports=draft_ports,
+                    on_confirm=confirm, on_back=back)
+            dialog.run_modal()
+            action = result.get("action")
+            if action is None:
+                return  # Cancel or window-manager close.
+            if action == "back":
+                if stage == "ports":
+                    draft_ports.update(dialog.get_draft_ports())
+                    stage = "protocol"
+                else:
+                    mode = dialog._var.get()
+                    stage = "choice"
+                continue
+            value = result["value"]
+            if stage == "choice":
+                custom = value
+                stage = "protocol"
+                continue
+            if stage == "protocol":
+                mode = value
+                if custom:
+                    stage = "ports"
+                    continue
+                selected_ports = None
+            else:
+                selected_ports = value
+            if editing:
+                self._after_protocol_chosen_for_apply(mode, selected_ports)
+            else:
+                self._after_protocol_chosen_for_enable(mode, selected_ports)
+            return
+
+    def _after_protocol_chosen_for_enable(self, mode: str, custom_ports=None) -> None:
         self.close_window()
-        self.main_window._show_game_filter_warning(mode)
+        if custom_ports is None:
+            self.main_window._show_game_filter_warning(mode)
+        else:
+            self.main_window._show_game_filter_warning(mode, custom_ports)
 
     def _open_protocol_window_for_apply(self) -> None:
-        """Game Filter уже включён: выбор режима, sudo, запись и перезапуск."""
-        win = GameFilterProtocolModeWindow(
-            self.root,
-            title="Режим TCP/UDP",
-            hint="Игровые порты ({GameFilter}) в службе:",
-            confirm_text="Применить",
-            on_confirm=self._after_protocol_chosen_for_apply,
-        )
-        win.run_modal()
+        self._open_settings_flow(True)
 
-    def _after_protocol_chosen_for_apply(self, mode: str) -> None:
-        if not self.main_window.ensure_sudo_password():
+    def _restore_modal_grab(self):
+        try:
+            if self.root.winfo_exists():
+                self.root.grab_set()
+        except tk.TclError:
+            pass
+
+    def _after_protocol_chosen_for_apply(self, mode: str, custom_ports=None) -> None:
+        try:
+            custom_ports = validate_game_filter_custom_ports(mode, custom_ports)
+            try:
+                authorized = self.main_window.ensure_sudo_password()
+            finally:
+                self._restore_modal_grab()
+            if not authorized:
+                return
+            write_game_filter_settings(mode, custom_ports, get_manager_dir())
+        except (ValueError, OSError) as error:
+            try:
+                show_error(self.root, "Ошибка настройки GameFilter", str(error))
+            finally:
+                self._restore_modal_grab()
             return
-        write_game_filter_protocol_mode(mode, get_manager_dir())
         self.close_window()
-        self.main_window.restart_zapret_after_preset("Режим протокола Game Filter обновлён")
+        self.main_window.restart_zapret_after_preset("Режим и порты Game Filter обновлены")
 
     def disable_game_filter(self):
         """Выключение GameFilter: sudo, переключение, перезапуск службы."""
@@ -426,13 +693,17 @@ class GamePresetWindow:
         self.root = tk.Toplevel(parent)
         self.manager_dir = get_manager_dir()
         self.preset_vars = {}  # preset_id -> BooleanVar
+        self.presets = get_game_presets(self.manager_dir)
         self.setup_window_properties()
         self.root.title("Пресет игры")
 
         self.setup_ui()
         self._load_preset_state()
+        self.root.update_idletasks()
+        width = min(max(360, self.root.winfo_reqwidth()), max(1, self.root.winfo_screenwidth() - 32))
+        height = min(self.root.winfo_reqheight(), max(1, self.root.winfo_screenheight() - 80))
         place_toplevel_centered_on_parent(
-            self.root, self.parent, min_width=320, min_height=280, margin_width=8, margin_height=12
+            self.root, self.parent, fixed_content_size=(width, height), immediate=True
         )
 
     def setup_window_properties(self):
@@ -457,7 +728,7 @@ class GamePresetWindow:
 
         tk.Label(
             main_frame,
-            text="При выборе пресета отдельный GameFilter будет выключен.",
+            text="Готовый пресет выключает отдельный GameFilter. Пользовательский применяет сохранённые настройки GameFilter и IPSet Filter.",
             font=("Arial", 9),
             fg="#aaaaaa",
             bg="#182030",
@@ -465,15 +736,32 @@ class GamePresetWindow:
             wraplength=340,
         ).pack(pady=(0, 14))
 
-        check_frame = tk.Frame(main_frame, bg='#182030')
-        check_frame.pack(fill=tk.X, pady=(0, 20))
+        buttons_frame = tk.Frame(main_frame, bg='#182030')
+        buttons_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        viewport = tk.Frame(main_frame, bg='#182030')
+        viewport.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        canvas = tk.Canvas(viewport, bg='#182030', highlightthickness=0, height=220, width=340)
+        scrollbar = tk.Scrollbar(viewport, command=canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(fill=tk.BOTH, expand=True)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        check_frame = tk.Frame(canvas, bg='#182030')
+        inner = canvas.create_window((0, 0), window=check_frame, anchor='nw')
+        check_frame.bind('<Configure>', lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>', lambda event: canvas.itemconfigure(inner, width=event.width))
+        self.root.bind('<Button-4>', lambda event: canvas.yview_scroll(-1, 'units'))
+        self.root.bind('<Button-5>', lambda event: canvas.yview_scroll(1, 'units'))
+        self.root.bind('<MouseWheel>', lambda event: canvas.yview_scroll(-int(event.delta / 120), 'units'))
 
-        for preset_id, preset_data in GAME_PRESETS.items():
+        for preset_id, preset_data in self.presets.items():
             var = tk.BooleanVar(value=False)
             self.preset_vars[preset_id] = var
             cb = tk.Checkbutton(
                 check_frame,
                 text=preset_data["name"],
+                wraplength=290,
+                justify=tk.LEFT,
+                anchor=tk.W,
                 variable=var,
                 font=("Arial", 11),
                 fg='white',
@@ -485,7 +773,8 @@ class GamePresetWindow:
                 cursor='hand2',
                 command=lambda p=preset_id: self._on_preset_click(p),
             )
-            cb.pack(anchor='w')
+            cb.pack(fill=tk.X, anchor='w')
+            cb.bind('<Configure>', lambda event: event.widget.configure(wraplength=max(40, event.width - 36)))
 
         button_style = {
             'font': ('Arial', 11),
@@ -499,16 +788,13 @@ class GamePresetWindow:
             'cursor': 'hand2'
         }
 
-        buttons_frame = tk.Frame(main_frame, bg='#182030')
-        buttons_frame.pack(fill=tk.X, pady=(10, 0))
-
         apply_btn = create_hover_button(
             buttons_frame,
             text="Применить",
             command=self.apply_preset,
             **button_style
         )
-        apply_btn.pack(side=tk.LEFT, padx=(0, 10))
+
 
         back_btn = create_hover_button(
             buttons_frame,
@@ -516,7 +802,7 @@ class GamePresetWindow:
             command=self.close_window,
             **button_style
         )
-        back_btn.pack(side=tk.LEFT)
+        pack_responsive_buttons(buttons_frame, [apply_btn, back_btn])
 
     def _on_preset_click(self, preset_id):
         """Взаимное исключение: при отметке одного пресета снимаем остальные."""
@@ -592,98 +878,71 @@ class GamePresetWindow:
             f.write(content)
 
     def apply_preset(self):
-        """Применяет выбранный пресет: файл-маркер в utils и запись в config.txt."""
+        """Apply disk changes atomically, then refresh UI and restart the service."""
         if not self.main_window.ensure_sudo_password():
             return
-
-        selected = [pid for pid, var in self.preset_vars.items() if var.get()]
-
-        if not selected:
-            clear_active_game_preset_disk(self.manager_dir)
-            show_info(self.root, "Пресет", "Пресет не выбран. Снято применение пресетов.")
-            if hasattr(self.main_window, "show_status_message"):
-                self.main_window.show_status_message("Применение пресетов снято", success=True)
-            if hasattr(self.main_window, "update_game_filter_indicator"):
-                self.main_window.update_game_filter_indicator()
-            self.main_window.restart_zapret_after_preset("Пресет снят")
-            self.close_window()
+        selected = next((pid for pid, var in self.preset_vars.items() if var.get()), None)
+        try:
+            presets = get_game_presets(self.manager_dir)
+            if selected and selected not in presets:
+                raise ValueError("Пресет не найден.")
+            if selected and is_custom_preset(selected, self.manager_dir):
+                validate_custom_preset(selected, self.manager_dir, check_config=False)
+            with preset_switch_transaction(self.manager_dir):
+                self._apply_selected_disk(selected, presets)
+        except (OSError, ValueError, UnicodeError) as error:
+            show_error(self.root, "Ошибка", f"Не удалось применить пресет: {error}")
             return
+        if hasattr(self.main_window, "update_game_filter_indicator"):
+            self.main_window.update_game_filter_indicator()
+        name = presets[selected]['name'] if selected else None
+        message = f"Был выбран пресет для {name}" if name else "Применение пресетов снято"
+        if hasattr(self.main_window, "show_status_message"):
+            self.main_window.show_status_message(message, success=True)
+        info_text = message + "."
+        if selected == "fall_guys":
+            info_text += ("\n\nПресет только для версии из Epic Games Store. "
+                          "Для Steam этот пресет не используйте — в настройках игры смените регион на США (восток).")
+        show_info(self.root, "Пресет", info_text)
+        self.main_window.restart_zapret_after_preset(f"Пресет {name} применён" if name else "Пресет снят")
+        self.close_window()
 
-        preset_id = selected[0]
-        if preset_id not in GAME_PRESETS:
-            show_error(self.root, "Ошибка", "Пресет не найден.")
-            return
-
-        had_standalone_gf = self.main_window.is_game_filter_enabled()
-        disable_standalone_gamefilter(self.manager_dir)
-        if had_standalone_gf:
-            if hasattr(self.main_window, "show_status_message"):
-                self.main_window.show_status_message(
-                    "Отдельный GameFilter выключен: используется только пресет игры",
-                    warning=True,
-                )
-            if hasattr(self.main_window, "update_game_filter_indicator"):
-                self.main_window.update_game_filter_indicator()
-
-        preset = GAME_PRESETS[preset_id]
-        lines = preset.get("lines") or []
-        tcp = preset.get("game_filter_tcp")
-        udp = preset.get("game_filter_udp")
-        name = preset["name"]
-
+    def _apply_selected_disk(self, preset_id, presets):
         active_before = get_active_preset_id(self.manager_dir)
+        if preset_id is None:
+            clear_active_game_preset_disk(self.manager_dir)
+            return
         if active_before and active_before != preset_id:
-            if active_before == "roblox":
-                self._remove_roblox_domains()
-                self._remove_roblox_ipset()
-            elif active_before == "fall_guys":
-                self._remove_fallguys_domains()
-                self._remove_fallguys_ipset()
-            else:
-                remove_preset_lines_from_config(active_before, self.manager_dir)
-            if active_before == "elite_dangerous":
-                self._set_ipset_none()
-            restore_gamefilter_for_preset(active_before, self.manager_dir)
-
-        set_active_preset(preset_id, self.manager_dir)
-
+            clear_active_game_preset_disk(self.manager_dir)
+        if is_custom_preset(preset_id, self.manager_dir):
+            apply_custom_preset(preset_id, self.manager_dir)
+            set_active_preset(preset_id, self.manager_dir)
+            return
+        disable_standalone_gamefilter(self.manager_dir)
+        preset = presets[preset_id]
+        tcp, udp = preset.get("game_filter_tcp"), preset.get("game_filter_udp")
         if tcp is not None and udp is not None:
             substitute_gamefilter_in_config(tcp, udp, self.manager_dir)
-
-        config_path = self.get_config_path()
-        try:
-            if preset_id == "roblox":
-                self._apply_roblox_domains()
-                self._apply_roblox_ipset()
-            elif preset_id == "fall_guys":
-                self._apply_fallguys_domains()
-                self._apply_fallguys_ipset()
-            elif preset_id == "elite_dangerous":
-                self._apply_ipset_loaded()
-            if lines:
-                existing = ""
-                if os.path.exists(config_path):
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        existing = f.read()
-                new_content = "\n".join(lines) + "\n" + existing
-                with open(config_path, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-            if hasattr(self.main_window, "show_status_message"):
-                self.main_window.show_status_message(f"Был выбран пресет для {name}", success=True)
-            if hasattr(self.main_window, "update_game_filter_indicator"):
-                self.main_window.update_game_filter_indicator()
-            info_text = f"Был выбран пресет для {name}."
-            if preset_id == "fall_guys":
-                info_text += (
-                    "\n\nПресет только для версии из Epic Games Store. "
-                    "Для Steam этот пресет не используйте — в настройках игры смените регион на США (восток)."
-                )
-            show_info(self.root, "Пресет", info_text)
-            self.main_window.restart_zapret_after_preset(f"Пресет {name} применён")
-        except Exception as e:
-            show_error(self.root, "Ошибка", f"Не удалось применить пресет: {e}")
-            return
-        self.close_window()
+        if preset_id == "roblox":
+            self._apply_roblox_domains()
+            self._apply_roblox_ipset()
+        elif preset_id == "fall_guys":
+            self._apply_fallguys_domains()
+            self._apply_fallguys_ipset()
+        elif preset_id == "elite_dangerous":
+            self._apply_ipset_loaded()
+        lines = preset.get("lines") or []
+        if lines:
+            path = self.get_config_path()
+            existing = ""
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as stream:
+                    existing = stream.read()
+            block = "\n".join(lines)
+            if existing != block and not existing.startswith(block + "\n"):
+                with open(path, "w", encoding="utf-8") as stream:
+                    stream.write(block + "\n" + existing)
+        set_active_preset(preset_id, self.manager_dir)
 
     def close_window(self):
         """Закрывает окно (возврат в главное меню)."""

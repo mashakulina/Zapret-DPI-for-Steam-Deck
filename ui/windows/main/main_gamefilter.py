@@ -5,11 +5,13 @@ import tkinter as tk
 
 from ui.windows.gamefilter_window import GameFilterWindow, clear_active_game_preset_disk
 from ui.windows.main.main_gamefilter_warning import show_game_filter_warning_dialog
-from core.game_presets import get_active_preset_id, get_manager_dir
+from core.game_presets import get_active_preset_id, get_game_presets, get_manager_dir, preset_switch_transaction
 from core.game_filter_settings import (
     read_game_filter_protocol_mode,
-    remove_game_filter_protocol_mode_file,
-    write_game_filter_protocol_mode,
+    read_game_filter_custom_ports,
+    validate_game_filter_custom_ports,
+    write_game_filter_settings,
+    disable_standalone_gamefilter,
     GAMEFILTER_PROTOCOL_BOTH,
     GAMEFILTER_PROTOCOL_TCP,
     GAMEFILTER_PROTOCOL_UDP,
@@ -44,7 +46,15 @@ class MainGameFilterMixin:
             return
 
         # Определяем текст в зависимости от состояния
-        if self.is_game_filter_enabled():
+        active_preset = get_active_preset_id()
+        preset = get_game_presets().get(active_preset)
+        if preset:
+            status_text = f"Пресет игры: {preset['name']}"
+            if self.is_game_filter_enabled():
+                mode = read_game_filter_protocol_mode()
+                status_text += f"\nGameFilter: {_game_filter_protocol_label(mode)}"
+            status_text += "\nНажмите для настроек / выключения"
+        elif self.is_game_filter_enabled():
             mode = read_game_filter_protocol_mode()
             status_text = (
                 "GameFilter включен\n"
@@ -53,6 +63,14 @@ class MainGameFilterMixin:
             )
         else:
             status_text = "GameFilter выключен\nНажмите для включения"
+
+        if self.is_game_filter_enabled():
+            try:
+                ports = read_game_filter_custom_ports()
+                if ports:
+                    status_text += "\n" + "\n".join(f"{key.upper()}: {value}" for key, value in ports.items())
+            except ValueError:
+                status_text += "\nОшибка диапазонов портов — откройте настройки"
 
         # Позиционируем подсказку рядом с иконкой
         x = self.game_filter_indicator.winfo_rootx() - 20
@@ -72,7 +90,8 @@ class MainGameFilterMixin:
                         bg='#15354D',
                         padx=10,
                         pady=5,
-                        justify=tk.LEFT)
+                        justify=tk.LEFT,
+                        wraplength=500)
         label.pack()
 
     def hide_game_filter_tooltip(self, event=None):
@@ -86,12 +105,20 @@ class MainGameFilterMixin:
         gamefilter_window = GameFilterWindow(self.root, self)
         gamefilter_window.run()
 
-    def _show_game_filter_warning(self, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH):
+    def _show_game_filter_warning(self, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH, custom_ports=None):
         """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
-        show_game_filter_warning_dialog(self, protocol_mode)
+        if custom_ports is None:
+            show_game_filter_warning_dialog(self, protocol_mode)
+        else:
+            show_game_filter_warning_dialog(self, protocol_mode, custom_ports)
 
-    def _on_warning_accept(self, warning_window, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH):
+    def _on_warning_accept(self, warning_window, protocol_mode: str = GAMEFILTER_PROTOCOL_BOTH, custom_ports=None):
         """Обработчик нажатия на кнопку 'Понятно, включить'"""
+        try:
+            custom_ports = validate_game_filter_custom_ports(protocol_mode, custom_ports)
+        except ValueError as error:
+            self.show_status_message(str(error), error=True)
+            return
         warning_window.destroy()
 
         # Проверяем пароль sudo
@@ -99,9 +126,12 @@ class MainGameFilterMixin:
             return
 
         # Выполняем включение Game Filter
-        self._perform_game_filter_toggle(protocol_mode_for_enable=protocol_mode)
+        if custom_ports is None:
+            self._perform_game_filter_toggle(protocol_mode_for_enable=protocol_mode)
+        else:
+            self._perform_game_filter_toggle(protocol_mode_for_enable=protocol_mode, custom_ports=custom_ports)
 
-    def _perform_game_filter_toggle(self, protocol_mode_for_enable: str | None = None):
+    def _perform_game_filter_toggle(self, protocol_mode_for_enable: str | None = None, custom_ports=None):
         """Выполняет фактическое переключение Game Filter"""
         try:
             # Получаем текущее состояние
@@ -109,34 +139,28 @@ class MainGameFilterMixin:
 
             if was_enabled:
                 # Удаляем файл (выключаем)
-                os.remove(self.game_filter_file)
-                remove_game_filter_protocol_mode_file()
+                with preset_switch_transaction(get_manager_dir()):
+                    disable_standalone_gamefilter(get_manager_dir())
                 new_icon = "⌨"
                 status_message = "Game Filter выключен"
                 print("🎮🔴 Game Filter выключен")
             else:
-                # Отдельный GameFilter и пресет игры не используются одновременно
+                mode = protocol_mode_for_enable or GAMEFILTER_PROTOCOL_BOTH
+                custom_ports = validate_game_filter_custom_ports(mode, custom_ports)
+                manager_dir = get_manager_dir()
                 had_preset = get_active_preset_id() is not None
-                clear_active_game_preset_disk(get_manager_dir())
+                with preset_switch_transaction(manager_dir):
+                    clear_active_game_preset_disk(manager_dir)
+                    directory = os.path.dirname(self.game_filter_file)
+                    if directory:
+                        os.makedirs(directory, exist_ok=True)
+                    write_game_filter_settings(mode, custom_ports, manager_dir)
+                    with open(self.game_filter_file, 'w'):
+                        pass
                 if had_preset:
                     self.show_status_message(
-                        "Активный пресет игры снят (несовместим с отдельным GameFilter)",
-                        warning=True,
-                    )
+                        "Активный пресет игры снят (несовместим с отдельным GameFilter)", warning=True)
                     self.update_game_filter_indicator()
-
-                # Создаем файл (включаем)
-                # Сначала создаем директорию если не существует
-                directory = os.path.dirname(self.game_filter_file)
-                if directory and not os.path.exists(directory):
-                    os.makedirs(directory, exist_ok=True)
-
-                # Создаем файл
-                with open(self.game_filter_file, 'w') as f:
-                    pass  # Просто создаем пустой файл
-
-                mode = protocol_mode_for_enable or GAMEFILTER_PROTOCOL_BOTH
-                write_game_filter_protocol_mode(mode)
 
                 new_icon = "⌨"
                 status_message = (

@@ -23,10 +23,10 @@ class GameFilterWarningHost(Protocol):
     def hide_game_filter_tooltip(self, event=None) -> None: ...
     def hide_icon_tooltip(self, event=None) -> None: ...
     def hide_status_tooltip(self, event=None) -> None: ...
-    def _on_warning_accept(self, warning_window: tk.Toplevel, protocol_mode: str = "both") -> None: ...
+    def _on_warning_accept(self, warning_window: tk.Toplevel, protocol_mode: str = "both", custom_ports=None) -> None: ...
 
 
-def show_game_filter_warning_dialog(host: GameFilterWarningHost, protocol_mode: str = "both") -> None:
+def show_game_filter_warning_dialog(host: GameFilterWarningHost, protocol_mode: str = "both", custom_ports=None) -> None:
     """Показывает предупреждение о Game Filter с адаптацией под Steam Deck"""
     protocol_mode = normalize_game_filter_protocol_mode(protocol_mode)
 
@@ -252,7 +252,8 @@ def show_game_filter_warning_dialog(host: GameFilterWarningHost, protocol_mode: 
     enable_button = tk.Button(
         buttons_center_frame,
         text="Включить",
-        command=lambda: host._on_warning_accept(warning_window, protocol_mode),
+        command=lambda: (host._on_warning_accept(warning_window, protocol_mode) if custom_ports is None
+                         else host._on_warning_accept(warning_window, protocol_mode, custom_ports)),
         **button_style
     )
     enable_button.pack(side=tk.LEFT, padx=(0, 10))
