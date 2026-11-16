@@ -142,64 +142,6 @@ def _preset_disable_auto_gamefilter(manager_dir, preset_id):
         disable_standalone_gamefilter(manager_dir)
 
 
-def _is_standalone_gamefilter_ui_enabled(main_window) -> bool:
-    """Отдельный GameFilter в UI: только без активного пресета игры."""
-    return main_window.is_game_filter_enabled() and get_active_preset_id() is None
-
-
-PRESET_BLOCKS_GF_TOOLTIP = "Отключите пресет игры"
-
-
-def _bind_widget_tooltip(widget, text: str) -> None:
-    tooltip = {"win": None}
-
-    def show(_event=None):
-        if tooltip["win"] is not None:
-            return
-        x = widget.winfo_rootx() + 10
-        y = widget.winfo_rooty() + widget.winfo_height() + 5
-        tip = tk.Toplevel(widget)
-        tip.wm_overrideredirect(True)
-        tip.geometry(f"+{x}+{y}")
-        tip.configure(bg="#15354D", relief=tk.SOLID, bd=1)
-        tk.Label(
-            tip,
-            text=text,
-            font=("Arial", 10),
-            fg="white",
-            bg="#15354D",
-            padx=10,
-            pady=5,
-        ).pack()
-        tooltip["win"] = tip
-
-    def hide(_event=None):
-        win = tooltip["win"]
-        if win is not None:
-            win.destroy()
-            tooltip["win"] = None
-
-    widget.bind("<Enter>", show)
-    widget.bind("<Leave>", hide)
-
-
-def _create_disabled_gamefilter_button(parent, text: str, **button_style) -> tk.Frame:
-    wrapper = tk.Frame(parent, bg="#182030")
-    style = dict(button_style)
-    style.update(
-        {
-            "state": tk.DISABLED,
-            "cursor": "arrow",
-            "fg": "#888888",
-            "bg": "#2a4d6a",
-        }
-    )
-    btn = tk.Button(wrapper, text=text, **style)
-    btn.pack(fill=tk.X)
-    _bind_widget_tooltip(wrapper, PRESET_BLOCKS_GF_TOOLTIP)
-    return wrapper
-
-
 def _preset_set_ipset_none(manager_dir):
     target_path = os.path.join(manager_dir, "files", "lists", "ipset-all.txt")
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -423,16 +365,8 @@ class GameFilterWindow:
         )
         preset_btn.pack(pady=(0, 10))
 
-        active_preset = get_active_preset_id()
-        standalone_gf = _is_standalone_gamefilter_ui_enabled(self.main_window)
-
-        if active_preset is not None:
-            enable_gf_btn = _create_disabled_gamefilter_button(
-                main_frame,
-                text="Включить GameFilter",
-                **button_style,
-            )
-        elif standalone_gf:
+        # Кнопка Включить/Выключить GameFilter в зависимости от состояния
+        if self.main_window.is_game_filter_enabled():
             apply_mode_btn = create_hover_button(
                 main_frame,
                 text="Режим TCP/UDP…",
