@@ -4,7 +4,6 @@ import tkinter as tk
 import os
 import sys
 import tempfile
-import tarfile
 import shutil
 import time
 from collections.abc import Callable
@@ -13,7 +12,8 @@ from tkinter import messagebox
 
 from core.app_logging import get_error_logger
 from core.dpi_utils import place_toplevel_centered_on_parent
-from core.zapret_updater import find_bundle_root, get_bundle_download_url
+from core.runtime_resources import REQUIRED_RESOURCE_FILES
+from core.zapret_updater import extract_bundle, find_bundle_root, get_bundle_download_url
 
 
 class ZapretFileChecker:
@@ -38,54 +38,10 @@ class ZapretFileChecker:
         self.home_dir = Path.home()
         self.manager_dir = self.home_dir / "Zapret_DPI_Manager"
 
-        # Список обязательных файлов и папок для проверки
-        self.required_files = [
-            # Основные исполняемые файлы
-            self.manager_dir / "main.py",
-            self.manager_dir / "core" / "manager_config.py",
-            self.manager_dir / "core" / "service_manager.py",
-            self.manager_dir / "core" / "zapret_checker.py",
-            self.manager_dir / "core" / "dependency_checker.py",
-
-            # UI компоненты
-            self.manager_dir / "ui" / "windows" / "main_window.py",
-            self.manager_dir / "ui" / "windows" / "sudo_password_window.py",
-            self.manager_dir / "ui" / "components" / "custom_messagebox.py",
-
-            # Файлы конфигурации
-            self.manager_dir / "utils" / "chosen_strategies.txt",
-            self.manager_dir / "utils" / "name_strategy.txt",
-
-            # Иконка
-            self.manager_dir / "ico" / "zapret.png",
-
-            # QR код
-            self.manager_dir / "utils" / "qr.png",
-        ]
-
-        # Проверяемые папки
-        self.required_dirs = [
-            self.manager_dir / "files" / "bin",
-            self.manager_dir / "files" / "lists",
-            self.manager_dir / "files" / "strategy",
-            self.manager_dir / "core",
-            self.manager_dir / "ui" / "windows",
-            self.manager_dir / "ui" / "components",
-            self.manager_dir / "ico",
-            self.manager_dir / "utils",
-        ]
-
-        # Минимальное количество файлов в папках (чтобы не проверять каждый файл)
-        self.min_files_in_dir = {
-            self.manager_dir / "files" / "bin": 58,
-            self.manager_dir / "files" / "lists": 42,
-            self.manager_dir / "files" / "strategy": 44,
-            self.manager_dir / "core": 12,
-            self.manager_dir / "ico": 1,
-            self.manager_dir / "utils": 3,
-            self.manager_dir / "ui" / "windows": 13,
-            self.manager_dir / "ui" / "components": 2,
-        }
+        # Проверяем конкретный состав поставки, а не число файлов прежней версии.
+        self.required_files = [self.manager_dir / name for name in REQUIRED_RESOURCE_FILES]
+        self.required_dirs = sorted({path.parent for path in self.required_files
+                                     if path.parent != self.manager_dir})
 
     def log_debug(self, message):
         """Добавляет сообщение в лог дебага"""
@@ -225,40 +181,23 @@ class ZapretFileChecker:
         # Проверяем основные файлы
         self.update_progress("Проверка основных файлов...", 10)
         for file_path in self.required_files:
-            if not file_path.exists():
+            if not file_path.is_file():
                 missing_files.append(str(file_path))
                 self.log_debug(f"✗ Отсутствует файл: {file_path}")
             else:
                 self.log_debug(f"✓ Файл присутствует: {file_path}")
 
-        # Проверяем папки и минимальное количество файлов в них
+        # Отсутствующие каталоги также показываются в результате проверки.
         self.update_progress("Проверка папок...", 30)
         for dir_path in self.required_dirs:
-            if not dir_path.exists():
+            if not dir_path.is_dir():
                 missing_dirs.append(str(dir_path))
                 self.log_debug(f"✗ Отсутствует папка: {dir_path}")
             else:
-                # Проверяем минимальное количество файлов если задано
-                if dir_path in self.min_files_in_dir:
-                    file_count = sum(1 for _ in dir_path.iterdir() if _.is_file())
-                    min_required = self.min_files_in_dir[dir_path]
-                    if file_count < min_required:
-                        missing_dirs.append(str(dir_path))
-                        self.log_debug(f"✗ В папке недостаточно файлов: {dir_path} ({file_count} из {min_required})")
-                    else:
-                        self.log_debug(f"✓ Папка в порядке: {dir_path} ({file_count} файлов)")
-                else:
-                    self.log_debug(f"✓ Папка присутствует: {dir_path}")
-
-        # Проверяем главный скрипт
-        main_script = self.manager_dir / "main.py"
-        if not main_script.exists():
-            missing_files.append(str(main_script))
-            self.log_debug("✗ Главный скрипт main.py отсутствует")
-        else:
-            self.log_debug("✓ Главный скрипт main.py присутствует")
+                self.log_debug(f"✓ Папка присутствует: {dir_path}")
 
         return missing_files, missing_dirs
+
     def download_archive(self, temp_dir):
         """Скачивает единый архив zapret_updater.tar.gz по ссылке из version.txt"""
         self.current_task = "download"
@@ -333,8 +272,7 @@ class ZapretFileChecker:
             os.makedirs(extract_dir, exist_ok=True)
 
             # Извлекаем архив
-            with tarfile.open(archive_path, 'r:gz') as tar:
-                tar.extractall(path=extract_dir)
+            extract_bundle(archive_path, extract_dir)
 
             self.update_progress("Архив успешно извлечен", 60)
             return extract_dir
@@ -344,103 +282,50 @@ class ZapretFileChecker:
             return None
 
     def restore_missing_files(self, extract_dir, missing_files, missing_dirs):
-        """Восстанавливает недостающие файлы и папки"""
+        """Восстанавливает только отсутствующие обязательные файлы поставки."""
         self.current_task = "restore"
-
+        bundle_root = find_bundle_root(str(extract_dir))
+        source_dir = Path(bundle_root or extract_dir)
+        self.log_debug(f"Источник для восстановления: {source_dir}")
+        requested_files = {Path(path) for path in missing_files}
+        requested_dirs = {Path(path) for path in missing_dirs}
         restored_count = 0
 
-        # Сначала создаем недостающие папки
-        self.update_progress("Создание недостающих папок...", 65)
-        for dir_path_str in missing_dirs:
-            dir_path = Path(dir_path_str)
+        self.update_progress("Восстановление недостающих файлов...", 70)
+        for target in self.required_files:
+            if target not in requested_files and not any(target.is_relative_to(path) for path in requested_dirs):
+                continue
+            # Проверяем повторно: между проверкой и скачиванием файл мог появиться.
+            # Существующие пользовательские списки, настройки и стратегии не заменяем.
+            if os.path.lexists(target):
+                continue
+            relative = target.relative_to(self.manager_dir)
+            source = source_dir / relative
+            if not source.is_file() or source.is_symlink():
+                self.log_debug(f"✗ Файл не найден в архиве: {relative}")
+                continue
+            if not target.resolve().is_relative_to(self.manager_dir.resolve()):
+                self.log_debug(f"✗ Путь за пределами папки программы: {relative}")
+                continue
+            if not source.resolve().is_relative_to(source_dir.resolve()):
+                self.log_debug(f"✗ Путь за пределами архива: {relative}")
+                continue
+            created = False
             try:
-                dir_path.mkdir(parents=True, exist_ok=True)
-                self.log_debug(f"✓ Создана папка: {dir_path}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                # Режим x защищает от замены файла, созданного уже после lexists.
+                with source.open('rb') as source_file, target.open('xb') as target_file:
+                    created = True
+                    shutil.copyfileobj(source_file, target_file)
+                shutil.copystat(source, target)
                 restored_count += 1
-            except Exception as e:
-                self.log_debug(f"✗ Ошибка создания папки {dir_path}: {e}")
-
-        # Восстанавливаем недостающие файлы
-        self.update_progress("Восстановление файлов...", 70)
-
-        bundle_root = find_bundle_root(str(extract_dir))
-        if bundle_root:
-            source_dir = Path(bundle_root)
-        else:
-            source_dir = Path(extract_dir)
-
-        self.log_debug(f"Источник для восстановления: {source_dir}")
-
-        # Копируем недостающие файлы
-        for file_path_str in missing_files:
-            file_path = Path(file_path_str)
-
-            # Определяем относительный путь для поиска в архиве
-            rel_path = None
-            for base_path in [self.manager_dir, self.home_dir]:
-                try:
-                    rel_path = file_path.relative_to(base_path)
-                    break
-                except ValueError:
-                    continue
-
-            if not rel_path:
-                self.log_debug(f"✗ Не могу определить относительный путь для: {file_path}")
+                self.log_debug(f"✓ Восстановлен файл: {target}")
+            except FileExistsError:
                 continue
-
-            # Ищем файл в архиве
-            source_file = source_dir / rel_path
-
-            if source_file.exists():
-                # Создаем целевую папку если её нет
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                try:
-                    # Копируем файл
-                    shutil.copy2(source_file, file_path)
-                    self.log_debug(f"✓ Восстановлен файл: {file_path}")
-                    restored_count += 1
-                except Exception as e:
-                    self.log_debug(f"✗ Ошибка копирования {file_path}: {e}")
-            else:
-                self.log_debug(f"✗ Файл не найден в архиве: {rel_path}")
-
-        # Восстанавливаем содержимое папок с недостаточным количеством файлов
-        self.update_progress("Восстановление содержимого папок...", 80)
-        for dir_path_str in missing_dirs:
-            dir_path = Path(dir_path_str)
-
-            # Определяем относительный путь папки
-            rel_dir_path = None
-            for base_path in [self.manager_dir, self.home_dir]:
-                try:
-                    rel_dir_path = dir_path.relative_to(base_path)
-                    break
-                except ValueError:
-                    continue
-
-            if not rel_dir_path:
-                continue
-
-            # Ищем папку в архиве
-            source_dir_path = source_dir / rel_dir_path
-
-            if source_dir_path.exists() and source_dir_path.is_dir():
-                # Копируем все файлы из папки
-                copied_files = 0
-                for source_file in source_dir_path.iterdir():
-                    if source_file.is_file():
-                        target_file = dir_path / source_file.name
-                        try:
-                            shutil.copy2(source_file, target_file)
-                            copied_files += 1
-                        except Exception as e:
-                            self.log_debug(f"✗ Ошибка копирования {source_file.name}: {e}")
-
-                if copied_files > 0:
-                    self.log_debug(f"✓ Восстановлено {copied_files} файлов в папке: {dir_path}")
-                    restored_count += copied_files
-
+            except OSError as error:
+                if created:
+                    target.unlink(missing_ok=True)
+                self.log_debug(f"✗ Ошибка восстановления {relative}: {error}")
         return restored_count
 
     def fix_zapret_files(self):
