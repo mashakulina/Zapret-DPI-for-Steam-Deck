@@ -1,2 +1,5 @@
 /docs/ui_scaling.md
 git-add-commit-loop.sh
+/tests/
+/scripts/
+/dist/
