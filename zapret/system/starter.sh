@@ -92,6 +92,30 @@ if [ -f /opt/zapret/FWTYPE ]; then
         echo "Error: invalid value in file FWTYPE."
         exit 1
     fi
+    if [ -e /opt/zapret/FWTYPE.user ] || [ -L /opt/zapret/FWTYPE.user ]; then
+        user_fwtype=$(cat /opt/zapret/FWTYPE.user) || {
+            echo "Error: cannot read FWTYPE.user." >&2
+            exit 1
+        }
+        if [ "$user_fwtype" != "$content" ]; then
+            echo "Error: FWTYPE.user does not match FWTYPE." >&2
+            exit 1
+        fi
+    elif [ "$content" = iptables ]; then
+        # Older updaters restore the old default after copying this script.
+        # Migrate it at startup while preserving an explicit user selection.
+        fwtype_temp=$(mktemp /opt/zapret/.FWTYPE.XXXXXX) || exit 1
+        if ! cp -p /opt/zapret/FWTYPE "$fwtype_temp" ||
+           ! printf '%s\n' nftables > "$fwtype_temp" ||
+           ! mv -f -- "$fwtype_temp" /opt/zapret/FWTYPE; then
+            rm -f -- "$fwtype_temp"
+            echo "Error: cannot migrate FWTYPE to nftables." >&2
+            exit 1
+        fi
+        content=nftables
+        FWTYPE=$content
+        echo "Migrated the default firewall to nftables."
+    fi
     echo "FWTYPE=$FWTYPE"
 else
     echo "Error: File /opt/zapret/FWTYPE not found."

@@ -245,7 +245,7 @@ class FirewallSettingsWindow:
         if self._busy or not self._state:
             return
         selected = self._var.get()
-        if (selected == self._state.get("configured")
+        if (self._state.get("explicit") and selected == self._state.get("configured")
                 and (not self._state.get("service_active") or selected == self._state.get("active"))):
             self.status_label.configure(text="Этот фаервол уже выбран.", fg="#AAAAAA")
             self._fit_dialog()

@@ -152,17 +152,31 @@ class ZapretUpdater(BaseUpdater):
         return validate_fwtype(value)
 
     def snapshot_fwtype(self, password):
-        """Read before removal; an absent installation uses the bundle default."""
+        """Retain explicit choices; legacy installations adopt the bundle default."""
+        self.__dict__.pop('_saved_fwtype', None)
         result = self.run_with_sudo(
-            ['bash', '-c', 'if [ -e /opt/zapret/FWTYPE ]; then cat /opt/zapret/FWTYPE; else exit 3; fi'],
+            ['bash', '-c', 'if [ -e /opt/zapret/FWTYPE ] || [ -L /opt/zapret/FWTYPE ]; then cat /opt/zapret/FWTYPE; else exit 3; fi'],
             password, "Сохранение FWTYPE...",
         )
         if result and result['returncode'] == 3:
-            self._saved_fwtype = None
+            configured = None
         elif result and result['returncode'] == 0:
-            self._saved_fwtype = self.validate_fwtype(result['stdout'])
+            configured = self.validate_fwtype(result['stdout'])
         else:
             raise ValueError("Не удалось прочитать FWTYPE: " + (result or {}).get('stderr', 'нет ответа'))
+        choice = self.run_with_sudo(
+            ['bash', '-c', 'if [ -e /opt/zapret/FWTYPE.user ] || [ -L /opt/zapret/FWTYPE.user ]; then cat /opt/zapret/FWTYPE.user; else exit 3; fi'],
+            password, "Сохранение выбранного фаервола...",
+        )
+        if choice and choice['returncode'] == 3:
+            self._saved_fwtype = None
+            return
+        if not choice or choice['returncode'] != 0:
+            raise ValueError("Не удалось прочитать FWTYPE.user: " + (choice or {}).get('stderr', 'нет ответа'))
+        selected = self.validate_fwtype(choice['stdout'])
+        if selected != configured:
+            raise ValueError("FWTYPE.user не соответствует FWTYPE; обновление отменено")
+        self._saved_fwtype = selected
 
     def stop_and_remove_zapret(self, password, progress_callback=None):
         """Останавливает и удаляет старую версию zapret"""
@@ -245,7 +259,7 @@ class ZapretUpdater(BaseUpdater):
                 progress_callback("Копирование файлов системы...", 60)
 
             for item in os.listdir(system_dir):
-                if item == 'FWTYPE':
+                if item in ('FWTYPE', 'FWTYPE.user'):
                     continue  # Write only the validated, selected value below.
                 src = os.path.join(system_dir, item)
                 dst = os.path.join('/opt/zapret', item)
@@ -324,6 +338,15 @@ class ZapretUpdater(BaseUpdater):
                                             password, "Восстановление FWTYPE...")
             if not result or result['returncode'] != 0:
                 print("Не удалось записать FWTYPE")
+                return False
+            if self._saved_fwtype:
+                # The installed default must never become an explicit choice.
+                result = self.run_with_sudo(['cp', '/opt/zapret/FWTYPE', '/opt/zapret/FWTYPE.user'],
+                                            password, "Сохранение выбранного фаервола...")
+            else:
+                result = self.run_with_sudo(['rm', '-f', '/opt/zapret/FWTYPE.user'], password)
+            if not result or result['returncode'] != 0:
+                print("Не удалось сохранить выбор фаервола")
                 return False
             result = self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
             if not result or result['returncode'] != 0:
