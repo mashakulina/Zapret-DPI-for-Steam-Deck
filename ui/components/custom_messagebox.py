@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import tkinter as tk
 
+from core.dpi_utils import place_toplevel_centered_on_parent
+
 def show_info(parent, title, message):
     """Показывает информационное сообщение в стиле приложения"""
     return _show_dialog(parent, title, message, "info")
@@ -41,15 +43,94 @@ def _attach_resizing_message_wrap(dialog, message_label, horizontal_pad=60):
     dialog.after_idle(_sync)
 
 
-def _show_dialog(parent, title, message, dialog_type):
-    """Базовый метод для показа диалогового окна"""
-    dialog = tk.Toplevel(parent)
-    dialog.title(title)
-    dialog.configure(bg='#182030')
+def prepare_modal_window(window):
+    """Map a fully built window before grabbing input; tolerate WM/close races."""
+    try:
+        if not window.winfo_exists():
+            return False
+        window.deiconify()
+        window.update_idletasks()
+        if not window.winfo_viewable():
+            window.wait_visibility()
+        if not window.winfo_exists():
+            return False
+        try:
+            window.grab_set()
+        except tk.TclError:
+            # A compositor may briefly unmap the newly displayed window.
+            window.update_idletasks()
+            if not window.winfo_viewable():
+                window.wait_visibility()
+            if not window.winfo_exists():
+                return False
+            try:
+                window.grab_set()
+            except tk.TclError:
+                # A complete visible message is still useful without a grab.
+                if not window.winfo_viewable():
+                    _close_dialog(window)
+                    return False
+        window.lift()
+        window.focus_set()
+        return True
+    except tk.TclError:
+        _close_dialog(window)
+        return False
 
-    # Центрируем окно
-    dialog.transient(parent)
-    dialog.grab_set()
+def _run_modal(parent, title, build, cancelled):
+    dialog = None
+    previous_grab = None
+    try:
+        previous_grab = parent.grab_current()
+        dialog = tk.Toplevel(parent)
+        # Build all controls before mapping, so failures cannot leave an empty window.
+        dialog.withdraw()
+        dialog.title(title)
+        dialog.configure(bg='#182030')
+        if parent.winfo_viewable():
+            dialog.transient(parent)
+        return build(dialog)
+    except tk.TclError:
+        # Closing the app during construction or a WM transition is cancellation.
+        return cancelled
+    finally:
+        if dialog is not None:
+            _close_dialog(dialog)
+        try:
+            if previous_grab is not None and previous_grab.winfo_exists() and previous_grab.winfo_viewable():
+                previous_grab.grab_set()
+        except tk.TclError:
+            pass
+
+
+def _wait_modal(parent, dialog):
+    dialog.update_idletasks()
+    width = min(max(280, dialog.winfo_reqwidth()), max(1, dialog.winfo_screenwidth() - 16))
+    height = min(max(120, dialog.winfo_reqheight()), max(1, dialog.winfo_screenheight() - 40))
+    place_toplevel_centered_on_parent(
+        dialog, parent, fixed_content_size=(width, height), immediate=True,
+    )
+    if not prepare_modal_window(dialog):
+        return False
+    parent.wait_window(dialog)
+    return True
+
+
+def _show_dialog(parent, title, message, dialog_type):
+    return _run_modal(parent, title,
+                      lambda dialog: _build_dialog(parent, title, message, dialog_type, dialog), False)
+
+
+def _show_question(parent, title, message):
+    return _run_modal(parent, title, lambda dialog: _build_question(parent, title, message, dialog), False)
+
+
+def _show_question_cancel(parent, title, message):
+    return _run_modal(parent, title, lambda dialog: _build_question_cancel(parent, title, message, dialog), None)
+
+
+def _build_dialog(parent, title, message, dialog_type, dialog):
+    """Базовый метод для показа диалогового окна"""
 
     # Определяем цвета в зависимости от типа
     if dialog_type == "error":
@@ -112,29 +193,12 @@ def _show_dialog(parent, title, message, dialog_type):
     button.bind("<Leave>", on_leave)
     button.pack()
 
-    # Устанавливаем размеры и центрируем
-    dialog.update_idletasks()
-    width = dialog.winfo_width()
-    height = dialog.winfo_height()
-    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
-    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
+    return _wait_modal(parent, dialog)
 
-
-    # Ждем закрытия окна
-    parent.wait_window(dialog)
-    return True
-
-def _show_question(parent, title, message):
+def _build_question(parent, title, message, dialog):
     """Метод для показа вопроса Да/Нет"""
     result = {"value": False}
 
-    dialog = tk.Toplevel(parent)
-    dialog.title(title)
-    dialog.configure(bg='#182030')
-
-    # Центрируем окно
-    dialog.transient(parent)
-    dialog.grab_set()
 
     # Основной фрейм
     main_frame = tk.Frame(dialog, bg='#182030', padx=30, pady=25)
@@ -214,28 +278,13 @@ def _show_question(parent, title, message):
     yes_button.pack(side=tk.LEFT, padx=(0, 40))
     no_button.pack(side=tk.LEFT)
 
-    # Устанавливаем размеры и центрируем
-    dialog.update_idletasks()
-    width = dialog.winfo_width()
-    height = dialog.winfo_height()
-    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
-    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
-
-    # Ждем закрытия окна
-    parent.wait_window(dialog)
+    _wait_modal(parent, dialog)
     return result["value"]
 
-def _show_question_cancel(parent, title, message):
+def _build_question_cancel(parent, title, message, dialog):
     """Метод для показа вопроса Да/Нет/Отмена"""
     result = {"value": None}  # True=Да, False=Нет, None=Отмена
 
-    dialog = tk.Toplevel(parent)
-    dialog.title(title)
-    dialog.configure(bg='#182030')
-
-    # Центрируем окно
-    dialog.transient(parent)
-    dialog.grab_set()
 
     # Основной фрейм
     main_frame = tk.Frame(dialog, bg='#182030', padx=30, pady=25)
@@ -334,18 +383,13 @@ def _show_question_cancel(parent, title, message):
     no_button.pack(side=tk.LEFT, padx=(0, 5))
     cancel_button.pack(side=tk.LEFT)
 
-    # Устанавливаем размеры и центрируем
-    dialog.update_idletasks()
-    width = dialog.winfo_width()
-    height = dialog.winfo_height()
-    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
-    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
-    dialog.geometry(f"{width}x{height}+{x}+{y}")
-
-    # Ждем закрытия окна
-    parent.wait_window(dialog)
+    _wait_modal(parent, dialog)
     return result["value"]
 
 def _close_dialog(dialog):
-    """Закрывает диалоговое окно"""
-    dialog.destroy()
+    """Закрывает диалог, в том числе уже уничтоженный оконным менеджером."""
+    try:
+        if dialog.winfo_exists():
+            dialog.destroy()
+    except tk.TclError:
+        pass

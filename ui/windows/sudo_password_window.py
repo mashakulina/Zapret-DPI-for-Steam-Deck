@@ -1,15 +1,18 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
 from core.sudo_checker import SudoChecker
 from ui.components.button_styler import create_hover_button
-from core.dpi_utils import place_toplevel_centered_on_parent
+from ui.components.custom_messagebox import prepare_modal_window, show_error
+from core.dpi_utils import application_tk_root, place_toplevel_centered_on_parent
 
 class SudoPasswordWindow:
     def __init__(self, parent, on_password_valid=None):
         self.parent = parent
+        self.anchor = application_tk_root(parent) or parent
         self.on_password_valid = on_password_valid
+        self._layout_ready = False
 
         self.root = tk.Toplevel(parent)
+        self.root.withdraw()
         self.setup_window_properties()
         self.root.title("Требуется пароль sudo")
 
@@ -21,23 +24,36 @@ class SudoPasswordWindow:
         if cached_password:
             self.password_entry.insert(0, cached_password)
             self.remember_var.set(True)
+        self._place_compact_window()
+        self._layout_ready = True
+        if prepare_modal_window(self.root):
+            self.password_entry.focus_set()
+
+    def _place_compact_window(self):
+        self.root.update_idletasks()
+        width = min(max(280, self.main_frame.winfo_reqwidth() + 8),
+                    max(1, self.anchor.winfo_screenwidth() - 32))
+        # Set the final wrap before measuring height; hidden frames still report 1px.
+        self.description_label.configure(wraplength=max(120, width - 40))
+        self.root.update_idletasks()
+        height = min(max(240, self.main_frame.winfo_reqheight() + 12),
+                     max(1, self.anchor.winfo_screenheight() - 80))
+        self.root.minsize(width, height)
         place_toplevel_centered_on_parent(
-            self.root, self.parent, min_width=280, min_height=240, margin_width=8, margin_height=12
+            self.root, self.anchor, fixed_content_size=(width, height), immediate=True,
         )
 
     def setup_window_properties(self):
         """Настройка свойств окна"""
         self.root.configure(bg='#182030')
-        self.root.transient(self.parent)
-        self.root.grab_set()
-
-        # Блокируем родительское окно
-        self.root.focus_set()
+        if self.anchor.winfo_viewable():
+            self.root.transient(self.anchor)
 
     def setup_ui(self):
         """Настройка интерфейса"""
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        self.main_frame = main_frame
+        main_frame.pack(fill=tk.X)
 
         # Заголовок
         title_label = tk.Label(
@@ -59,17 +75,21 @@ class SudoPasswordWindow:
             justify=tk.LEFT,
             wraplength=360,
         )
+        self.description_label = description_label
         description_label.pack(pady=(0, 20), fill=tk.X)
 
         def _sync_desc_wrap(_event=None):
             try:
-                aw = max(main_frame.winfo_width(), 1)
+                if not self._layout_ready:
+                    return
+                aw = main_frame.winfo_width()
+                if aw <= 1:
+                    return
                 description_label.config(wraplength=max(120, aw - 40))
             except tk.TclError:
                 pass
 
         main_frame.bind("<Configure>", lambda _e: _sync_desc_wrap())
-        self.root.after_idle(_sync_desc_wrap)
 
         # Поле для пароля
         password_frame = tk.Frame(main_frame, bg='#182030')
@@ -120,6 +140,8 @@ class SudoPasswordWindow:
         # Фрейм для кнопок
         buttons_frame = tk.Frame(main_frame, bg='#182030')
         buttons_frame.pack(fill=tk.X)
+        buttons_center_frame = tk.Frame(buttons_frame, bg='#182030')
+        buttons_center_frame.pack()
 
         # Стиль кнопок
         button_style = {
@@ -136,7 +158,7 @@ class SudoPasswordWindow:
 
         # Кнопка Подтвердить
         confirm_button = create_hover_button(
-            buttons_frame,
+            buttons_center_frame,
             text="Подтвердить",
             command=self.verify_password,
             **button_style
@@ -146,12 +168,12 @@ class SudoPasswordWindow:
 
         # Кнопка Отмена
         cancel_button = create_hover_button(
-            buttons_frame,
+            buttons_center_frame,
             text="Отмена",
             command=self.cancel,
             **button_style
         )
-        cancel_button.pack(side=tk.RIGHT)
+        cancel_button.pack(side=tk.LEFT)
 
     def verify_password(self):
         """Проверяет введенный пароль"""
@@ -159,7 +181,7 @@ class SudoPasswordWindow:
         password = self.password_entry.get()
 
         if not password:
-            messagebox.showerror("Ошибка", "Введите пароль sudo")
+            show_error(self.root, "Ошибка", "Введите пароль sudo")
             return
 
         # Показываем индикатор загрузки
@@ -188,7 +210,7 @@ class SudoPasswordWindow:
             # Закрываем окно
             self.root.destroy()
         else:
-            messagebox.showerror("Ошибка", "Неверный пароль sudo")
+            show_error(self.root, "Ошибка", "Неверный пароль sudo")
             self.password_entry.delete(0, tk.END)
             self.password_entry.focus_set()
 
@@ -203,5 +225,9 @@ class SudoPasswordWindow:
 
     def run(self):
         """Запускает окно"""
-        self.root.wait_window()
+        try:
+            if self.root.winfo_exists():
+                self.root.wait_window()
+        except tk.TclError:
+            return None
         return self.password
