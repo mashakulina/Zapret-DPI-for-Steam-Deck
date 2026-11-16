@@ -78,8 +78,8 @@ echo "Home directory: $CURRENT_HOME"
 echo "Config file: $CONFIG_FILE"
 
 if pidof "nfqws" > /dev/null; then
-    echo "nfqws is already running."
-    exit 0
+    echo "Error: nfqws is already running; refusing to alter firewall." >&2
+    exit 1
 fi
 
 if [ -f /opt/zapret/FWTYPE ]; then
@@ -148,35 +148,35 @@ merge_unique_lists \
     "$TEMP_DIR/ipset-all.txt" \
     "$TEMP_DIR/ipset-all_user.txt"
 
-# ПРОВЕРЯЕМ НАЛИЧИЕ ФАЙЛА gamefilter.enable В ИСХОДНОЙ ПАПКЕ
-GAME_FILTER_TCP_VALUE="12"  # значение по умолчанию для TCP
-GAME_FILTER_UDP_VALUE="12"  # значение по умолчанию для UDP
-GAME_FILTER_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.enable"
-GAME_FILTER_MODE_FILE="$CURRENT_HOME/Zapret_DPI_Manager/utils/gamefilter.mode"
+# Standard modes retain the historical startup path, including older installations.
+GAME_FILTER_TCP_VALUE="12"
+GAME_FILTER_UDP_VALUE="12"
+GAME_FILTER_MANAGER_DIR="$CURRENT_HOME/Zapret_DPI_Manager"
 GAME_FILTER_MODE="both"
-if [ -f "$GAME_FILTER_MODE_FILE" ]; then
-    GAME_FILTER_MODE=$(head -n 1 "$GAME_FILTER_MODE_FILE" | tr -d '\r\n' | tr '[:upper:]' '[:lower:]')
+if [ -f "$GAME_FILTER_MANAGER_DIR/utils/gamefilter.mode" ]; then
+    GAME_FILTER_MODE=$(head -n 1 "$GAME_FILTER_MANAGER_DIR/utils/gamefilter.mode" | tr -d '\r\n' | tr '[:upper:]' '[:lower:]')
 fi
 if [ "$GAME_FILTER_MODE" != "tcp" ] && [ "$GAME_FILTER_MODE" != "udp" ] && [ "$GAME_FILTER_MODE" != "both" ]; then
     GAME_FILTER_MODE="both"
 fi
-
-if [ -f "$GAME_FILTER_FILE" ]; then
-    echo "Game filter enabled file found. Using game ports range (mode: $GAME_FILTER_MODE)."
-    GAME_FILTER_TCP_PORTS="27000-27100,3074-3076"
-    GAME_FILTER_UDP_PORTS="3000-3010,5050-5060,27000-27100,3478-3481,3074-3076,4380,50000-50200,49152-52000"
-    if [ "$GAME_FILTER_MODE" = "tcp" ]; then
-        GAME_FILTER_TCP_VALUE="$GAME_FILTER_TCP_PORTS"
-        GAME_FILTER_UDP_VALUE="12"
-    elif [ "$GAME_FILTER_MODE" = "udp" ]; then
-        GAME_FILTER_TCP_VALUE="12"
-        GAME_FILTER_UDP_VALUE="$GAME_FILTER_UDP_PORTS"
+if [ -f "$GAME_FILTER_MANAGER_DIR/utils/gamefilter.enable" ]; then
+    if [ -e "$GAME_FILTER_MANAGER_DIR/utils/gamefilter.ports.json" ]; then
+        # Config is data: the helper emits two validated lines, never shell code.
+        if ! GAME_FILTER_VALUES=$(python3 -I "$GAME_FILTER_MANAGER_DIR/core/game_filter_ports.py" "$GAME_FILTER_MANAGER_DIR"); then
+            echo "Error: cannot load GameFilter ports; nfqws was not started." >&2
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+        GAME_FILTER_TCP_VALUE="${GAME_FILTER_VALUES%%$'\n'*}"
+        GAME_FILTER_UDP_VALUE="${GAME_FILTER_VALUES#*$'\n'}"
     else
-        GAME_FILTER_TCP_VALUE="$GAME_FILTER_TCP_PORTS"
-        GAME_FILTER_UDP_VALUE="$GAME_FILTER_UDP_PORTS"
+        if [ "$GAME_FILTER_MODE" != "udp" ]; then
+            GAME_FILTER_TCP_VALUE="27000-27100,3074-3076"
+        fi
+        if [ "$GAME_FILTER_MODE" != "tcp" ]; then
+            GAME_FILTER_UDP_VALUE="3000-3010,5050-5060,27000-27100,3478-3481,3074-3076,4380,50000-50200,49152-52000"
+        fi
     fi
-else
-    echo "Game filter enabled file not found. Using default value 12."
 fi
 
 # ДАЕМ ПРАВА НА ЧТЕНИЕ
@@ -192,6 +192,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 while IFS= read -r line || [[ -n "$line" ]]; do
+    # CRLF and commented legacy configs are valid input.
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+
     # ЗАМЕНЯЕМ ПУТИ НА ВРЕМЕННЫЕ
     line="${line//\{list_general\}/$TEMP_DIR/list-general_merged.txt}"
     line="${line//\{list_exclude\}/$TEMP_DIR/list-exclude_merged.txt}"
@@ -210,6 +214,14 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line//\{tlsmax\}/$TEMP_DIR/tls_clienthello_max_ru.bin}"
     line="${line//\{stun\}/$TEMP_DIR/stun.bin}"
     line="${line//\{dbankcloud\}/$TEMP_DIR/quic_initial_dbankcloud_ru.bin}"
+
+    # Flowseal 1.10.4 payloads; ACTIVE aliases keep the upstream defaults.
+    line="${line//\{ACTIVE_DISCORD_UDP\}/$TEMP_DIR/ACTIVE_DISCORD_UDP.bin}"
+    line="${line//\{ACTIVE_GAME_UDP\}/$TEMP_DIR/ACTIVE_GAME_UDP.bin}"
+    line="${line//\{quic_initial_4pda_to\}/$TEMP_DIR/quic_initial_4pda_to.bin}"
+    line="${line//\{stun2\}/$TEMP_DIR/stun2.bin}"
+    line="${line//\{tls_clienthello_sochi_park\}/$TEMP_DIR/tls_clienthello_sochi_park.bin}"
+    line="${line//\{tls_clienthello_www_sferum_ru\}/$TEMP_DIR/tls_clienthello_www_sferum_ru.bin}"
 
     # ЗАМЕНЯЕМ {GameFilter} НА ЗНАЧЕНИЕ В ЗАВИСИМОСТИ ОТ ПРОТОКОЛА
     if [[ "$line" == *"--filter-tcp"* && "$line" == *"{GameFilter}"* ]]; then
@@ -235,101 +247,24 @@ done < "$CONFIG_FILE"
 echo "Final ARGS: $ARGS"
 
 sysctl net.netfilter.nf_conntrack_tcp_be_liberal=1
-
-if [ "$FWTYPE" = "iptables" ]; then
-    TCP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | grep '^--filter-tcp=' | sed 's/--filter-tcp=//' | paste -sd, | sed 's/-/:/g')
-    UDP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | grep '^--filter-udp=' | sed 's/--filter-udp=//' | paste -sd, | sed 's/-/:/g')
-elif [ "$FWTYPE" = "nftables" ]; then
-    TCP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | grep '^--filter-tcp=' | sed 's/--filter-tcp=//' | paste -sd, | sed 's/:/-/g')
-    UDP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | grep '^--filter-udp=' | sed 's/--filter-udp=//' | paste -sd, | sed 's/:/-/g')
+# connbytes/ct packets matches require accounting for newly created flows.
+if ! sysctl net.netfilter.nf_conntrack_acct=1; then
+    # On a fresh boot the sysctl appears only after conntrack is loaded.
+    if ! modprobe nf_conntrack || ! sysctl net.netfilter.nf_conntrack_acct=1; then
+        echo "Error: cannot enable conntrack accounting; nfqws was not started." >&2
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
 fi
 
-# Удаляем дубликаты портов
-TCP_PORTS=$(echo "$TCP_PORTS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-UDP_PORTS=$(echo "$UDP_PORTS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-
-# Преобразуем диапазоны обратно в нужный формат
-if [ "$FWTYPE" = "iptables" ]; then
-    TCP_PORTS=$(echo "$TCP_PORTS" | sed 's/-/:/g')
-    UDP_PORTS=$(echo "$UDP_PORTS" | sed 's/-/:/g')
-elif [ "$FWTYPE" = "nftables" ]; then
-    TCP_PORTS=$(echo "$TCP_PORTS" | sed 's/:/-/g')
-    UDP_PORTS=$(echo "$UDP_PORTS" | sed 's/:/-/g')
-fi
-
-echo "Configuring $FWTYPE for TCP ports: $TCP_PORTS"
-echo "Configuring $FWTYPE for UDP ports: $UDP_PORTS"
-
-if [ "$FWTYPE" = "iptables" ]; then
-    iptables -t mangle -F PREROUTING
-    iptables -t mangle -F POSTROUTING
-    ip6tables -t mangle -F PREROUTING
-    ip6tables -t mangle -F POSTROUTING
-elif [ "$FWTYPE" = "nftables" ]; then
-    nft add table inet zapret
-    nft flush table inet zapret
-    nft add chain inet zapret prerouting { type filter hook prerouting priority mangle \; }
-    nft add chain inet zapret postrouting { type filter hook postrouting priority mangle \; }
-fi
-
-if [ "$FWTYPE" = "iptables" ]; then
-    add_ipt_rule() {
-        local chain=$1
-        local iface_arg=$2
-        local iface_list=$3
-        local proto=$4
-        local ports=$5
-        local qnum=$6
-        local extra_flags=$7
-
-        if [ -z "$iface_list" ]; then
-             iptables -t mangle -I "$chain" -p "$proto" -m multiport --dports "$ports" \
-                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-             iptables -t mangle -I "$chain" -p "$proto" -m multiport --sports "$ports" \
-                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-             ip6tables -t mangle -I "$chain" -p "$proto" -m multiport --dports "$ports" \
-                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-             ip6tables -t mangle -I "$chain" -p "$proto" -m multiport --sports "$ports" \
-                $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-        else
-            for iface in $iface_list; do
-                iptables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --dports "$ports" \
-                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-                iptables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --sports "$ports" \
-                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-                ip6tables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --dports "$ports" \
-                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-                ip6tables -t mangle -I "$chain" "$iface_arg" "$iface" -p "$proto" -m multiport --sports "$ports" \
-                    $extra_flags -j NFQUEUE --queue-num "$qnum" --queue-bypass
-            done
-        fi
-    }
-
-    if [ -n "$TCP_PORTS" ]; then
-        add_ipt_rule "POSTROUTING" "-o" "$IFACE_WAN" "tcp" "$TCP_PORTS" "200" "-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12"
-    fi
-    if [ -n "$UDP_PORTS" ]; then
-        add_ipt_rule "POSTROUTING" "-o" "$IFACE_WAN" "udp" "$UDP_PORTS" "200" "-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12"
-    fi
-
-    if [ -n "$TCP_PORTS" ]; then
-        add_ipt_rule "PREROUTING" "-i" "$IFACE_LAN" "tcp" "$TCP_PORTS" "200" "-m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6"
-    fi
-    if [ -n "$UDP_PORTS" ]; then
-        add_ipt_rule "PREROUTING" "-i" "$IFACE_LAN" "udp" "$UDP_PORTS" "200" "-m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:6"
-    fi
-
-elif [ "$FWTYPE" = "nftables" ]; then
-
-    if [ -n "$TCP_PORTS" ]; then
-        nft add rule inet zapret postrouting tcp dport { $TCP_PORTS } ct original packets 1-12 queue num 200 bypass
-        nft add rule inet zapret prerouting tcp sport { $TCP_PORTS } ct reply packets 1-6 queue num 200 bypass
-    fi
-
-    if [ -n "$UDP_PORTS" ]; then
-        nft add rule inet zapret postrouting udp dport { $UDP_PORTS } ct original packets 1-12 queue num 200 bypass
-        nft add rule inet zapret prerouting udp sport { $UDP_PORTS } ct reply packets 1-6 queue num 200 bypass
-    fi
+# This helper is installed beside starter.sh; development directories are not required.
+source "$(dirname "${BASH_SOURCE[0]}")/firewall.sh" || exit 1
+TCP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | sed -n 's/^--filter-tcp=//p' | paste -sd,)
+UDP_PORTS=$(echo "$ARGS" | tr -s ' ' '\n' | sed -n 's/^--filter-udp=//p' | paste -sd,)
+if ! zapret_fw_apply "$TCP_PORTS" "$UDP_PORTS"; then
+    echo "Error: firewall preparation failed; nfqws was not started." >&2
+    rm -rf "$TEMP_DIR"
+    exit 1
 fi
 
 # ЗАПУСКАЕМ NFQWS С ВРЕМЕННЫМИ ФАЙЛАМИ
@@ -349,6 +284,7 @@ if ps -p $NFQWS_PID > /dev/null; then
     rm -rf "$TEMP_DIR"
     echo "Temp files cleaned up"
 else
+    zapret_fw_cleanup || true
     echo "ERROR: nfqws failed to start!"
     echo "Check above for errors"
     rm -rf "$TEMP_DIR"
