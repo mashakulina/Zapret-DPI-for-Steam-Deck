@@ -8,12 +8,18 @@
 
 2) Поле lines: дополнительные строки в начало config.txt (Guild Wars 2 и т.п.).
 
-3) Пресеты вроде Roblox / Transformice / Fall Guys: без lines или с lines — при применении
+3) Пресеты вроде Roblox / Fall Guys: без lines или с lines — при применении
    дополняют list-general_user.txt и ipset-all_user.txt данными из utils/for games/;
    при снятии удаляются только строки из файлов игры, пользовательские записи сохраняются.
 """
 
 import os
+
+# Builtins remain a constant; persistent user data is loaded only on demand.
+from core.custom_game_presets import (
+    apply_custom_preset, clear_custom_preset, save_custom_preset,
+    read_current_filter_settings, validate_custom_preset, preset_switch_transaction, PresetConflict, PresetExistsError,
+)
 
 GAMEFILTER_PLACEHOLDER_TCP = "--filter-tcp={GameFilter}"
 GAMEFILTER_PLACEHOLDER_UDP = "--filter-udp={GameFilter}"
@@ -82,7 +88,7 @@ def get_active_preset_id(manager_dir=None):
     """Возвращает preset_id применённого пресета или None, если ни один не применён."""
     if manager_dir is None:
         manager_dir = get_manager_dir()
-    for preset_id in GAME_PRESETS:
+    for preset_id in get_game_presets(manager_dir):
         if os.path.exists(get_preset_marker_path(preset_id, manager_dir)):
             return preset_id
     return None
@@ -98,13 +104,13 @@ def set_active_preset(preset_id, manager_dir=None):
     path = get_preset_marker_path(preset_id, manager_dir)
     with open(path, "w") as f:
         f.write("")
-    for pid in GAME_PRESETS:
+    for pid in get_game_presets(manager_dir):
         if pid != preset_id:
             other = get_preset_marker_path(pid, manager_dir)
             if os.path.isfile(other):
                 try:
                     os.remove(other)
-                except OSError:
+                except FileNotFoundError:
                     pass
 
 
@@ -112,12 +118,12 @@ def clear_active_preset(manager_dir=None):
     """Снимает применение пресетов: удаляет все файлы-маркеры в utils."""
     if manager_dir is None:
         manager_dir = get_manager_dir()
-    for preset_id in GAME_PRESETS:
+    for preset_id in get_game_presets(manager_dir):
         path = get_preset_marker_path(preset_id, manager_dir)
         if os.path.isfile(path):
             try:
                 os.remove(path)
-            except OSError:
+            except FileNotFoundError:
                 pass
 
 
@@ -209,6 +215,10 @@ def reapply_active_preset_to_config(manager_dir=None):
     if not active_preset_id:
         return False
 
+    if is_custom_preset(active_preset_id, manager_dir):
+        from core.custom_game_presets import reapply_custom_preset
+        return reapply_custom_preset(active_preset_id, manager_dir)
+
     preset = GAME_PRESETS.get(active_preset_id)
     if not preset:
         return False
@@ -238,3 +248,12 @@ def reapply_active_preset_to_config(manager_dir=None):
             f.write(new_content)
 
     return True
+
+
+def get_game_presets(manager_dir=None):
+    from core.custom_game_presets import get_custom_presets
+    return {**GAME_PRESETS, **get_custom_presets(manager_dir)}
+
+
+def is_custom_preset(preset_id, manager_dir=None):
+    return bool(get_game_presets(manager_dir).get(preset_id, {}).get('custom'))

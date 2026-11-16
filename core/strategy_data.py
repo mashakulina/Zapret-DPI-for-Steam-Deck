@@ -1,6 +1,6 @@
 import os
 import re
-from core.game_presets import reapply_active_preset_to_config
+from core.game_presets import reapply_active_preset_to_config, preset_switch_transaction
 
 
 def natural_sort_key(text):
@@ -230,37 +230,38 @@ def save_strategy_names(selected_strategies):
             has_valid_strategies = True
             valid_strategies[category] = strategy_name
 
-        # Сохраняем наименования в отдельный файл
-        with open(names_path, 'w', encoding='utf-8') as f:
-            if has_valid_strategies:
-                for category, strategy_name in valid_strategies.items():
-                    f.write(f"{category}: {strategy_name}\n")
-            else:
-                # Если нет валидных стратегий, оставляем файл пустым
-                f.write("")
+        with preset_switch_transaction(manager_dir):
+            # Сохраняем наименования в отдельный файл
+            with open(names_path, 'w', encoding='utf-8') as f:
+                if has_valid_strategies:
+                    for category, strategy_name in valid_strategies.items():
+                        f.write(f"{category}: {strategy_name}\n")
+                else:
+                    # Если нет валидных стратегий, оставляем файл пустым
+                    f.write("")
 
-        # Записываем имя стратегии в name_strategies.txt
-        with open(name_strategy_file, 'w', encoding='utf-8') as f:
-            if has_valid_strategies:
-                f.write("Custom Strategy")
-            else:
-                # Если нет валидных стратегий, оставляем файл пустым
-                f.write("")
+            # Записываем имя стратегии в name_strategies.txt
+            with open(name_strategy_file, 'w', encoding='utf-8') as f:
+                if has_valid_strategies:
+                    f.write("Custom Strategy")
+                else:
+                    # Если нет валидных стратегий, оставляем файл пустым
+                    f.write("")
 
-        # Сохраняем команды в config.txt
-        with open(config_path, 'w', encoding='utf-8') as f:
-            if has_valid_strategies:
-                # Добавляем команды выбранных стратегий
-                for category, strategy_name in valid_strategies.items():
-                    command = get_strategy_command(category, strategy_name)
-                    if command:
-                        f.write(f"{command}\n")
-            else:
-                # Если нет валидных стратегий, оставляем config.txt пустым
-                f.write("")
+            # Сохраняем команды в config.txt
+            with open(config_path, 'w', encoding='utf-8') as f:
+                if has_valid_strategies:
+                    # Добавляем команды выбранных стратегий
+                    for category, strategy_name in valid_strategies.items():
+                        command = get_strategy_command(category, strategy_name)
+                        if command:
+                            f.write(f"{command}\n")
+                else:
+                    # Если нет валидных стратегий, оставляем config.txt пустым
+                    f.write("")
 
-        # После смены стратегии пере-применяем активный игровой пресет (если есть).
-        reapply_active_preset_to_config(manager_dir)
+            # После смены стратегии пере-применяем активный игровой пресет (если есть).
+            reapply_active_preset_to_config(manager_dir)
 
         return True
     except Exception as e:
