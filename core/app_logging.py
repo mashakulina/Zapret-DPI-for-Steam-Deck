@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -15,6 +17,20 @@ _setup_done = False
 
 def get_error_logger() -> logging.Logger:
     return logging.getLogger(_LOGGER_NAME)
+
+
+def open_error_log_in_kate():
+    """Открывает существующий штатный журнал в Kate без изменения файла."""
+    if not LOG_FILE_PATH.is_file():
+        raise FileNotFoundError("Журнал ошибок пока не создан. Он появится при запуске менеджера.")
+    executable = shutil.which("kate")
+    if not executable:
+        raise FileNotFoundError("Редактор Kate не найден. Установите Kate и повторите открытие лога.")
+    return subprocess.Popen(
+        [executable, "--new", "--encoding", "UTF-8", str(LOG_FILE_PATH)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def setup_error_logging() -> None:
