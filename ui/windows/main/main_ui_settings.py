@@ -9,7 +9,7 @@ from ui.windows.dns_settings_window import DNSSettingsWindow
 from ui.windows.firewall_settings_window import FirewallSettingsWindow
 from ui.windows.tg_ws_proxy_window import TgWsProxyWindow
 from ui.windows.hostlist_settings_window import HostlistSettingsWindow
-from ui.windows.ipset_settings_window import IpsetMainWindow
+from ui.windows.ipset_settings_window import IpsetSettingsWindow
 from ui.windows.service_unlock_window import ServiceUnlockWindow
 from ui.windows.strategy_selector_window import StrategySelectorWindow
 from ui.windows.strategy_import_window import StrategyImportWindow
@@ -328,9 +328,9 @@ class MainUISettingsMixin:
         hostlist_window.run()
 
     def open_ipset_settings(self):
-        """Открывает окно настроек IPset"""
-        ipset_main_window = IpsetMainWindow(self.root)
-        ipset_main_window.run()
+        """Сразу открывает добавление пользовательских IP-адресов."""
+        ipset_window = IpsetSettingsWindow(self.root)
+        ipset_window.run()
 
     def open_tg_ws_proxy(self):
         existing = getattr(self, "tg_ws_proxy_window", None)

@@ -885,10 +885,6 @@ class IpsetMainWindow:
         from ui.components.button_styler import create_hover_button
         return create_hover_button(parent, text, command, **kwargs)
 
-    def open_filter_settings(self):
-        """Открывает окно настройки IPSet Filter"""
-        run_child_window(self.window, lambda: IpsetFilterWindow(self.parent).run())
-
     def open_custom_ips(self):
         """Открывает окно добавления пользовательских IP-адресов"""
         run_child_window(self.window, lambda: IpsetSettingsWindow(self.parent).run())
@@ -927,15 +923,6 @@ class IpsetMainWindow:
             'highlightthickness': 0,
             'cursor': 'hand2'
         }
-
-        # Кнопка "Настройка IPSet Filter"
-        filter_button = self.create_hover_button(
-            buttons_frame,
-            text="Настройка IPSet Filter",
-            command=self.open_filter_settings,
-            **button_style
-        )
-        filter_button.pack(pady=(0, 15))
 
         # Кнопка «Добавление пользовательских IP-адресов» (две строки через \n)
         ip_button = self.create_hover_button(

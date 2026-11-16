@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Окно GameFilter: пресеты игр и включение GameFilter."""
+"""Окно GameFilter: пресеты игр, GameFilter и IPSet Filter."""
 import os
 import tkinter as tk
 
 from ui.components.button_styler import create_hover_button
 from ui.components.responsive_buttons import pack_responsive_buttons
+from ui.components.window_navigation import run_child_window
+from ui.windows.ipset_settings_window import IpsetFilterWindow
 from ui.windows.main.protocols import MainWindowActions
 from ui.components.custom_messagebox import show_info, show_error
 from core.dpi_utils import application_tk_root, place_toplevel_centered_on_parent
@@ -456,30 +458,31 @@ class GameFilterPortsWindow(GameFilterProtocolModeWindow):
 
 
 class GameFilterWindow:
-    """Окно выбора действия GameFilter: пресет игры, включить GameFilter или назад."""
+    """Меню игровых пресетов, GameFilter и режимов IPSet Filter."""
 
     def __init__(self, parent: tk.Misc, main_window: MainWindowActions):
         self.parent = parent
         self.main_window = main_window
         self.root = tk.Toplevel(parent)
+        self.root.withdraw()
         self.setup_window_properties()
         self.root.title("GameFilter")
 
         self.setup_ui()
-        place_toplevel_centered_on_parent(
-            self.root, self.parent, min_width=280, min_height=220, margin_width=8, margin_height=12
-        )
+        self._fit_menu()
 
     def setup_window_properties(self):
         """Настройка свойств окна."""
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.protocol("WM_DELETE_WINDOW", self.close_window)
+        self.root.bind("<Escape>", lambda event: self.close_window())
 
     def setup_ui(self):
         """Настройка интерфейса."""
         main_frame = tk.Frame(self.root, bg='#182030', padx=15, pady=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
+        self._main_frame = main_frame
 
         title_label = tk.Label(
             main_frame,
@@ -489,16 +492,38 @@ class GameFilterWindow:
             bg='#182030'
         )
         title_label.pack(pady=(15, 8))
+        self._title_label = title_label
 
-        tk.Label(
+        self._hint_label = tk.Label(
             main_frame,
             text="Готовые игровые пресеты выключают отдельный GameFilter. Пользовательские пресеты восстанавливают сохранённые настройки.",
-            font=("Arial", 9),
+            font=("Arial", 10),
             fg="#aaaaaa",
             bg="#182030",
             justify=tk.CENTER,
-            wraplength=340,
-        ).pack(pady=(0, 18))
+            wraplength=max(340, int(round(340 * logical_ui_scale(self.parent)))),
+        )
+        self._hint_label.pack(fill=tk.X, pady=(0, 18))
+
+        footer = tk.Frame(main_frame, bg='#182030')
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
+        viewport = tk.Frame(main_frame, bg='#182030')
+        viewport.pack(fill=tk.BOTH, expand=True)
+        self._canvas = tk.Canvas(viewport, bg='#182030', bd=0, highlightthickness=0,
+                                 width=1, height=1)
+        self._scrollbar = tk.Scrollbar(viewport, command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._canvas.pack(fill=tk.BOTH, expand=True)
+        self._buttons_frame = tk.Frame(self._canvas, bg='#182030')
+        self._buttons_item = self._canvas.create_window(
+            (0, 0), window=self._buttons_frame, anchor=tk.NW)
+        self._buttons = []
+        self._layout_ready = False
+        self._canvas.bind('<Configure>', self._resize_menu)
+        self._buttons_frame.bind('<Configure>', self._update_menu_scroll)
+        self.root.bind('<Button-4>', lambda event: self._canvas.yview_scroll(-1, 'units'))
+        self.root.bind('<Button-5>', lambda event: self._canvas.yview_scroll(1, 'units'))
+        self.root.bind('<MouseWheel>', lambda event: self._canvas.yview_scroll(-int(event.delta / 120), 'units'))
 
         button_style = {
             'font': ('Arial', 11),
@@ -512,45 +537,87 @@ class GameFilterWindow:
             'cursor': 'hand2'
         }
 
-        preset_btn = create_hover_button(
-            main_frame,
-            text="Включить пресет игры",
-            command=self.open_game_preset_window,
-            **button_style
-        )
-        preset_btn.pack(pady=(0, 10))
+        actions = [("Включить пресет игры", self.open_game_preset_window)]
 
         # Кнопка Включить/Выключить GameFilter в зависимости от состояния
         if self.main_window.is_game_filter_enabled():
-            apply_mode_btn = create_hover_button(
-                main_frame,
-                text="Режим и порты…",
-                command=self._open_protocol_window_for_apply,
-                **button_style,
-            )
-            apply_mode_btn.pack(pady=(0, 8))
-            enable_gf_btn = create_hover_button(
-                main_frame,
-                text="Выключить GameFilter",
-                command=self.disable_game_filter,
-                **button_style
-            )
+            actions.extend((("Режим и порты…", self._open_protocol_window_for_apply),
+                            ("Выключить GameFilter", self.disable_game_filter)))
         else:
-            enable_gf_btn = create_hover_button(
-                main_frame,
-                text="Включить GameFilter",
-                command=self.enable_game_filter,
-                **button_style
-            )
-        enable_gf_btn.pack(pady=(0, 10))
+            actions.append(("Включить GameFilter", self.enable_game_filter))
+        actions.append(("Настройка IPSet Filter", self.open_ipset_filter_settings))
 
-        back_btn = create_hover_button(
-            main_frame,
+        for index, (text, command) in enumerate(actions):
+            button = create_hover_button(self._buttons_frame, text=text, command=command, **button_style)
+            button.pack(pady=(0, 10 if index < len(actions) - 1 else 0))
+            self._buttons.append(button)
+
+        self._back_button = create_hover_button(
+            footer,
             text="Назад",
             command=self.close_window,
             **button_style
         )
-        back_btn.pack(pady=(10, 0))
+        self._back_button.pack()
+
+    def _set_menu_width(self, width):
+        self._canvas.itemconfigure(self._buttons_item, width=width)
+        self._hint_label.configure(wraplength=width)
+        self._title_label.configure(wraplength=width)
+        for button in self._buttons:
+            wrapped = self._natural_button_width > width
+            button.configure(width=0 if wrapped else 25, wraplength=max(1, width - 40) if wrapped else 0)
+
+    def _resize_menu(self, event):
+        if not self._layout_ready:
+            return
+        self._set_menu_width(event.width)
+        self._update_menu_scroll()
+
+    def _update_menu_scroll(self, event=None):
+        self._canvas.configure(scrollregion=self._canvas.bbox('all'))
+        if not self._layout_ready:
+            return
+        if self._buttons_frame.winfo_reqheight() > self._canvas.winfo_height() + 1:
+            if not self._scrollbar.winfo_manager():
+                self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y, before=self._canvas)
+        elif self._scrollbar.winfo_manager():
+            self._scrollbar.pack_forget()
+            self._canvas.yview_moveto(0)
+
+    def _fit_menu(self):
+        """Ограничивает список экраном, сохраняя «Назад» на нижней панели."""
+        self.root.update_idletasks()
+        max_width = max(1, self.root.winfo_screenwidth() - 32)
+        max_height = max(1, self.root.winfo_screenheight() - 80)
+        self._natural_button_width = max(button.winfo_reqwidth() for button in self._buttons)
+        content_width = min(max(self._natural_button_width, self._hint_label.winfo_reqwidth()), max_width - 30)
+        self._set_menu_width(content_width)
+        self._canvas.configure(width=content_width, height=1)
+        self.root.update_idletasks()
+        chrome_height = self._main_frame.winfo_reqheight() - 1
+        available_height = max(1, max_height - chrome_height)
+        overflow = self._buttons_frame.winfo_reqheight() > available_height
+        if overflow:
+            self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y, before=self._canvas)
+            content_width = min(content_width, max_width - 30 - self._scrollbar.winfo_reqwidth())
+            self._set_menu_width(content_width)
+            self._canvas.configure(width=content_width)
+            self.root.update_idletasks()
+            chrome_height = self._main_frame.winfo_reqheight() - 1
+            available_height = max(1, max_height - chrome_height)
+        self._canvas.configure(height=min(self._buttons_frame.winfo_reqheight(), available_height))
+        self.root.update_idletasks()
+        width = min(self.root.winfo_reqwidth(), max_width)
+        height = min(self.root.winfo_reqheight(), max_height)
+        place_toplevel_centered_on_parent(
+            self.root, self.parent, fixed_content_size=(width, height), immediate=True)
+        self._layout_ready = True
+        self._update_menu_scroll()
+
+    def open_ipset_filter_settings(self):
+        """Открывает режимы IPSet Filter с возвратом в то же меню GameFilter."""
+        run_child_window(self.root, lambda: IpsetFilterWindow(self.parent).run())
 
     def enable_game_filter(self):
         self._open_settings_flow(False)
