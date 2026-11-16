@@ -20,7 +20,6 @@ class MainDeckyMixin:
 
     def install_decky_plugin(self):
         """Устанавливает плагин Zapret DPI для Decky через официальный скрипт (нужен sudo)."""
-        self.close_settings_menu()
         if self.is_decky_zapret_plugin_installed():
             show_info(self.root, "Плагин Zapret DPI", "Плагин Zapret DPI уже установлен.")
             return
@@ -45,6 +44,7 @@ class MainDeckyMixin:
 
                 def done():
                     self.decky_plugin_installed = self.is_decky_zapret_plugin_installed()
+                    self.refresh_decky_plugin_button()
                     if ok:
                         self.show_status_message("Плагин Zapret DPI установлен", success=True)
                         show_info(
@@ -66,6 +66,7 @@ class MainDeckyMixin:
                 self.root.after(0, done)
             except subprocess.TimeoutExpired:
                 self.root.after(0, lambda: (
+                    self.refresh_decky_plugin_button(),
                     self.show_status_message("Таймаут установки плагина Zapret DPI", error=True),
                     show_error(
                         self.root,
@@ -77,6 +78,7 @@ class MainDeckyMixin:
                 err = str(e)
 
                 def show_ex():
+                    self.refresh_decky_plugin_button()
                     self.show_status_message(f"Ошибка установки плагина: {err}", error=True)
                     show_error(self.root, "Установка плагина Zapret DPI", err)
 
@@ -86,7 +88,6 @@ class MainDeckyMixin:
 
     def remove_decky_plugin(self):
         """Удаляет каталог плагина Zapret DPI из ~/homebrew/plugins/ (через sudo)."""
-        self.close_settings_menu()
         if not self.is_decky_zapret_plugin_installed():
             show_info(self.root, "Плагин Zapret DPI", "Плагин Zapret DPI не найден.")
             self.decky_plugin_installed = False
@@ -127,6 +128,7 @@ class MainDeckyMixin:
 
     def _on_decky_plugin_removed_ok(self):
         self.decky_plugin_installed = False
+        self.refresh_decky_plugin_button()
         self.show_status_message("Плагин Zapret DPI удалён", success=True)
         show_info(
             self.root,
@@ -135,5 +137,6 @@ class MainDeckyMixin:
         )
 
     def _on_decky_plugin_removed_err(self, err):
+        self.refresh_decky_plugin_button()
         self.show_status_message("Не удалось удалить плагин Zapret DPI", error=True)
         show_error(self.root, "Удаление плагина Zapret DPI", err)

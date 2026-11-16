@@ -42,12 +42,3 @@ class MainChromeMixin:
         """Обрабатывает получение фокуса окном"""
         self.load_current_strategy()  # Обновляем стратегию при получении фокуса
         self.update_game_filter_indicator()
-
-    def on_focus_out(self, event):
-        """Обрабатывает потерю фокуса окном - закрываем меню"""
-        self.close_all_menus()
-
-    def close_all_menus(self):
-        """Закрывает все открытые выпадающие меню"""
-        if self.settings_menu_open:
-            self.close_settings_menu()

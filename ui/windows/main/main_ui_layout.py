@@ -71,7 +71,7 @@ class MainUILayoutMixin:
         self.settings_icon = tk.Label(icons_frame, text="⚙️", font=("Arial", 22),
                                     fg='#0a84ff', bg='#182030', cursor="hand2")
         self.settings_icon.pack(side=tk.LEFT, padx=(0, 10))
-        self.settings_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Открыть меню настроек"))
+        self.settings_icon.bind("<Enter>", lambda e: self.show_icon_tooltip(e, "Открыть настройки"))
         self.settings_icon.bind("<Leave>", lambda e: self.hide_icon_tooltip())
         self.settings_icon.bind("<Button-1>", self.toggle_settings_menu)
 
@@ -224,7 +224,9 @@ class MainUILayoutMixin:
             self.strategy_value.config(text="Не выбрано")
 
     def toggle_settings_menu(self, event=None):
-        """Открывает/закрывает меню настроек"""
+        """Открывает/закрывает окно настроек"""
+        if getattr(getattr(self, "settings_menu", None), "_navigation_child_open", False):
+            return
         if self.settings_menu_open:
             self.close_settings_menu()
         else:

@@ -36,7 +36,8 @@ class MainWindow(
         self.zapret_running = False
         self.autostart_enabled = False
         self.service_running = False  # Статус службы
-        self.settings_menu_open = False  # Флаг для меню настроек
+        self.settings_menu = None
+        self.settings_menu_open = False  # Флаг окна настроек
         self.restarting = False  # Флаг перезапуска службы
 
         self.service_manager = ServiceManager()
@@ -67,7 +68,6 @@ class MainWindow(
 
         # Bind событий фокус
         self.root.bind("<FocusIn>", self.on_focus_in)
-        self.root.bind("<FocusOut>", self.on_focus_out)
 
     def run(self) -> None:
         """Запускает главное окно"""
