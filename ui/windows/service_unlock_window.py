@@ -687,12 +687,9 @@ class ServiceUnlockWindow:
                 canvas.yview_scroll(-1, "units")
 
         # Привязываем колесико мыши
-        canvas.bind_all("<MouseWheel>", on_mouse_wheel)
-        canvas.bind_all("<Button-4>", on_mouse_wheel)
-        canvas.bind_all("<Button-5>", on_mouse_wheel)
-        scrollable_frame.bind("<MouseWheel>", on_mouse_wheel)
-        scrollable_frame.bind("<Button-4>", on_mouse_wheel)
-        scrollable_frame.bind("<Button-5>", on_mouse_wheel)
+        self.window.bind("<MouseWheel>", on_mouse_wheel)
+        self.window.bind("<Button-4>", on_mouse_wheel)
+        self.window.bind("<Button-5>", on_mouse_wheel)
 
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 

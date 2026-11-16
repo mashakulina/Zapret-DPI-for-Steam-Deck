@@ -1,4 +1,5 @@
 import tkinter as tk
+from ui.components.window_navigation import run_child_window
 import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
@@ -82,21 +83,15 @@ class AutoSelectionWindow:
 
     def test_all_strategies(self):
         """Запускает тестирование всех стратегий"""
-        self.on_close()
         try:
-            tester_window = StrategyTesterWindow(self.parent)
-            tester_window.run()
+            run_child_window(self.root, lambda: StrategyTesterWindow(self.parent).run())
         except Exception as e:
             print(f"Ошибка открытия тестировщика: {e}")
             messagebox.showerror("Ошибка", f"Не удалось открыть тестировщика: {str(e)}")
 
     def show_strategy_selection(self):
         """Показывает отдельное окно выбора стратегий"""
-        self.on_close()
-
-        # Открываем новое окно выбора стратегий
-        selection_window = StrategySelectionWindow(self.parent)
-        selection_window.run()
+        run_child_window(self.root, lambda: StrategySelectionWindow(self.parent).run())
 
     def on_close(self):
         """Закрывает окно"""
@@ -105,7 +100,6 @@ class AutoSelectionWindow:
     def go_back(self):
         """Возвращает к окну «Сменить стратегию»"""
         self.on_close()
-        StrategySelectorWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""
@@ -337,13 +331,12 @@ class StrategySelectionWindow:
         else:
             print(f"Выбрано стратегий для тестирования: {len(selected_strategies)}")
 
-        # Закрываем это окно
-        self.on_close()
-
-        # Открываем окно тестирования
+        # Сохраняем выбор при возврате из тестировщика.
         try:
-            tester_window = StrategyTesterWindow(self.parent, strategies_to_test=selected_strategies)
-            tester_window.run()
+            run_child_window(
+                self.root,
+                lambda: StrategyTesterWindow(self.parent, strategies_to_test=selected_strategies).run(),
+            )
         except Exception as e:
             print(f"Ошибка открытия тестировщика: {e}")
             messagebox.showerror("Ошибка", f"Не удалось открыть тестировщик: {str(e)}")
@@ -355,7 +348,6 @@ class StrategySelectionWindow:
     def go_back(self):
         """Возвращает к окну «Автоподбор стратегий»"""
         self.on_close()
-        AutoSelectionWindow(self.parent).run()
 
     def run(self):
         """Запускает окно"""
@@ -441,23 +433,15 @@ class StrategySelectorWindow:
 
     def show_autoselect_menu(self):
         """Показывает отдельное окно автоподбора"""
-        self.close_window()
-
-        # Открываем новое окно автоподбора
-        autoselect_window = AutoSelectionWindow(self.parent)
-        autoselect_window.run()
+        run_child_window(self.root, lambda: AutoSelectionWindow(self.parent).run())
 
     def open_ready_strategies(self):
         """Открывает окно готовых стратегий"""
-        self.close_window()
-        strategy_window = StrategyWindow(self.parent)
-        strategy_window.run()
+        run_child_window(self.root, lambda: StrategyWindow(self.parent).run())
 
     def open_custom_strategy(self):
         """Открывает окно сборки своей стратегии"""
-        self.close_window()
-        custom_window = CustomStrategyWindow(self.parent)
-        custom_window.run()
+        run_child_window(self.root, lambda: CustomStrategyWindow(self.parent).run())
 
     def close_window(self):
         """Закрывает окно"""

@@ -1,4 +1,5 @@
 import tkinter as tk
+from ui.components.window_navigation import run_child_window
 from ui.components.button_styler import create_hover_button
 from core.dpi_utils import place_toplevel_centered_on_parent
 from ui.windows.strategy_window import StrategyWindow
@@ -74,15 +75,11 @@ class StrategySelectorWindow:
 
     def open_ready_strategies(self):
         """Открывает окно готовых стратегий"""
-        self.close_window()
-        strategy_window = StrategyWindow(self.parent)
-        strategy_window.run()
+        run_child_window(self.root, lambda: StrategyWindow(self.parent).run())
 
     def open_custom_strategy(self):
         """Открывает окно сборки своей стратегии"""
-        self.close_window()
-        custom_window = CustomStrategyWindow(self.parent)
-        custom_window.run()
+        run_child_window(self.root, lambda: CustomStrategyWindow(self.parent).run())
 
     def close_window(self):
         """Закрывает окно"""

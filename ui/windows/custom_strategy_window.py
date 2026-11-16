@@ -126,11 +126,11 @@ class CustomStrategyWindow:
         self.canvas_window = self.strategies_canvas.create_window((0, 0), window=self.radiobuttons_frame, anchor="nw")
 
         # Настройка прокрутки колесом мыши
-        self.strategies_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.root.bind("<MouseWheel>", self._on_mousewheel)
 
         # Настройка прокрутки для Linux (Button-4 и Button-5)
-        self.strategies_canvas.bind_all("<Button-4>", self._on_mousewheel_linux)
-        self.strategies_canvas.bind_all("<Button-5>", self._on_mousewheel_linux)
+        self.root.bind("<Button-4>", self._on_mousewheel_linux)
+        self.root.bind("<Button-5>", self._on_mousewheel_linux)
 
         # Обновление прокрутки при изменении размера фрейма
         self.radiobuttons_frame.bind("<Configure>", self.on_frame_configure)
@@ -466,10 +466,6 @@ class CustomStrategyWindow:
 
     def close_window(self):
         """Закрывает окно"""
-        # Отвязываем события прокрутки перед закрытием
-        self.strategies_canvas.unbind_all("<MouseWheel>")
-        self.strategies_canvas.unbind_all("<Button-4>")
-        self.strategies_canvas.unbind_all("<Button-5>")
         self.root.destroy()
 
     def run(self):

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import tkinter as tk
+from ui.components.window_navigation import run_child_window
 from tkinter import ttk
 from tkinter import messagebox
 import ipaddress
@@ -886,15 +887,11 @@ class IpsetMainWindow:
 
     def open_filter_settings(self):
         """Открывает окно настройки IPSet Filter"""
-        self.window.destroy()  # Закрываем текущее окно
-        filter_window = IpsetFilterWindow(self.parent)
-        filter_window.run()
+        run_child_window(self.window, lambda: IpsetFilterWindow(self.parent).run())
 
     def open_custom_ips(self):
         """Открывает окно добавления пользовательских IP-адресов"""
-        self.window.destroy()  # Закрываем текущее окно
-        ip_window = IpsetSettingsWindow(self.parent)
-        ip_window.run()
+        run_child_window(self.window, lambda: IpsetSettingsWindow(self.parent).run())
 
     def create_window(self):
         """Создает главное окно выбора настроек IPSet"""

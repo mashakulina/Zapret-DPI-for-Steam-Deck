@@ -568,8 +568,7 @@ class DNSSettingsWindow:
         def on_mouse_wheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        canvas.bind_all("<MouseWheel>", on_mouse_wheel)
-        scrollable_frame.bind("<MouseWheel>", on_mouse_wheel)
+        self.window.bind("<MouseWheel>", on_mouse_wheel)
 
         # Внутренний фрейм с отступами
         inner_frame = tk.Frame(scrollable_frame, bg='#182030', padx=20, pady=20)

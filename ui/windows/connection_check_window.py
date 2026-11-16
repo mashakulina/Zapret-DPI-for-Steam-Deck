@@ -18,6 +18,7 @@ class ConnectionCheckWindow:
     def __init__(self, parent):
         self.parent = parent
         self.window = None
+        self.closed = threading.Event()
         self.checking = False
         self.results = []
         self.zapret_status = None
@@ -25,6 +26,7 @@ class ConnectionCheckWindow:
     def run(self):
         """Запускает окно проверки соединения"""
         self.window = tk.Toplevel(self.parent)
+        self.window.bind("<Destroy>", self._on_destroy, add="+")
         self.window.title("Проверка соединения")
         self.window.configure(bg='#182030')
 
@@ -34,7 +36,7 @@ class ConnectionCheckWindow:
         )
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.window.mainloop()
+        self.window.wait_window()
 
     def setup_ui(self):
         """Создает интерфейс окна"""
@@ -134,7 +136,7 @@ class ConnectionCheckWindow:
         self.clear_results()
 
         # Все операции с GUI должны выполняться в главном потоке
-        self.window.after(0, self._start_check_ui)
+        self._schedule_ui(self._start_check_ui)
 
         # Запускаем проверку в отдельном потоке
         thread = threading.Thread(target=self.run_checks)
@@ -149,10 +151,37 @@ class ConnectionCheckWindow:
         self.log_message(f"Время начала: {time.strftime('%H:%M:%S')}")
         self.log_message("")
 
+    def _on_destroy(self, event):
+        if event.widget is self.window:
+            self.closed.set()
+            self.checking = False
+
+    def _schedule_ui(self, callback, *args):
+        """Отбрасывает обновления закрытой страницы, в том числе уже в очереди."""
+        if self.closed.is_set():
+            return
+
+        def deliver():
+            if self.closed.is_set():
+                return
+            try:
+                if self.window is not None and self.window.winfo_exists():
+                    callback(*args)
+            except (tk.TclError, RuntimeError):
+                # Окно/интерпретатор могли закрыться во время доставки.
+                pass
+
+        try:
+            # Регистрируем callback на живом предке: destroy страницы не
+            # удалит Tcl-команду до обработки уже поставленного события.
+            self.parent.after(0, deliver)
+        except (tk.TclError, RuntimeError):
+            pass
+
     def log_message(self, message, color='white'):
         """Добавляет сообщение в область вывода (безопасно для потоков)"""
         # Используем after для безопасного обновления GUI из другого потока
-        self.window.after(0, self._log_message_thread_safe, message, color)
+        self._schedule_ui(self._log_message_thread_safe, message, color)
 
     def _log_message_thread_safe(self, message, color):
         """Безопасное добавление сообщения в главном потоке"""
@@ -175,7 +204,7 @@ class ConnectionCheckWindow:
             self.checking = False
             self.log_message("\n[!] Проверка остановлена пользователем", "#ff9500")
             # Обновляем кнопку немедленно
-            self.window.after(0, self._update_button_to_start)
+            self._schedule_ui(self._update_button_to_start)
 
     def _update_button_to_start(self):
         """Обновляет кнопку в состояние 'Запустить'"""
@@ -224,7 +253,7 @@ class ConnectionCheckWindow:
             self.log_message(f"\n[ОШИБКА] {str(e)}", "#ff3b30")
         finally:
             self.checking = False
-            self.window.after(0, self.on_check_complete)
+            self._schedule_ui(self.on_check_complete)
 
     def check_zapret_status(self):
         """Проверяет статус службы Zapret"""
@@ -744,6 +773,7 @@ class ConnectionCheckWindow:
 
     def on_close(self):
         """Закрывает окно"""
+        self.closed.set()
         self.checking = False
         if self.window:
             self.window.destroy()
