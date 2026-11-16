@@ -148,6 +148,19 @@ merge_unique_lists \
     "$TEMP_DIR/ipset-all.txt" \
     "$TEMP_DIR/ipset-all_user.txt"
 
+# IPSet hot apply: nfqws must watch persistent user-owned merged lists. The
+# startup temp directory is removed below, so its copies cannot be reloaded.
+IPSET_MANAGER_DIR="$CURRENT_HOME/Zapret_DPI_Manager"
+IPSET_PREPARE=(python3 -I "$IPSET_MANAGER_DIR/core/ipset_runtime.py" "$IPSET_MANAGER_DIR")
+if [ -n "${DETECTED_USER:-}" ]; then
+    IPSET_PREPARE+=(--user "$DETECTED_USER")
+fi
+if ! IPSET_RUNTIME_DIR=$("${IPSET_PREPARE[@]}"); then
+    echo "Error: cannot prepare persistent IPSet lists; nfqws was not started." >&2
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
 # Standard modes retain the historical startup path, including older installations.
 GAME_FILTER_TCP_VALUE="12"
 GAME_FILTER_UDP_VALUE="12"
@@ -241,6 +254,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         ARGS+=" $line"
     fi
 done < "$CONFIG_FILE"
+
+# Keep the substitution block above compatible with imported BIN aliases, but
+# pass stable IPSet paths to nfqws so a UI save is noticed without a restart.
+ARGS="${ARGS//$TEMP_DIR\/ipset-all_merged.txt/$IPSET_RUNTIME_DIR/ipset-all_merged.txt}"
+ARGS="${ARGS//$TEMP_DIR\/ipset-exclude_merged.txt/$IPSET_RUNTIME_DIR/ipset-exclude_merged.txt}"
 
 echo "Final ARGS: $ARGS"
 

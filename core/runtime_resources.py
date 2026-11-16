@@ -21,6 +21,7 @@ REQUIRED_RESOURCE_FILES = (
     'core/game_filter_settings.py',
     'core/game_presets.py',
     'core/github_release.py',
+    'core/ipset_runtime.py',
     'core/kate_editor.py',
     'core/manager_config.py',
     'core/manager_updater.py',

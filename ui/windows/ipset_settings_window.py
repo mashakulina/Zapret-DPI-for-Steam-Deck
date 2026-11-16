@@ -9,6 +9,7 @@ import os
 from ui.components.custom_messagebox import show_info, show_error, ask_yesno, ask_yesnocancel
 from core.dpi_utils import application_tk_root, place_toplevel_centered_on_parent
 from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
+from core.ipset_runtime import save_filter_mode, save_user_ipsets, runtime_update_message
 
 
 class IpsetSettingsWindow:
@@ -119,9 +120,9 @@ class IpsetSettingsWindow:
                             f"Обнаружены ошибки в незаблокированных IP. Данные не сохранены:\n\n{error_text}")
                     return
 
-            # Сохраняем данные
-            self.write_to_file(blocked_data, self.ipset_all_user_file)
-            self.write_to_file(unblocked_data, self.ipset_exclude_user_file)
+            # Update the source and persistent include/exclude lists together.
+            # nfqws notices the atomic replacements without restarting Zapret.
+            save_user_ipsets(blocked_data, unblocked_data, self.manager_dir)
 
             # Считаем количество IP
             blocked_count = len([line for line in blocked_data.split('\n') if line.strip() and not line.strip().startswith('#')]) if blocked_data else 0
@@ -133,7 +134,8 @@ class IpsetSettingsWindow:
                 (
                     f"Данные успешно сохранены! "
                     f"Заблокированные IP: {blocked_count} (сохранено в ipset-all_user.txt). "
-                    f"Незаблокированные IP: {unblocked_count} (сохранено в ipset-exclude_user.txt)."
+                    f"Незаблокированные IP: {unblocked_count} (сохранено в ipset-exclude_user.txt).\n\n"
+                    + runtime_update_message(self.manager_dir)
                 ),
             )
 
@@ -619,34 +621,10 @@ class IpsetFilterWindow:
             self.show_status_message("Применение изменений...", warning=False)
             self.window.update()
 
-            # Создаем директорию, если она не существует
-            os.makedirs(os.path.dirname(self.ipset_all_file), exist_ok=True)
-
-            if mode == "any":
-                # Файл должен быть пустым
-                with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
-                    f.write("")
-                message = "Режим 'any' применен"
-
-            elif mode == "loaded":
-                # Копируем содержимое из utils/ipset-all.txt
-                if os.path.exists(self.ipset_utils_file):
-                    with open(self.ipset_utils_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-
-                    with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    message = "Режим 'loaded' применен"
-                else:
-                    show_info(self.window, "Ошибка",
-                             f"Файл {self.ipset_utils_file} не найден")
-                    return
-
-            elif mode == "none":
-                # Записываем только 203.0.113.113/32
-                with open(self.ipset_all_file, 'w', encoding='utf-8') as f:
-                    f.write("203.0.113.113/32")
-                message = "Режим 'none' применен"
+            # A successful save refreshes the actual files watched by nfqws.
+            # Legacy running services get an honest one-time migration message.
+            save_filter_mode(mode, self.manager_dir)
+            message = f"Режим '{mode}': " + runtime_update_message(self.manager_dir)
 
             # Показываем сообщение об успехе
             self.show_status_message(message, success=True)
@@ -730,7 +708,7 @@ class IpsetFilterWindow:
         none_radio.pack(side=tk.LEFT)
 
         none_desc = tk.Label(none_frame,
-                            text="    - никакие айпи не попадают под проверку",
+                            text="— основной список отключён",
                             font=("Arial", 10),
                             fg='#8e8e93',
                             bg='#182030')
@@ -754,7 +732,7 @@ class IpsetFilterWindow:
         loaded_radio.pack(side=tk.LEFT)
 
         loaded_desc = tk.Label(loaded_frame,
-                              text="- айпи проверяется на вхождение в список",
+                              text="— загруженный список и пользовательские IP",
                               font=("Arial", 10),
                               fg='#8e8e93',
                               bg='#182030')
@@ -778,7 +756,7 @@ class IpsetFilterWindow:
         any_radio.pack(side=tk.LEFT)
 
         any_desc = tk.Label(any_frame,
-                           text="       - любой айпи попадает под фильтр",
+                           text="— без ограничения основным списком",
                            font=("Arial", 10),
                            fg='#8e8e93',
                            bg='#182030')
@@ -830,7 +808,8 @@ class IpsetFilterWindow:
             font=("Arial", 10),
             fg='#AAAAAA',
             bg='#182030',
-            height=1
+            wraplength=400,
+            justify=tk.CENTER,
         )
         self.status_message.pack(fill=tk.X, pady=(15, 0))
 
@@ -849,6 +828,7 @@ class IpsetFilterWindow:
         place_toplevel_centered_on_parent(
             self.window, self.parent, min_width=360, min_height=300, margin_width=8, margin_height=12
         )
+        self._layout_ready = True
         return self.window
 
     def show_status_message(self, message, success=False, warning=False, error=False):
@@ -864,9 +844,13 @@ class IpsetFilterWindow:
         else:
             self.status_message.config(fg='#AAAAAA')  # Серый
 
-        # Автоматически очищаем сообщение через 3 секунды (кроме ошибок)
-        if message and not error:
-            self.window.after(3000, lambda: self.status_message.config(text=""))
+        # Keep migration/error guidance readable and fit multiline status text.
+        # No delayed clear callback should touch an already closed window.
+        if getattr(self, '_layout_ready', False):
+            place_toplevel_centered_on_parent(
+                self.window, self.parent, min_width=360, min_height=300,
+                margin_width=8, margin_height=12,
+            )
 
     def run(self):
         """Запускает окно настройки IPSet Filter"""
