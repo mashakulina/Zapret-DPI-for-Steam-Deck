@@ -171,10 +171,10 @@ if [ -f "$GAME_FILTER_MANAGER_DIR/utils/gamefilter.enable" ]; then
         GAME_FILTER_UDP_VALUE="${GAME_FILTER_VALUES#*$'\n'}"
     else
         if [ "$GAME_FILTER_MODE" != "udp" ]; then
-            GAME_FILTER_TCP_VALUE="27000-27100,3074-3076"
+            GAME_FILTER_TCP_VALUE="1024-65535"
         fi
         if [ "$GAME_FILTER_MODE" != "tcp" ]; then
-            GAME_FILTER_UDP_VALUE="3000-3010,5050-5060,27000-27100,3478-3481,3074-3076,4380,50000-50200,49152-52000"
+            GAME_FILTER_UDP_VALUE="1024-65535"
         fi
     fi
 fi
