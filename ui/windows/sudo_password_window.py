@@ -155,7 +155,8 @@ class SudoPasswordWindow:
 
     def verify_password(self):
         """Проверяет введенный пароль"""
-        password = self.password_entry.get().strip()
+        # Пробелы — часть пароля, в том числе пароль из одного пробела.
+        password = self.password_entry.get()
 
         if not password:
             messagebox.showerror("Ошибка", "Введите пароль sudo")

@@ -11,12 +11,12 @@ class SudoChecker:
         """
         try:
             # Создаем команду для проверки пароля
-            cmd = f"echo '{password}' | sudo -S true"
+            cmd = ["sudo", "-S", "-p", "", "--", "true"]
 
             # Запускаем процесс
             process = subprocess.run(
                 cmd,
-                shell=True,
+                input=password + "\n",
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -39,7 +39,7 @@ class SudoChecker:
             cache_file = os.path.expanduser("~/.zapret_sudo_cache")
             if os.path.exists(cache_file):
                 with open(cache_file, 'r') as f:
-                    return f.read().strip()
+                    return f.read()
         except Exception:
             pass
         return None
