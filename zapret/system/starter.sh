@@ -214,8 +214,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line//\{tlsmax\}/$TEMP_DIR/tls_clienthello_max_ru.bin}"
     line="${line//\{stun\}/$TEMP_DIR/stun.bin}"
     line="${line//\{dbankcloud\}/$TEMP_DIR/quic_initial_dbankcloud_ru.bin}"
-
-    # Flowseal 1.10.4 payloads; ACTIVE aliases keep the upstream defaults.
     line="${line//\{ACTIVE_DISCORD_UDP\}/$TEMP_DIR/ACTIVE_DISCORD_UDP.bin}"
     line="${line//\{ACTIVE_GAME_UDP\}/$TEMP_DIR/ACTIVE_GAME_UDP.bin}"
     line="${line//\{quic_initial_4pda_to\}/$TEMP_DIR/quic_initial_4pda_to.bin}"
