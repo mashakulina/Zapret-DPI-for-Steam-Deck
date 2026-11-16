@@ -6,6 +6,31 @@ The temporary zapret/ service bundle is removed by installation, so it is not
 part of the installed manager's required files.
 """
 
+LEGACY_RESOURCE_FILES = (
+    'main.py', 'config.txt', 'core/manager_config.py', 'ui/windows/main_window.py',
+    'core/service_manager.py', 'core/zapret_checker.py', 'core/dependency_checker.py',
+    'core/file_checker.py', 'ui/windows/sudo_password_window.py',
+    'ui/components/custom_messagebox.py', 'ico/zapret.png',
+    'utils/chosen_strategies.txt', 'utils/ipset-all.txt', 'utils/qr.png', 'utils/test_targets.txt',
+    'files/strategy/General',
+    'files/bin/stun.bin', 'files/bin/quic_initial_www_google_com.bin',
+    'files/bin/quic_initial_dbankcloud_ru.bin', 'files/bin/tls_clienthello_4pda_to.bin',
+    'files/bin/tls_clienthello_max_ru.bin', 'files/bin/tls_clienthello_www_google_com.bin',
+    'files/lists/gw.txt', 'files/lists/ipset-all.txt', 'files/lists/ipset-all_user.txt',
+    'files/lists/ipset-exclude.txt', 'files/lists/ipset-exclude_user.txt',
+    'files/lists/list-general.txt', 'files/lists/list-general_user.txt',
+    'files/lists/list-exclude.txt', 'files/lists/list-exclude_user.txt',
+    'files/lists/list-google.txt', 'files/lists/other.txt',
+    'utils/for games/ipset-all_roblox.txt', 'utils/for games/list-general_roblox.txt',
+    'utils/for games/ipset-all_fallguys.txt', 'utils/for games/list-general_fallguys.txt',
+)
+
+# Historical update archives omit settings that the installed manager preserves.
+LEGACY_OPTIONAL_UPDATE_FILES = (
+    'config.txt', 'files/lists/ipset-all_user.txt', 'files/lists/ipset-exclude_user.txt',
+    'files/lists/list-exclude_user.txt', 'files/lists/list-general_user.txt',
+)
+
 REQUIRED_RESOURCE_FILES = (
     'config.txt',
     'core/app_logging.py',

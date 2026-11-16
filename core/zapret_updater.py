@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -15,6 +16,7 @@ from core.app_logging import get_error_logger
 from core.updater_base import BaseUpdater
 from core.manager_config import VERSION_CONFIG
 from core.manager_updater import ManagerUpdater
+from core.runtime_resources import LEGACY_OPTIONAL_UPDATE_FILES, LEGACY_RESOURCE_FILES
 from core.update_backup import UpdateBackup
 from core.platform_info import (
     is_valve_steamos,
@@ -698,6 +700,18 @@ def download_http_to_file(
                     reporthook(blocknum, block_size, total_size)
 
 
+def service_requires_firewall_helper(system_dir: str) -> bool:
+    """Older service scripts contain their own firewall implementation."""
+    for script in ('starter.sh', 'stopper.sh'):
+        try:
+            with open(os.path.join(system_dir, script), encoding='utf-8', errors='replace') as source:
+                if any(re.search(r'^\s*(?:source|\.)\s+.*\bfirewall\.sh\b', line) for line in source):
+                    return True
+        except FileNotFoundError:
+            continue  # The required-file check reports a missing service script.
+    return False
+
+
 def validate_service_bundle(bundle_root: str) -> bool:
     """Check the usable service payload before stopping an installed service."""
     arch = {'x86_64': 'x86_64', 'i386': 'x86', 'i686': 'x86',
@@ -706,9 +720,11 @@ def validate_service_bundle(bundle_root: str) -> bool:
         print(f"Неподдерживаемая архитектура: {os.uname().machine}")
         return False
     required = ["zapret/system/" + name for name in
-                ("starter.sh", "stopper.sh", "firewall.sh", "FWTYPE")]
+                ("starter.sh", "stopper.sh", "FWTYPE")]
     required.append(f"zapret/bins/{arch}/nfqws")
     try:
+        if service_requires_firewall_helper(os.path.join(bundle_root, 'zapret/system')):
+            required.append('zapret/system/firewall.sh')
         for relative in required:
             path = os.path.join(bundle_root, relative)
             if not os.path.isfile(path) or os.path.islink(path) or os.path.getsize(path) == 0:
@@ -718,23 +734,31 @@ def validate_service_bundle(bundle_root: str) -> bool:
         return True
     except (OSError, ValueError) as error:
         print(error)
+        get_error_logger().error('Проверка пакета службы: %s', error)
         return False
 
 
 def validate_bundle_structure(bundle_root: str) -> bool:
-    if not is_valid_bundle_root(bundle_root) or not validate_service_bundle(bundle_root):
-        print("Неверный состав полного пакета обновления")
+    if not is_valid_bundle_root(bundle_root):
+        get_error_logger().error('В полном пакете отсутствует main.py или каталог zapret/system/')
+        return False
+    if not validate_service_bundle(bundle_root):
         return False
     try:
-        with open(os.path.join(bundle_root, 'core/runtime_resources.py'), encoding='utf-8-sig') as source:
-            manifest = ast.parse(source.read())
-        required = None
-        for node in manifest.body:
-            if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == 'REQUIRED_RESOURCE_FILES'
-                for target in node.targets
-            ):
-                required = ast.literal_eval(node.value)
+        manifest_path = os.path.join(bundle_root, 'core/runtime_resources.py')
+        legacy = not os.path.lexists(manifest_path)
+        if legacy:
+            required = tuple(name for name in LEGACY_RESOURCE_FILES if name not in LEGACY_OPTIONAL_UPDATE_FILES)
+        else:
+            with open(manifest_path, encoding='utf-8-sig') as source:
+                manifest = ast.parse(source.read())
+            assignments = [node.value for node in manifest.body
+                           if isinstance(node, ast.Assign) and any(
+                               isinstance(target, ast.Name) and target.id == 'REQUIRED_RESOURCE_FILES'
+                               for target in node.targets)]
+            if len(assignments) != 1:
+                raise ValueError('Нет однозначного списка обязательных файлов в пакете')
+            required = ast.literal_eval(assignments[0])
         if (not isinstance(required, tuple) or not all(isinstance(name, str) for name in required)
                 or not {'main.py', 'core/manager_config.py'}.issubset(required)):
             raise ValueError('Неверный список обязательных файлов в пакете')
@@ -749,10 +773,26 @@ def validate_bundle_structure(bundle_root: str) -> bool:
                 if name.endswith(".py"):
                     path = os.path.join(root, name)
                     with open(path, encoding="utf-8-sig") as source:
-                        ast.parse(source.read(), filename=path)
+                        tree = ast.parse(source.read(), filename=path)
+                    if legacy:
+                        for node in ast.walk(tree):
+                            imports = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
+                                       else [node.module] if isinstance(node, ast.ImportFrom) and not node.level
+                                       else [])
+                            for module in imports:
+                                if not module:
+                                    continue
+                                if module.split('.')[0] in ('scripts', 'tests'):
+                                    raise ValueError(f'Рабочий модуль зависит от каталога разработки: {module}')
+                                if module.split('.')[0] not in ('core', 'ui'):
+                                    continue
+                                target = os.path.join(bundle_root, *module.split('.'))
+                                if not (os.path.isfile(target + '.py') or os.path.isdir(target)):
+                                    raise ValueError(f'Нет модуля {module}, импортируемого из {path}')
         return True
     except (OSError, ValueError, SyntaxError) as error:
         print(f"Неверный пакет обновления: {error}")
+        get_error_logger().error('Проверка полного пакета: %s', error)
         return False
 
 

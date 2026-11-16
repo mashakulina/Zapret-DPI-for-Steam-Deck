@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import getpass
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +18,7 @@ from core.zapret_updater import (
     extract_bundle,
     find_bundle_root,
     get_bundle_download_url,
+    service_requires_firewall_helper,
     validate_bundle_structure,
 )
 from core.platform_info import (
@@ -85,20 +85,11 @@ class ZapretChecker:
 
     def requires_firewall_helper(self):
         """Legacy service scripts implement firewall rules without a shared helper."""
-        for script in ("starter.sh", "stopper.sh"):
-            path = os.path.join(self.zapret_dir, script)
-            try:
-                with open(path, encoding="utf-8", errors="replace") as source:
-                    if any(re.search(r"^\s*(?:source|\.)\s+.*\bfirewall\.sh\b", line)
-                           for line in source):
-                        return True
-            except FileNotFoundError:
-                # The ordinary required-file check diagnoses the missing script.
-                continue
-            except OSError as error:
-                self.log_debug(f"Не удалось прочитать {script}: {error}")
-                return True
-        return False
+        try:
+            return service_requires_firewall_helper(self.zapret_dir)
+        except OSError as error:
+            self.log_debug(f"Не удалось прочитать скрипты службы: {error}")
+            return True
 
     def check_zapret_files(self):
         """Проверяет наличие всех обязательных файлов в /opt/zapret"""
