@@ -28,6 +28,7 @@ class UpdateWindow:
     def __init__(self, parent, *, pending_update=None):
         self.parent = parent
         self.pending_update = pending_update
+        self._is_updating = False
         self.root = tk.Toplevel(parent)
         self.setup_window()
 
@@ -129,6 +130,7 @@ class UpdateWindow:
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.grab_set()
+        self.root.protocol("WM_DELETE_WINDOW", self.close_window)
 
     def setup_ui(self):
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
@@ -192,6 +194,9 @@ class UpdateWindow:
 
     def log_message(self, message):
         """Добавляет сообщение в лог"""
+        if threading.current_thread() is not threading.main_thread():
+            self.root.after(0, lambda: self.log_message(message))
+            return
         self.log_text.insert(tk.END, f"{message}\n")
         self.log_text.see(tk.END)
         self.root.update_idletasks()
@@ -270,6 +275,7 @@ class UpdateWindow:
             return
 
         self.action_btn.config(state=tk.DISABLED, text="Обновление...")
+        self._is_updating = True
 
         thread = threading.Thread(target=self._update_all_thread)
         thread.daemon = True
@@ -277,10 +283,9 @@ class UpdateWindow:
 
     def _update_all_thread(self):
         """Поток для обновления полного пакета"""
+        success_count = 0
         try:
             self.log_message("\n🔄 Начинаю обновление компонентов...")
-
-            success_count = 0
 
             if self.bundle_update_available and self.bundle_update_data:
                 self.log_message(f"\n📦 Обновление до v{self.bundle_version}...")
@@ -307,18 +312,20 @@ class UpdateWindow:
 
             self.log_message(f"\n📊 Обновление завершено. Успешных шагов: {success_count}")
 
-            if success_count > 0:
-                self.root.after(0, self.restart_manager)
-            else:
-                self.root.after(0, self.update_action_button)
-
         except Exception as e:
             self.log_message(f"❌ Ошибка при обновлении: {str(e)}")
             import traceback
             traceback.print_exc()
         finally:
-            self.root.after(0, lambda: self.action_btn.config(state=tk.NORMAL))
-            self.root.after(0, self.update_action_button)
+            self.root.after(0, lambda: self._finish_update(success_count > 0))
+
+    def _finish_update(self, success):
+        self._is_updating = False
+        if success:
+            self.restart_manager()
+        else:
+            self.action_btn.config(state=tk.NORMAL)
+            self.update_action_button()
 
     def restart_manager(self):
         """Перезапускает менеджер"""
@@ -328,6 +335,9 @@ class UpdateWindow:
         self.parent.destroy()
 
     def close_window(self):
+        if self._is_updating:
+            self.log_message("Дождитесь завершения обновления")
+            return
         self.root.destroy()
 
     def run(self):
@@ -359,6 +369,7 @@ class UpdateProgressWindow:
         self.window = None
         self.is_updating = False
         self.manager_updated = False  # Флаг, что bundle применён (нужен перезапуск)
+        self._last_progress_message = ""
         self.bundle_updater = ZapretBundleUpdater()
 
     def run(self):
@@ -432,6 +443,8 @@ class UpdateProgressWindow:
         """Поток для выполнения обновлений"""
         try:
             total_tasks = len(self.update_tasks)
+            if not total_tasks:
+                raise ValueError("Нет задач обновления")
 
             overall_progress = 0
 
@@ -439,6 +452,7 @@ class UpdateProgressWindow:
                 if not self.is_updating:
                     break
 
+                self._last_progress_message = ""
                 self.current_task_index = i
                 task_name = task['name']
                 updater_class = task['updater_class']
@@ -456,36 +470,54 @@ class UpdateProgressWindow:
                     success = False
                     print(f"❌ Неизвестный класс обновления: {updater_class}")
 
-                overall_progress = int((i + 1) / total_tasks * 100)
-                self._update_progress_bar(overall_progress)
-
                 if success:
+                    overall_progress = int((i + 1) / total_tasks * 100)
+                    self.window.after(0, lambda p=overall_progress: self._update_progress_bar(p))
                     print(f"✅ {task_name} успешно обновлен!")
                     self._update_status(f"{task_name} обновлен успешно")
                 else:
                     print(f"❌ Не удалось обновить {task_name}")
-                    self._update_status(f"{task_name}: ошибка обновления")
+                    self.window.after(
+                        0, lambda name=task_name: self._finish_failed_update(f"{name}: ошибка обновления")
+                    )
+                    return
 
             if self.is_updating:
-                print("\n🎉 Обновление завершено!")
-                self._update_task_info("Обновление завершено")
-                self._update_status("Все компоненты успешно обновлены")
-
-                self._update_progress_bar(100)
-
-                if self.manager_updated:
-                    self._show_restart_message()
-                else:
-                    self.window.after(2000, self.window.destroy)
+                self.window.after(0, self._finish_successful_update)
 
         except Exception as e:
             print(f"\n❌ Ошибка при обновлении: {str(e)}")
             import traceback
             traceback.print_exc()
-            self._update_status(f"Ошибка: {str(e)}")
+            self.window.after(0, lambda error=str(e): self._finish_failed_update(f"Ошибка: {error}"))
+
+    def _finish_failed_update(self, message):
+        """Оставляет ошибку видимой, а окно доступным для закрытия."""
+        self.is_updating = False
+        self.task_label.config(text="Обновление не завершено")
+        detail = self._last_progress_message
+        self.status_label.config(
+            text=f"{message}\n{detail}" if detail else message,
+            wraplength=max(1, self.window.winfo_width() - 20),
+        )
+        place_toplevel_centered_on_parent(
+            self.window, self.parent, min_width=340, min_height=160, margin_width=8, margin_height=12
+        )
+
+    def _finish_successful_update(self):
+        self.is_updating = False
+        print("\n🎉 Обновление завершено!")
+        self.task_label.config(text="Обновление завершено")
+        self.status_label.config(text="Все компоненты успешно обновлены")
+        self._update_progress_bar(100)
+        if self.manager_updated:
+            self._show_restart_message()
+        else:
+            self.window.after(2000, self.window.destroy)
 
     def _update_bundle(self, download_url, task_name, base_progress, total_tasks, task_index):
         """Полное обновление менеджера и службы одним архивом."""
+        self._last_progress_message = ""
         try:
             progress_map = {
                 "Остановка": 10,
@@ -502,6 +534,7 @@ class UpdateProgressWindow:
             }
 
             def progress_callback(message, percent):
+                self._last_progress_message = message
                 step_progress = percent if percent is not None else 0
                 for key, value in progress_map.items():
                     if key in message:
@@ -519,6 +552,7 @@ class UpdateProgressWindow:
             return self.bundle_updater.update_bundle(download_url, self.window, progress_callback)
 
         except Exception as e:
+            self._last_progress_message = str(e)
             print(f"  ❌ Ошибка полного обновления: {str(e)}")
             import traceback
             traceback.print_exc()
@@ -580,25 +614,19 @@ class UpdateProgressWindow:
             self.window.destroy()
 
     def cancel_update(self):
-        """Отменяет обновление"""
-        self.is_updating = False
-        print("\n⏹️ Обновление отменено пользователем")
-        self._update_task_info("Обновление отменено")
-        self._update_status("Операция прервана пользователем")
+        """Транзакция обновления не поддерживает отмену посередине."""
+        self.on_close()
 
     def on_close(self):
         """Обработчик закрытия окна"""
         if self.is_updating:
-            from ui.components.custom_messagebox import ask_yesno
-            if ask_yesno(self.window, "Отмена обновления",
-                         "Обновление еще не завершено. Вы уверены, что хотите отменить?"):
-                self.cancel_update()
+            self._update_status("Дождитесь завершения обновления")
         else:
             self.window.destroy()
 
     def close_window(self):
         """Закрывает окно"""
-        self.window.destroy()
+        self.on_close()
 
 
 def show_update_progress_window(parent, update_tasks):

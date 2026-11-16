@@ -5,6 +5,7 @@ import sys
 
 from core.updater_base import BaseUpdater
 from core.manager_config import VERSION_CONFIG
+from core.custom_game_presets import get_custom_presets
 
 
 class ManagerUpdater(BaseUpdater):
@@ -20,10 +21,14 @@ class ManagerUpdater(BaseUpdater):
 
         # Файлы и папки, которые НЕ должны заменяться при обновлении
         self.exclude_from_update = [
+            "scripts",
+            "tests",
             "config.txt",
             "utils/chosen_strategies.txt",
             "utils/name_strategy.txt",
             "utils/working_strategies.txt",
+            "utils/gamefilter.ports.json",
+            "utils/for games/presets.json",
             "files/lists/ipset-all_user.txt",
             "files/lists/ipset-exclude_user.txt",
             "files/lists/list-exclude_user.txt",
@@ -37,6 +42,24 @@ class ManagerUpdater(BaseUpdater):
     def should_exclude(self, file_path, extracted_root, extra_exclude_prefixes=None):
         """Проверяет, нужно ли исключить файл из обновления"""
         rel_path = os.path.relpath(file_path, extracted_root).replace("\\", "/")
+
+        if rel_path.startswith("utils/custom_") and rel_path.endswith(".state.json"):
+            return True
+        if rel_path.startswith("utils/game_preset_custom_"):
+            return True
+        if rel_path.startswith("utils/for games/"):
+            try:
+                presets = get_custom_presets(self.manager_dir)
+                protected = {
+                    "utils/for games/" + filename
+                    for preset in presets.values()
+                    for filename in preset.get("files", {}).values()
+                }
+                if rel_path in protected:
+                    return True
+            except (OSError, ValueError, TypeError, AttributeError):
+                # Preserve game data if its registry needs repair.
+                return os.path.exists(os.path.join(self.manager_dir, rel_path))
 
         for prefix in extra_exclude_prefixes or ():
             p = prefix.strip("/").replace("\\", "/")
@@ -61,6 +84,9 @@ class ManagerUpdater(BaseUpdater):
             copied_files = 0
 
             for root, dirs, files in os.walk(src_dir):
+                dirs[:] = [name for name in dirs if not self.should_exclude(
+                    os.path.join(root, name), src_dir, extra_exclude_prefixes
+                )]
                 for file in files:
                     file_path = os.path.join(root, file)
                     if not self.should_exclude(file_path, src_dir, extra_exclude_prefixes):
@@ -73,6 +99,9 @@ class ManagerUpdater(BaseUpdater):
                 return True
 
             for root, dirs, files in os.walk(src_dir):
+                dirs[:] = [name for name in dirs if not self.should_exclude(
+                    os.path.join(root, name), src_dir, extra_exclude_prefixes
+                )]
                 for file in files:
                     src_file = os.path.join(root, file)
 
@@ -107,6 +136,9 @@ class ManagerUpdater(BaseUpdater):
         if progress_callback:
             progress_callback("Настройка прав...", 96)
         for root, dirs, files in os.walk(self.manager_dir):
+            dirs[:] = [name for name in dirs if not self.should_exclude(
+                os.path.join(root, name), self.manager_dir
+            )]
             for file in files:
                 if file.endswith(".py"):
                     file_path = os.path.join(root, file)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import ast
 import os
-import tempfile
-import tarfile
 import shutil
 import subprocess
+import tarfile
+import tempfile
 import threading
 import time
 import urllib.error
@@ -14,6 +15,7 @@ from core.app_logging import get_error_logger
 from core.updater_base import BaseUpdater
 from core.manager_config import VERSION_CONFIG
 from core.manager_updater import ManagerUpdater
+from core.update_backup import UpdateBackup
 from core.platform_info import (
     is_valve_steamos,
     distro_log_label,
@@ -22,6 +24,14 @@ from core.platform_info import (
     ZAPRET_SYSTEMD_UNIT_PATH,
     ZAPRET_SYSTEMD_UNIT_PATH_LEGACY,
 )
+
+
+def validate_fwtype(value):
+    backend = value.strip()
+    if backend not in ("iptables", "nftables"):
+        raise ValueError(f"Неверный FWTYPE: {backend!r}; ожидается iptables или nftables")
+    return backend
+
 
 class ZapretUpdater(BaseUpdater):
     def __init__(self):
@@ -123,6 +133,8 @@ class ZapretUpdater(BaseUpdater):
             }
 
         except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
             return {
                 'returncode': -1,
                 'stdout': '',
@@ -135,8 +147,32 @@ class ZapretUpdater(BaseUpdater):
                 'stderr': str(e)
             }
 
+    @staticmethod
+    def validate_fwtype(value):
+        return validate_fwtype(value)
+
+    def snapshot_fwtype(self, password):
+        """Read before removal; an absent installation uses the bundle default."""
+        result = self.run_with_sudo(
+            ['bash', '-c', 'if [ -e /opt/zapret/FWTYPE ]; then cat /opt/zapret/FWTYPE; else exit 3; fi'],
+            password, "Сохранение FWTYPE...",
+        )
+        if result and result['returncode'] == 3:
+            self._saved_fwtype = None
+        elif result and result['returncode'] == 0:
+            self._saved_fwtype = self.validate_fwtype(result['stdout'])
+        else:
+            raise ValueError("Не удалось прочитать FWTYPE: " + (result or {}).get('stderr', 'нет ответа'))
+
     def stop_and_remove_zapret(self, password, progress_callback=None):
         """Останавливает и удаляет старую версию zapret"""
+        self._update_mutated = False
+        self._readonly_unlock_attempted = False
+        try:
+            self.snapshot_fwtype(password)
+        except ValueError as error:
+            print(error)
+            return False
         commands = [
             (['systemctl', 'stop', 'zapret'], "Остановка службы zapret"),
             (['systemctl', 'disable', 'zapret'], "Отключение автозапуска"),
@@ -152,31 +188,37 @@ class ZapretUpdater(BaseUpdater):
             commands.insert(0, (['steamos-readonly', 'disable'], "Отключение защиты SteamOS"))
 
         for cmd, description in commands:
+            if cmd[0] == 'steamos-readonly':
+                self._readonly_unlock_attempted = True
             if progress_callback:
                 progress_callback(description, None)
 
             result = self.run_with_sudo(cmd, password, description)
-            if result['returncode'] != 0:
-                print(f"Предупреждение при {description}: {result['stderr']}")
+            if not result or result['returncode'] != 0:
+                detail = (result or {}).get('stderr', 'нет ответа')
+                print(f"Предупреждение при {description}: {detail}")
+                if cmd[0] == 'steamos-readonly':
+                    return False
+                if cmd[:2] == ['systemctl', 'stop']:
+                    # A new installation has no unit. Every other stop failure
+                    # must leave the running service and its files intact.
+                    state = self.run_with_sudo(
+                        ['systemctl', 'show', 'zapret.service', '--property=LoadState', '--value'],
+                        password, "Проверка наличия службы zapret",
+                    )
+                    if not state or state['returncode'] != 0 or state['stdout'].strip() != 'not-found':
+                        print("Не удалось остановить zapret; удаление и обновление отменены")
+                        return False
+                if cmd[:2] == ['rm', '-rf'] or cmd == ['rm', '-f', ZAPRET_SYSTEMD_UNIT_PATH]:
+                    return False
+            if cmd[:2] == ['systemctl', 'stop']:
+                self._update_mutated = True
 
         return True
 
     def copy_zapret_files(self, extract_dir, password, progress_callback=None):
         """Копирует файлы zapret в /opt/zapret"""
         try:
-            if progress_callback:
-                progress_callback("Создание директории /opt/zapret...", 50)
-
-            result = self.run_with_sudo(
-                ['mkdir', '-p', '/opt/zapret'],
-                password,
-                "Создание директории /opt/zapret..."
-            )
-
-            if not result or result['returncode'] != 0:
-                print("Не удалось создать /opt/zapret")
-                return False
-
             system_dir = None
             for root, dirs, files in os.walk(extract_dir):
                 if 'system' in dirs:
@@ -187,19 +229,45 @@ class ZapretUpdater(BaseUpdater):
                 print("Не найдена папка 'system' в архиве")
                 return False
 
+            # Validate both inputs before any copy can overwrite FWTYPE.
+            with open(os.path.join(system_dir, 'FWTYPE'), encoding='utf-8') as source:
+                bundle_fwtype = self.validate_fwtype(source.read())
+            if not hasattr(self, '_saved_fwtype'):
+                self.snapshot_fwtype(password)
+            selected_fwtype = self._saved_fwtype or bundle_fwtype
+            result = self.run_with_sudo(['mkdir', '-p', '/opt/zapret'], password,
+                                        "Создание директории /opt/zapret...")
+            if not result or result['returncode'] != 0:
+                print("Не удалось создать /opt/zapret")
+                return False
+
             if progress_callback:
                 progress_callback("Копирование файлов системы...", 60)
 
             for item in os.listdir(system_dir):
+                if item == 'FWTYPE':
+                    continue  # Write only the validated, selected value below.
                 src = os.path.join(system_dir, item)
                 dst = os.path.join('/opt/zapret', item)
 
                 if os.path.isfile(src):
-                    result = self.run_with_sudo(
-                        ['cp', src, dst],
-                        password,
-                        f"Копирование {item}..."
-                    )
+                    if item == 'starter.sh':
+                        # A service update must retain user-imported BIN aliases.
+                        from core.strategy_import import starter_with_manager_bins
+                        with open(src, encoding='utf-8') as starter_source:
+                            starter_text = starter_with_manager_bins(starter_source.read())
+                        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as staged:
+                            staged.write(starter_text)
+                            staged.flush()
+                            result = self.run_with_sudo(
+                                ['cp', staged.name, dst], password, f"Копирование {item}..."
+                            )
+                    else:
+                        result = self.run_with_sudo(
+                            ['cp', src, dst],
+                            password,
+                            f"Копирование {item}..."
+                        )
                 elif os.path.isdir(src):
                     result = self.run_with_sudo(
                         ['cp', '-r', src, dst],
@@ -209,6 +277,7 @@ class ZapretUpdater(BaseUpdater):
 
                 if not result or result['returncode'] != 0:
                     print(f"Не удалось скопировать {item}")
+                    return False
 
             if progress_callback:
                 progress_callback("Копирование бинарных файлов...", 70)
@@ -241,16 +310,26 @@ class ZapretUpdater(BaseUpdater):
                             password,
                             "Копирование бинарного файла nfqws..."
                         )
-                        if result and result['returncode'] == 0:
-                            self.run_with_sudo(['chmod', '+x', '/opt/zapret/nfqws'], password)
+                        if not result or result['returncode'] != 0:
+                            print("Не удалось скопировать nfqws")
+                            return False
+                        result = self.run_with_sudo(['chmod', '+x', '/opt/zapret/nfqws'], password)
+                        if not result or result['returncode'] != 0:
+                            return False
 
-            self.run_with_sudo(
-                ['bash', '-c', 'echo "iptables" > /opt/zapret/FWTYPE'],
-                password,
-                "Создание файла FWTYPE...",
-            )
-
-            self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8') as staged:
+                staged.write(selected_fwtype + '\n')
+                staged.flush()
+                result = self.run_with_sudo(['cp', staged.name, '/opt/zapret/FWTYPE'],
+                                            password, "Восстановление FWTYPE...")
+            if not result or result['returncode'] != 0:
+                print("Не удалось записать FWTYPE")
+                return False
+            result = self.run_with_sudo(['chmod', '-R', 'o+r', '/opt/zapret/'], password)
+            if not result or result['returncode'] != 0:
+                return False
+            # The snapshot belongs to this completed installation only.
+            del self._saved_fwtype
 
             return True
 
@@ -333,11 +412,13 @@ WantedBy=multi-user.target
                 print("Не удалось создать службу")
                 return False
 
-            self.run_with_sudo(
+            permissions = self.run_with_sudo(
                 ["chmod", "644", ZAPRET_SYSTEMD_UNIT_PATH],
                 password,
                 "Права на файл службы...",
             )
+            if not permissions or permissions['returncode'] != 0:
+                return False
             self.run_with_sudo(
                 ["rm", "-f", ZAPRET_SYSTEMD_UNIT_PATH_LEGACY],
                 password,
@@ -377,6 +458,7 @@ WantedBy=multi-user.target
 
             if not result or result['returncode'] != 0:
                 print("Не удалось включить автозапуск")
+                return False
 
             if progress_callback:
                 progress_callback("Запуск службы...", 95)
@@ -386,9 +468,9 @@ WantedBy=multi-user.target
                 password,
                 "Запуск службы Zapret..."
             )
-
-            if progress_callback:
-                progress_callback("Служба успешно запущена", 100)
+            if not result or result['returncode'] != 0:
+                print("Не удалось запустить службу zapret")
+                return False
 
             time.sleep(2)
             check_result = self.run_with_sudo(
@@ -396,7 +478,12 @@ WantedBy=multi-user.target
                 password,
                 "Проверка статуса службы..."
             )
-
+            if (not check_result or check_result['returncode'] != 0
+                    or check_result['stdout'].strip() != 'active'):
+                print("Служба zapret не активна после запуска")
+                return False
+            if progress_callback:
+                progress_callback("Служба успешно запущена", 100)
             return True
 
         except Exception as e:
@@ -418,7 +505,7 @@ WantedBy=multi-user.target
 
         if not result or result['returncode'] != 0:
             print(f"Предупреждение: Не удалось заблокировать систему: {result['stderr'] if result else 'No result'}")
-            return True  # Возвращаем True, чтобы не прерывать процесс
+            return False
 
         print("Система успешно заблокирована")
         return True
@@ -434,54 +521,77 @@ WantedBy=multi-user.target
             return False
         if not self.copy_zapret_files(zapret_sub, password, progress_callback):
             return False
-        self.update_manager_config(bundle_root)
         if not self.create_service_file(password, progress_callback):
             return False
         if not self.enable_service(password, progress_callback):
             return False
-        self.lock_steamos_system(password)
         return True
+
+    def replace_from_bundle(self, bundle_root, password, progress_callback=None, manager=None):
+        """Replace a validated service and optional manager, restoring both on failure."""
+        if not validate_service_bundle(bundle_root):
+            return False
+        backup_dir = tempfile.mkdtemp(prefix="zapret_update_backup_")
+        backup = UpdateBackup(self, password, backup_dir,
+                              manager.manager_dir if manager is not None else None)
+        captured = False
+        completed = False
+        retain_backup = False
+        self._update_mutated = False
+        try:
+            backup.capture()
+            captured = True
+            if not self.stop_and_remove_zapret(password, progress_callback):
+                raise RuntimeError("Не удалось подготовить службу к обновлению")
+            if manager is not None and not manager.apply_from_directory(
+                bundle_root, progress_callback, extra_exclude_prefixes=["zapret"]
+            ):
+                raise RuntimeError("Не удалось обновить файлы менеджера")
+            if not self.install_zapret_from_local_bundle(bundle_root, password, progress_callback):
+                raise RuntimeError("Не удалось установить или запустить новую службу")
+            completed = True
+        except Exception as error:
+            detail = f"Обновление не завершено: {error}"
+            print(detail)
+            get_error_logger().error("Обновление не завершено: %s", error, exc_info=True)
+            if captured and self._update_mutated:
+                try:
+                    backup.restore()
+                    print("Предыдущая версия менеджера и службы восстановлена")
+                    detail += ". Предыдущая версия восстановлена."
+                except Exception:
+                    retain_backup = True
+                    get_error_logger().exception(
+                        "Не удалось восстановить предыдущую версию; резервная копия: %s", backup_dir
+                    )
+                    print(f"Резервная копия сохранена для восстановления: {backup_dir}")
+                    detail += f". Восстановление не удалось. Резервная копия: {backup_dir}"
+            if progress_callback:
+                progress_callback(detail, None)
+        finally:
+            # Every exit after a possible unlock, including ordinary False results.
+            if (getattr(self, '_readonly_unlock_attempted', False)
+                    and not self.lock_steamos_system(password)):
+                completed = False
+                if progress_callback:
+                    progress_callback("Не удалось включить защиту SteamOS", None)
+            if not retain_backup:
+                try:
+                    backup.cleanup()
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                except Exception:
+                    print(f"Не удалось удалить резервную копию: {backup_dir}")
+                    get_error_logger().exception("Не удалось удалить резервную копию: %s", backup_dir)
+        return completed
 
     def install_zapret_service_from_bundle_root(
         self, bundle_root: str, password: str, progress_callback=None
     ) -> bool:
-        """
-        Только служба Zapret из распакованного полного пакета (каталог с main.py и zapret/).
-        Без обновления файлов менеджера в домашней папке.
-        """
+        """Update only the service, retaining a complete backup until it starts."""
         if not is_valid_bundle_root(bundle_root):
             print("Неверный корень полного пакета (нужны main.py и zapret/system)")
             return False
-        if not self.stop_and_remove_zapret(password, progress_callback):
-            return False
-        zapret_sub = os.path.join(bundle_root, "zapret")
-        if not os.path.isdir(os.path.join(zapret_sub, "system")):
-            print("В пакете нет каталога zapret/system")
-            try:
-                self.lock_steamos_system(password)
-            except Exception:
-                pass
-            return False
-        if not self.copy_zapret_files(zapret_sub, password, progress_callback):
-            try:
-                self.lock_steamos_system(password)
-            except Exception:
-                pass
-            return False
-        if not self.create_service_file(password, progress_callback):
-            try:
-                self.lock_steamos_system(password)
-            except Exception:
-                pass
-            return False
-        if not self.enable_service(password, progress_callback):
-            try:
-                self.lock_steamos_system(password)
-            except Exception:
-                pass
-            return False
-        self.lock_steamos_system(password)
-        return True
+        return self.replace_from_bundle(bundle_root, password, progress_callback)
 
 
 # --- Полный пакет (менеджер + служба, один архив) ---
@@ -565,15 +675,77 @@ def download_http_to_file(
                     reporthook(blocknum, block_size, total_size)
 
 
-def validate_bundle_structure(bundle_root: str) -> bool:
-    if is_valid_bundle_root(bundle_root):
+def validate_service_bundle(bundle_root: str) -> bool:
+    """Check the usable service payload before stopping an installed service."""
+    arch = {'x86_64': 'x86_64', 'i386': 'x86', 'i686': 'x86',
+            'armv7l': 'arm', 'armv6l': 'arm', 'aarch64': 'arm64'}.get(os.uname().machine)
+    if not arch:
+        print(f"Неподдерживаемая архитектура: {os.uname().machine}")
+        return False
+    required = ["zapret/system/" + name for name in
+                ("starter.sh", "stopper.sh", "firewall.sh", "FWTYPE")]
+    required.append(f"zapret/bins/{arch}/nfqws")
+    try:
+        for relative in required:
+            path = os.path.join(bundle_root, relative)
+            if not os.path.isfile(path) or os.path.islink(path) or os.path.getsize(path) == 0:
+                raise ValueError(f"В пакете отсутствует или пуст обязательный файл: {relative}")
+        with open(os.path.join(bundle_root, "zapret/system/FWTYPE"), encoding="utf-8") as source:
+            validate_fwtype(source.read())
         return True
-    mp = os.path.join(bundle_root, "main.py")
-    if not os.path.isfile(mp):
-        print(f"В пакете нет main.py в корне: {bundle_root!r}")
-    else:
-        print(f"Нет каталога zapret/system в: {bundle_root!r}")
-    return False
+    except (OSError, ValueError) as error:
+        print(error)
+        return False
+
+
+def validate_bundle_structure(bundle_root: str) -> bool:
+    if not is_valid_bundle_root(bundle_root) or not validate_service_bundle(bundle_root):
+        print("Неверный состав полного пакета обновления")
+        return False
+    try:
+        with open(os.path.join(bundle_root, 'core/runtime_resources.py'), encoding='utf-8-sig') as source:
+            manifest = ast.parse(source.read())
+        required = None
+        for node in manifest.body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == 'REQUIRED_RESOURCE_FILES'
+                for target in node.targets
+            ):
+                required = ast.literal_eval(node.value)
+        if (not isinstance(required, tuple) or not all(isinstance(name, str) for name in required)
+                or not {'main.py', 'core/manager_config.py'}.issubset(required)):
+            raise ValueError('Неверный список обязательных файлов в пакете')
+        for relative in required:
+            path = os.path.join(bundle_root, relative)
+            if (os.path.isabs(relative) or '..' in relative.split('/')
+                    or not os.path.isfile(path) or os.path.islink(path)):
+                raise ValueError(f"В пакете отсутствует обязательный файл: {relative}")
+        for root, dirs, files in os.walk(bundle_root):
+            dirs[:] = [name for name in dirs if name not in ("scripts", "tests", "__pycache__")]
+            for name in files:
+                if name.endswith(".py"):
+                    path = os.path.join(root, name)
+                    with open(path, encoding="utf-8-sig") as source:
+                        ast.parse(source.read(), filename=path)
+        return True
+    except (OSError, ValueError, SyntaxError) as error:
+        print(f"Неверный пакет обновления: {error}")
+        return False
+
+
+def extract_bundle(archive_path, destination):
+    """Reject paths and links that could escape the fresh extraction directory."""
+    target = os.path.realpath(destination)
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            path = os.path.realpath(os.path.join(target, member.name))
+            if (os.path.isabs(member.name) or os.path.commonpath([target, path]) != target
+                    or not (member.isfile() or member.isdir())):
+                raise ValueError(f"Недопустимый путь или тип файла в архиве: {member.name}")
+        if hasattr(tarfile, "data_filter"):
+            archive.extractall(path=target, filter="data")
+        else:
+            archive.extractall(path=target)
 
 
 def read_bundle_manifest(
@@ -628,11 +800,6 @@ class ZapretBundleUpdater(BaseUpdater):
 
         temp_dir = tempfile.mkdtemp(prefix="zapret_bundle_")
         try:
-            if progress_callback:
-                progress_callback("Остановка службы и подготовка...", 5)
-            if not zapret_u.stop_and_remove_zapret(password, progress_callback):
-                return False
-
             archive_path = os.path.join(temp_dir, "bundle.tar.gz")
             extract_dir = os.path.join(temp_dir, "extracted")
             os.makedirs(extract_dir, exist_ok=True)
@@ -680,8 +847,7 @@ class ZapretBundleUpdater(BaseUpdater):
 
             if progress_callback:
                 progress_callback("Распаковка архива...", 45)
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(path=extract_dir)
+            extract_bundle(archive_path, extract_dir)
 
             bundle_root = find_bundle_root(extract_dir)
             if not bundle_root or not validate_bundle_structure(bundle_root):
@@ -695,15 +861,8 @@ class ZapretBundleUpdater(BaseUpdater):
                 return False
 
             manager_u = ManagerUpdater()
-            if not manager_u.apply_from_directory(
-                bundle_root,
-                progress_callback,
-                extra_exclude_prefixes=["zapret"],
-            ):
-                return False
-
-            if not zapret_u.install_zapret_from_local_bundle(
-                bundle_root, password, progress_callback
+            if not zapret_u.replace_from_bundle(
+                bundle_root, password, progress_callback, manager=manager_u
             ):
                 return False
 
@@ -713,11 +872,6 @@ class ZapretBundleUpdater(BaseUpdater):
         except Exception as e:
             print(f"Ошибка полного обновления: {e}")
             get_error_logger().exception("Ошибка полного обновления (bundle)")
-            try:
-                if password:
-                    zapret_u.lock_steamos_system(password)
-            except Exception:
-                pass
             return False
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

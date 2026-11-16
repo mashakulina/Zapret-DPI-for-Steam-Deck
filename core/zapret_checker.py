@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import getpass
 import os
+import re
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import urllib.error
 import time
@@ -16,6 +16,7 @@ from core.dpi_utils import place_toplevel_centered_on_parent
 from core.zapret_updater import (
     ZapretUpdater,
     download_http_to_file,
+    extract_bundle,
     find_bundle_root,
     get_bundle_download_url,
     validate_bundle_structure,
@@ -52,6 +53,7 @@ class ZapretChecker:
             "nfqws",           # Бинарный файл
             "starter.sh",      # Скрипт запуска
             "stopper.sh",      # Скрипт остановки
+            "firewall.sh",     # Общие runtime-функции firewall
             "zapret.service"    # Конфигурационный файл сервера
         ]
 
@@ -81,6 +83,23 @@ class ZapretChecker:
 
         return zapret_dir_exists and service_exists
 
+    def requires_firewall_helper(self):
+        """Legacy service scripts implement firewall rules without a shared helper."""
+        for script in ("starter.sh", "stopper.sh"):
+            path = os.path.join(self.zapret_dir, script)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as source:
+                    if any(re.search(r"^\s*(?:source|\.)\s+.*\bfirewall\.sh\b", line)
+                           for line in source):
+                        return True
+            except FileNotFoundError:
+                # The ordinary required-file check diagnoses the missing script.
+                continue
+            except OSError as error:
+                self.log_debug(f"Не удалось прочитать {script}: {error}")
+                return True
+        return False
+
     def check_zapret_files(self):
         """Проверяет наличие всех обязательных файлов в /opt/zapret"""
         self.log_debug("Проверка наличия всех необходимых файлов zapret...")
@@ -90,8 +109,11 @@ class ZapretChecker:
             return False
 
         missing_files = []
+        requires_helper = self.requires_firewall_helper()
 
         for file_name in self.required_files:
+            if file_name == "firewall.sh" and not requires_helper:
+                continue
             file_path = os.path.join(self.zapret_dir, file_name)
 
             if not os.path.exists(file_path):
@@ -414,8 +436,7 @@ class ZapretChecker:
         self.current_task = "extract"
         self.update_progress("Распаковка полного пакета...", 35)
         try:
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(path=extract_dir)
+            extract_bundle(archive_path, extract_dir)
         except Exception as e:
             self.log_debug(f"Ошибка распаковки полного пакета: {e}")
             get_error_logger().exception("Установка Zapret: распаковка полного пакета")

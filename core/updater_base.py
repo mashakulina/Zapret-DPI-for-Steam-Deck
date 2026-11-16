@@ -1,5 +1,7 @@
-import urllib.request
+import re
 import urllib.error
+import urllib.request
+from itertools import zip_longest
 
 from core.app_logging import get_error_logger
 
@@ -40,7 +42,16 @@ class BaseUpdater:
             return None, None
 
     def is_newer_version(self, latest, current):
-        """Простое сравнение версий"""
-        latest_clean = latest.replace('v', '')
-        current_clean = current.replace('v', '')
-        return latest_clean > current_clean
+        """Сравнивает числовые компоненты версий, включая четырёхчастные."""
+        def components(version):
+            match = re.fullmatch(r"[vV]?([0-9]+(?:\.[0-9]+)*)", version.strip())
+            if not match:
+                raise ValueError(f"Неверная версия: {version!r}")
+            return tuple(int(part) for part in match.group(1).split('.'))
+
+        for latest_part, current_part in zip_longest(
+            components(latest), components(current), fillvalue=0
+        ):
+            if latest_part != current_part:
+                return latest_part > current_part
+        return False

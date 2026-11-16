@@ -73,23 +73,24 @@ class MainServiceMixin:
 
             # Обновляем статус службы через 1 секунду
             self.root.after(1000, self.check_service_status)
-    def ensure_sudo_password(self):
+    def ensure_sudo_password(self, parent=None):
         """Проверяет и получает пароль sudo если нужно"""
+        owner = parent if parent is not None else self.root
         if not self.service_manager:
             self.show_status_message("Менеджер службы не инициализирован", error=True)
             return False
 
         if not self.service_manager.sudo_password:
             # Убедимся, что окно действительно видимо
-            self.root.update_idletasks()
+            owner.update_idletasks()
 
             # Проверяем видимость окна
-            if not self.root.winfo_viewable():
-                self.root.deiconify()  # Делаем окно видимым
-                self.root.update_idletasks()
+            if not owner.winfo_viewable():
+                owner.deiconify()  # Делаем окно видимым
+                owner.update_idletasks()
 
             # Даем время на отрисовку
-            self.root.update()
+            owner.update()
 
             # Маленькая задержка чтобы окно стало видимым
             import time
@@ -97,7 +98,7 @@ class MainServiceMixin:
 
             # Показываем окно ввода пароля
             password_window = SudoPasswordWindow(
-                self.root,
+                owner,
                 on_password_valid=lambda pwd: self.service_manager.set_sudo_password(pwd)
             )
             password = password_window.run()

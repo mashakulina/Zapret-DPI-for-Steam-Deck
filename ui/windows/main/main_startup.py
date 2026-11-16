@@ -118,6 +118,7 @@ class MainStartupMixin:
                         "current": bundle_u.current_version,
                         "available": latest_b,
                         "name": "Zapret DPI Manager",
+                        "download_url": info_b.get("download_url"),
                     }
                     try:
                         from core.github_release import fetch_release_notes_for_version
