@@ -6,6 +6,7 @@ import sys
 from core.updater_base import BaseUpdater
 from core.manager_config import VERSION_CONFIG
 from core.custom_game_presets import get_custom_presets
+from core.runtime_resources import PRESERVED_UPDATE_FILES
 
 
 class ManagerUpdater(BaseUpdater):
@@ -23,17 +24,7 @@ class ManagerUpdater(BaseUpdater):
         self.exclude_from_update = [
             "scripts",
             "tests",
-            "config.txt",
-            "utils/chosen_strategies.txt",
-            "utils/name_strategy.txt",
-            "utils/working_strategies.txt",
-            "utils/gamefilter.ports.json",
-            "utils/builtin_game_lists.state.json",
-            "utils/for games/presets.json",
-            "files/lists/ipset-all_user.txt",
-            "files/lists/ipset-exclude_user.txt",
-            "files/lists/list-exclude_user.txt",
-            "files/lists/list-general_user.txt",
+            *PRESERVED_UPDATE_FILES,
         ]
 
         self.exclude_paths = [

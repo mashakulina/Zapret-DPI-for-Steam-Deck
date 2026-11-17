@@ -16,7 +16,7 @@ from core.app_logging import get_error_logger
 from core.updater_base import BaseUpdater
 from core.manager_config import VERSION_CONFIG
 from core.manager_updater import ManagerUpdater
-from core.runtime_resources import LEGACY_OPTIONAL_UPDATE_FILES, LEGACY_RESOURCE_FILES
+from core.runtime_resources import PRESERVED_UPDATE_FILES, LEGACY_RESOURCE_FILES
 from core.update_backup import UpdateBackup
 from core.platform_info import (
     is_valve_steamos,
@@ -748,7 +748,7 @@ def validate_bundle_structure(bundle_root: str) -> bool:
         manifest_path = os.path.join(bundle_root, 'core/runtime_resources.py')
         legacy = not os.path.lexists(manifest_path)
         if legacy:
-            required = tuple(name for name in LEGACY_RESOURCE_FILES if name not in LEGACY_OPTIONAL_UPDATE_FILES)
+            required = LEGACY_RESOURCE_FILES
         else:
             with open(manifest_path, encoding='utf-8-sig') as source:
                 manifest = ast.parse(source.read())
@@ -764,8 +764,11 @@ def validate_bundle_structure(bundle_root: str) -> bool:
             raise ValueError('Неверный список обязательных файлов в пакете')
         for relative in required:
             path = os.path.join(bundle_root, relative)
-            if (os.path.isabs(relative) or '..' in relative.split('/')
-                    or not os.path.isfile(path) or os.path.islink(path)):
+            if os.path.isabs(relative) or '..' in relative.split('/'):
+                raise ValueError(f"Недопустимый путь в списке обязательных файлов: {relative}")
+            if relative in PRESERVED_UPDATE_FILES and not os.path.lexists(path):
+                continue
+            if not os.path.isfile(path) or os.path.islink(path):
                 raise ValueError(f"В пакете отсутствует обязательный файл: {relative}")
         for root, dirs, files in os.walk(bundle_root):
             dirs[:] = [name for name in dirs if name not in ("scripts", "tests", "__pycache__")]
@@ -913,7 +916,7 @@ class ZapretBundleUpdater(BaseUpdater):
             extract_bundle(archive_path, extract_dir)
 
             bundle_root = find_bundle_root(extract_dir)
-            if not bundle_root or not validate_bundle_structure(bundle_root):
+            if not bundle_root:
                 print(
                     "Неверная структура архива обновления: нужны main.py и zapret/system/ "
                     "(и zapret/bins/), либо то же внутри папки zapret_updater/."
@@ -921,6 +924,12 @@ class ZapretBundleUpdater(BaseUpdater):
                 get_error_logger().error(
                     "Неверная структура архива обновления (ожидались main.py и zapret/system/)"
                 )
+                return False
+            if not validate_bundle_structure(bundle_root):
+                message = 'Пакет обновления не прошёл проверку содержимого. Подробности указаны в журнале ошибок.'
+                print(message)
+                if progress_callback:
+                    progress_callback(message, None)
                 return False
 
             manager_u = ManagerUpdater()

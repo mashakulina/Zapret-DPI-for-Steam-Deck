@@ -25,11 +25,19 @@ LEGACY_RESOURCE_FILES = (
     'utils/for games/ipset-all_fallguys.txt', 'utils/for games/list-general_fallguys.txt',
 )
 
-# Historical update archives omit settings that the installed manager preserves.
-LEGACY_OPTIONAL_UPDATE_FILES = (
-    'config.txt', 'files/lists/ipset-all_user.txt', 'files/lists/ipset-exclude_user.txt',
+# Updates preserve these installed files, so update archives may omit them.
+# Fresh installations still require the full REQUIRED_RESOURCE_FILES payload.
+PRESERVED_UPDATE_FILES = (
+    'config.txt',
+    'utils/chosen_strategies.txt', 'utils/name_strategy.txt', 'utils/working_strategies.txt',
+    'utils/gamefilter.ports.json', 'utils/builtin_game_lists.state.json',
+    'utils/for games/presets.json',
+    'files/lists/ipset-all_user.txt', 'files/lists/ipset-exclude_user.txt',
     'files/lists/list-exclude_user.txt', 'files/lists/list-general_user.txt',
 )
+
+# Keep the old name for callers handling historical archives.
+LEGACY_OPTIONAL_UPDATE_FILES = PRESERVED_UPDATE_FILES
 
 REQUIRED_RESOURCE_FILES = (
     'config.txt',
