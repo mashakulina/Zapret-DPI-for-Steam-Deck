@@ -152,6 +152,7 @@ REQUIRED_RESOURCE_FILES = (
     'ui/components/custom_messagebox.py',
     'ui/components/file_picker.py',
     'ui/components/responsive_buttons.py',
+    'ui/components/touch_input.py',
     'ui/components/window_navigation.py',
     'ui/integrations/__init__.py',
     'ui/integrations/dependency_check.py',

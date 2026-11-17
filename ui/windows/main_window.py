@@ -5,6 +5,7 @@ import os
 import tkinter as tk
 
 from core.service_manager import ServiceManager
+from ui.components.touch_input import install_touch_support
 from ui.windows.main.main_chrome import MainChromeMixin
 from ui.windows.main.main_decky import MainDeckyMixin
 from ui.windows.main.main_gamefilter import MainGameFilterMixin
@@ -50,6 +51,7 @@ class MainWindow(
         self.decky_plugin_installed = os.path.isdir(self.decky_plugin_path)
 
         self.setup_ui()
+        self._touch_input = install_touch_support(self.root)
         self._apply_main_window_size()
         # Сначала проверяем зависимости
         self.check_dependencies_on_startup()
