@@ -12,7 +12,7 @@ from tkinter import messagebox
 
 from core.app_logging import get_error_logger
 from core.dpi_utils import place_toplevel_centered_on_parent
-from core.runtime_resources import REQUIRED_RESOURCE_FILES
+from core.runtime_resources import INSTALLED_RESOURCE_FILES
 from core.zapret_updater import extract_bundle, find_bundle_root, get_bundle_download_url
 
 
@@ -39,7 +39,7 @@ class ZapretFileChecker:
         self.manager_dir = self.home_dir / "Zapret_DPI_Manager"
 
         # Проверяем конкретный состав поставки, а не число файлов прежней версии.
-        self.required_files = [self.manager_dir / name for name in REQUIRED_RESOURCE_FILES]
+        self.required_files = [self.manager_dir / name for name in INSTALLED_RESOURCE_FILES]
         self.required_dirs = sorted({path.parent for path in self.required_files
                                      if path.parent != self.manager_dir})
 

@@ -1,7 +1,9 @@
-"""Files required by the installed manager, independent of development tools.
+"""Required payload files and installed user state, independent of development tools.
 
 Keep this list in sync when adding or retiring bundled application resources.
-User settings are checked for presence only and are never replaced by recovery.
+REQUIRED_RESOURCE_FILES is the literal update-payload manifest read by older
+updaters too. User state is required only in the installed program, never in
+an update archive, and is never replaced by recovery.
 The temporary zapret/ service bundle is removed by installation, so it is not
 part of the installed manager's required files.
 """
@@ -26,7 +28,7 @@ LEGACY_RESOURCE_FILES = (
 )
 
 # Updates preserve these installed files, so update archives may omit them.
-# Fresh installations still require the full REQUIRED_RESOURCE_FILES payload.
+# Fresh installations also need REQUIRED_USER_FILES; updates retain them.
 PRESERVED_UPDATE_FILES = (
     'config.txt',
     'utils/chosen_strategies.txt', 'utils/name_strategy.txt', 'utils/working_strategies.txt',
@@ -39,8 +41,16 @@ PRESERVED_UPDATE_FILES = (
 # Keep the old name for callers handling historical archives.
 LEGACY_OPTIONAL_UPDATE_FILES = PRESERVED_UPDATE_FILES
 
-REQUIRED_RESOURCE_FILES = (
+# These initial files belong to a full installation, not an update payload.
+REQUIRED_USER_FILES = (
     'config.txt',
+    'files/lists/ipset-all_user.txt', 'files/lists/ipset-exclude_user.txt',
+    'files/lists/list-exclude_user.txt', 'files/lists/list-general_user.txt',
+    'utils/chosen_strategies.txt', 'utils/name_strategy.txt', 'utils/working_strategies.txt',
+)
+
+# Keep a literal tuple for the validators already installed in version 2.8.0.
+REQUIRED_RESOURCE_FILES = (
     'core/app_logging.py',
     'core/boot_diagnostics.py',
     'core/boot_diagnostics_setup.py',
@@ -108,13 +118,9 @@ REQUIRED_RESOURCE_FILES = (
     'files/bin/tls_clienthello_www_sferum_ru.bin',
     'files/lists/gw.txt',
     'files/lists/ipset-all.txt',
-    'files/lists/ipset-all_user.txt',
     'files/lists/ipset-exclude.txt',
-    'files/lists/ipset-exclude_user.txt',
     'files/lists/list-exclude.txt',
-    'files/lists/list-exclude_user.txt',
     'files/lists/list-general.txt',
-    'files/lists/list-general_user.txt',
     'files/lists/list-google.txt',
     'files/lists/other.txt',
     'files/strategy/General',
@@ -186,14 +192,14 @@ REQUIRED_RESOURCE_FILES = (
     'ui/windows/sudo_password_window.py',
     'ui/windows/tg_ws_proxy_window.py',
     'ui/windows/update_window.py',
-    'utils/chosen_strategies.txt',
     'utils/for games/ipset-all_fallguys.txt',
     'utils/for games/ipset-all_roblox.txt',
     'utils/for games/list-general_fallguys.txt',
     'utils/for games/list-general_roblox.txt',
     'utils/ipset-all.txt',
-    'utils/name_strategy.txt',
     'utils/qr.png',
     'utils/test_targets.txt',
-    'utils/working_strategies.txt',
 )
+
+# Integrity checks of an installed manager still include its existing settings.
+INSTALLED_RESOURCE_FILES = REQUIRED_RESOURCE_FILES + REQUIRED_USER_FILES
