@@ -73,6 +73,7 @@ class MainUISettingsMixin:
                 ("TG WS Proxy by Flowseal", self.open_tg_ws_proxy),
                 ("Удалить плагин Zapret DPI" if installed else "Установить плагин Zapret DPI",
                  self.remove_decky_plugin if installed else self.install_decky_plugin),
+                ("Подключить неофициальный магазин Decky", self.connect_unofficial_decky_store),
                 ("Открыть лог ошибок", self.open_error_log),
             ]
         if title == "Обслуживание":

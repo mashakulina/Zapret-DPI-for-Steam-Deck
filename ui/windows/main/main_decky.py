@@ -6,6 +6,7 @@ import threading
 import tkinter as tk
 
 from ui.components.custom_messagebox import ask_yesno, show_error, show_info
+from core.decky_store import UNOFFICIAL_STORE_URL, configure_unofficial_store
 
 # Выполняется под root через sudo -S; скрипт сам вызывает sudo (systemctl, cp в plugins).
 ZAPRET_DPI_PLUGIN_INSTALL_CMD = (
@@ -14,6 +15,39 @@ ZAPRET_DPI_PLUGIN_INSTALL_CMD = (
 
 
 class MainDeckyMixin:
+    def connect_unofficial_decky_store(self):
+        """Настраивает магазин через Decky, не останавливая его службу."""
+        if getattr(self, '_decky_store_busy', False):
+            return
+        self._ensure_status_dispatch()
+        self._decky_store_busy = True
+        self.show_status_message('Подключение неофициального магазина Decky...')
+
+        def done(changed=None, error=None):
+            self._decky_store_busy = False
+            if error is not None:
+                self.show_status_message('Не удалось подключить магазин Decky', error=True)
+                show_error(self.root, 'Магазин Decky', error)
+                return
+            message = 'Магазин подключён.' if changed else 'Магазин уже подключён.'
+            self.show_status_message(message, success=True)
+            show_info(self.root, 'Магазин Decky',
+                      f'{message}\n\n{UNOFFICIAL_STORE_URL}\n\n'
+                      'Откройте магазин в меню Decky Loader. Если он уже открыт, закройте и откройте его снова.')
+
+        def worker():
+            try:
+                changed = configure_unofficial_store()
+            except Exception as error:
+                self._post_ui(done, error=str(error))
+            else:
+                self._post_ui(done, changed=changed)
+
+        try:
+            threading.Thread(target=worker, daemon=True).start()
+        except RuntimeError as error:
+            done(error=f'Не удалось запустить подключение магазина: {error}')
+
     def is_decky_zapret_plugin_installed(self):
         """Плагин Zapret DPI (Decky) лежит в ~/homebrew/plugins/DeckyZapretDPI."""
         return os.path.isdir(self.decky_plugin_path)

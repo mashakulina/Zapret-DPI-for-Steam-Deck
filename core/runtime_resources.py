@@ -41,6 +41,7 @@ REQUIRED_RESOURCE_FILES = (
     'core/connection_check.py',
     'core/game_mode.py',
     'core/strategy_payloads.py',
+    'core/decky_store.py',
     'core/dependency_checker.py',
     'core/dpi_utils.py',
     'core/file_checker.py',
