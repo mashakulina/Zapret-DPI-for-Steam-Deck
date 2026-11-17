@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 from core.sudo_checker import SudoChecker
 from ui.components.button_styler import create_hover_button
@@ -227,6 +228,7 @@ class SudoPasswordWindow:
         """Запускает окно"""
         try:
             if self.root.winfo_exists():
+                prepare_window_navigation(self.root)
                 self.root.wait_window()
         except tk.TclError:
             return None

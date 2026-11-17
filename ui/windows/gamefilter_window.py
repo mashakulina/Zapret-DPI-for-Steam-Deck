@@ -5,7 +5,7 @@ import tkinter as tk
 
 from ui.components.button_styler import create_hover_button
 from ui.components.responsive_buttons import pack_responsive_buttons
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 from ui.windows.ipset_settings_window import IpsetFilterWindow
 from ui.windows.main.protocols import MainWindowActions
 from ui.components.custom_messagebox import show_info, show_error
@@ -40,117 +40,15 @@ from core.game_presets import (
 )
 
 
-def _preset_read_nonempty_lines(path):
-    """Читает непустые строки файла без комментариев."""
-    if not os.path.isfile(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-
-
-def _preset_write_lines(path, lines):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        if lines:
-            f.write("\n".join(lines) + "\n")
-        else:
-            f.write("")
-
-
-def _list_general_user_path(manager_dir):
-    return os.path.join(manager_dir, "files", "lists", "list-general_user.txt")
-
-
-def _ipset_all_user_path(manager_dir):
-    return os.path.join(manager_dir, "files", "lists", "ipset-all_user.txt")
-
-
-def _preset_remove_list_general_user_domains(manager_dir, games_list_file):
-    source_path = games_data_file(manager_dir, games_list_file)
-    source_domains = set(_preset_read_nonempty_lines(source_path))
-    if not source_domains:
-        return
-    current_domains = _preset_read_nonempty_lines(_list_general_user_path(manager_dir))
-    filtered_domains = [domain for domain in current_domains if domain not in source_domains]
-    _preset_write_lines(_list_general_user_path(manager_dir), filtered_domains)
-
-
-def _preset_apply_list_general_user_domains(manager_dir, games_list_file):
-    source_path = games_data_file(manager_dir, games_list_file)
-    source_domains = _preset_read_nonempty_lines(source_path)
-    if not source_domains:
-        raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
-    current_domains = _preset_read_nonempty_lines(_list_general_user_path(manager_dir))
-    merged_domains = sorted(set(current_domains).union(set(source_domains)))
-    _preset_write_lines(_list_general_user_path(manager_dir), merged_domains)
-
-
-def _preset_remove_ipset_user_entries(manager_dir, games_ipset_file):
-    source_path = games_data_file(manager_dir, games_ipset_file)
-    source_set = set(_preset_read_nonempty_lines(source_path))
-    if not source_set:
-        return
-    current_entries = _preset_read_nonempty_lines(_ipset_all_user_path(manager_dir))
-    filtered = [line for line in current_entries if line not in source_set]
-    _preset_write_lines(_ipset_all_user_path(manager_dir), filtered)
-
-
-def _preset_apply_ipset_user_entries(manager_dir, games_ipset_file):
-    source_path = games_data_file(manager_dir, games_ipset_file)
-    if not os.path.isfile(source_path):
-        raise FileNotFoundError(f"Файл не найден: {source_path}")
-    source_entries = _preset_read_nonempty_lines(source_path)
-    if not source_entries:
-        raise FileNotFoundError(f"Файл не найден или пуст: {source_path}")
-    current_entries = _preset_read_nonempty_lines(_ipset_all_user_path(manager_dir))
-    merged = sorted(set(current_entries).union(set(source_entries)))
-    _preset_write_lines(_ipset_all_user_path(manager_dir), merged)
-
-
-def _preset_remove_roblox_domains(manager_dir):
-    _preset_remove_list_general_user_domains(manager_dir, "list-general_roblox.txt")
-
-
-def _preset_remove_roblox_ipset(manager_dir):
-    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_roblox.txt")
-
-
-def _preset_remove_fallguys_domains(manager_dir):
-    _preset_remove_list_general_user_domains(manager_dir, "list-general_fallguys.txt")
-
-
-def _preset_remove_fallguys_ipset(manager_dir):
-    _preset_remove_ipset_user_entries(manager_dir, "ipset-all_fallguys.txt")
-
-
-def _preset_set_ipset_none(manager_dir):
-    target_path = os.path.join(manager_dir, "files", "lists", "ipset-all.txt")
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    with open(target_path, "w", encoding="utf-8") as f:
-        f.write("203.0.113.113/32")
-
-
-def clear_active_game_preset_disk(manager_dir: str) -> None:
-    """Снимает активный пресет с диска (без перезапуска службы и без диалогов)."""
-    with preset_switch_transaction(manager_dir):
-        active_before = get_active_preset_id(manager_dir)
-        if active_before:
-            if is_custom_preset(active_before, manager_dir):
-                clear_custom_preset(active_before, manager_dir)
-                clear_active_preset(manager_dir)
-                return
-            if active_before == "roblox":
-                _preset_remove_roblox_domains(manager_dir)
-                _preset_remove_roblox_ipset(manager_dir)
-            elif active_before == "fall_guys":
-                _preset_remove_fallguys_domains(manager_dir)
-                _preset_remove_fallguys_ipset(manager_dir)
-            else:
-                remove_preset_lines_from_config(active_before, manager_dir)
-            if active_before == "elite_dangerous":
-                _preset_set_ipset_none(manager_dir)
-            restore_gamefilter_for_preset(active_before, manager_dir)
-        clear_active_preset(manager_dir)
+# Shared operations are imported here for existing callers and window helpers.
+from core.game_mode import (
+    clear_active_game_preset_disk, apply_game_preset_disk,
+    _preset_read_nonempty_lines, _preset_write_lines,
+    _preset_apply_list_general_user_domains, _preset_apply_ipset_user_entries,
+    _preset_remove_roblox_domains, _preset_remove_roblox_ipset,
+    _preset_remove_fallguys_domains, _preset_remove_fallguys_ipset,
+    _preset_set_ipset_none,
+)
 
 
 class GameFilterProtocolModeWindow:
@@ -168,6 +66,7 @@ class GameFilterProtocolModeWindow:
         self.root.transient(self._anchor)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self._cancel)
+        prepare_window_navigation(self.root)
         self.root.bind("<Escape>", lambda event: self._cancel())
         self._main = tk.Frame(self.root, bg="#182030", padx=self._s(18), pady=self._s(14))
         self._main.pack(fill=tk.BOTH, expand=True)
@@ -350,12 +249,14 @@ class GameFilterProtocolModeWindow:
         self._close()
 
     def run_modal(self) -> None:
+        prepare_window_navigation(self.root)
         self.root.update_idletasks()
         self.root.update()
         try:
             self.root.grab_set()
         except tk.TclError:
             pass
+        prepare_window_navigation(self.root)
         self._parent.wait_window(self.root)
 
 
@@ -476,6 +377,7 @@ class GameFilterWindow:
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.protocol("WM_DELETE_WINDOW", self.close_window)
+        prepare_window_navigation(self.root)
         self.root.bind("<Escape>", lambda event: self.close_window())
 
     def setup_ui(self):
@@ -541,7 +443,7 @@ class GameFilterWindow:
 
         # Кнопка Включить/Выключить GameFilter в зависимости от состояния
         if self.main_window.is_game_filter_enabled():
-            actions.extend((("Режим и порты…", self._open_protocol_window_for_apply),
+            actions.extend((("Режим и порты GameFilter…", self._open_protocol_window_for_apply),
                             ("Выключить GameFilter", self.disable_game_filter)))
         else:
             actions.append(("Включить GameFilter", self.enable_game_filter))
@@ -623,6 +525,10 @@ class GameFilterWindow:
         self._open_settings_flow(False)
 
     def _open_settings_flow(self, editing, mode=None, ports=None):
+        return run_child_window(
+            self.root, lambda: self._run_settings_flow(editing, mode, ports))
+
+    def _run_settings_flow(self, editing, mode=None, ports=None):
         if mode is None:
             mode = read_game_filter_protocol_mode(get_manager_dir())
             try:
@@ -650,7 +556,7 @@ class GameFilterWindow:
                     self.root, initial_custom=custom, on_confirm=confirm)
             elif stage == "protocol":
                 dialog = GameFilterProtocolModeWindow(
-                    self.root, initial_mode=mode, title="GameFilter: режим и порты",
+                    self.root, initial_mode=mode, title="Режим и порты GameFilter",
                     on_confirm=confirm, on_back=back)
             else:
                 dialog = GameFilterPortsWindow(
@@ -713,7 +619,6 @@ class GameFilterWindow:
                 self._restore_modal_grab()
             if not authorized:
                 return
-            write_game_filter_settings(mode, custom_ports, get_manager_dir())
         except (ValueError, OSError) as error:
             try:
                 show_error(self.root, "Ошибка настройки GameFilter", str(error))
@@ -721,7 +626,11 @@ class GameFilterWindow:
                 self._restore_modal_grab()
             return
         self.close_window()
-        self.main_window.restart_zapret_after_preset("Режим и порты Game Filter обновлены")
+        manager_dir = get_manager_dir()
+        self.main_window.restart_zapret_after_preset(
+            "Режим и порты GameFilter обновлены",
+            mutation=lambda: write_game_filter_settings(mode, custom_ports, manager_dir),
+            manager_dir=manager_dir)
 
     def disable_game_filter(self):
         """Выключение GameFilter: sudo, переключение, перезапуск службы."""
@@ -742,12 +651,14 @@ class GameFilterWindow:
 
     def run(self):
         """Запускает окно (модально)."""
+        prepare_window_navigation(self.root)
         self.root.update_idletasks()
         self.root.update()
         try:
             self.root.grab_set()
         except tk.TclError:
             pass
+        prepare_window_navigation(self.root)
         self.root.wait_window()
 
 
@@ -778,6 +689,7 @@ class GamePresetWindow:
         self.root.configure(bg='#182030')
         self.root.transient(self.parent)
         self.root.protocol("WM_DELETE_WINDOW", self.close_window)
+        prepare_window_navigation(self.root)
 
     def setup_ui(self):
         """Настройка интерфейса."""
@@ -945,7 +857,7 @@ class GamePresetWindow:
             f.write(content)
 
     def apply_preset(self):
-        """Apply disk changes atomically, then refresh UI and restart the service."""
+        """Queue disk changes and restart together without blocking Tk input."""
         if not self.main_window.ensure_sudo_password():
             return
         selected = next((pid for pid, var in self.preset_vars.items() if var.get()), None)
@@ -955,61 +867,25 @@ class GamePresetWindow:
                 raise ValueError("Пресет не найден.")
             if selected and is_custom_preset(selected, self.manager_dir):
                 validate_custom_preset(selected, self.manager_dir, check_config=False)
-            with preset_switch_transaction(self.manager_dir):
-                self._apply_selected_disk(selected, presets)
         except (OSError, ValueError, UnicodeError) as error:
             show_error(self.root, "Ошибка", f"Не удалось применить пресет: {error}")
             return
-        if hasattr(self.main_window, "update_game_filter_indicator"):
-            self.main_window.update_game_filter_indicator()
         name = presets[selected]['name'] if selected else None
-        message = f"Был выбран пресет для {name}" if name else "Применение пресетов снято"
-        if hasattr(self.main_window, "show_status_message"):
-            self.main_window.show_status_message(message, success=True)
-        info_text = message + "."
-        if selected == "fall_guys":
-            info_text += ("\n\nПресет только для версии из Epic Games Store. "
-                          "Для Steam этот пресет не используйте — в настройках игры смените регион на США (восток).")
-        show_info(self.root, "Пресет", info_text)
-        self.main_window.restart_zapret_after_preset(f"Пресет {name} применён" if name else "Пресет снят")
+        status = f"Пресет {name} применён" if name else "Пресет снят"
+        manager_dir = self.manager_dir
+
+        def completed():
+            if selected == "fall_guys":
+                show_info(self.main_window.root, "Пресет",
+                          "Пресет только для версии из Epic Games Store. Для Steam этот пресет не используйте — в настройках игры смените регион на США (восток).")
+
+        self.main_window.restart_zapret_after_preset(
+            status, mutation=lambda: self._apply_selected_disk(selected, presets),
+            on_success=completed, manager_dir=manager_dir)
         self.close_window()
 
     def _apply_selected_disk(self, preset_id, presets):
-        active_before = get_active_preset_id(self.manager_dir)
-        if preset_id is None:
-            clear_active_game_preset_disk(self.manager_dir)
-            return
-        if active_before and active_before != preset_id:
-            clear_active_game_preset_disk(self.manager_dir)
-        if is_custom_preset(preset_id, self.manager_dir):
-            apply_custom_preset(preset_id, self.manager_dir)
-            set_active_preset(preset_id, self.manager_dir)
-            return
-        disable_standalone_gamefilter(self.manager_dir)
-        preset = presets[preset_id]
-        tcp, udp = preset.get("game_filter_tcp"), preset.get("game_filter_udp")
-        if tcp is not None and udp is not None:
-            substitute_gamefilter_in_config(tcp, udp, self.manager_dir)
-        if preset_id == "roblox":
-            self._apply_roblox_domains()
-            self._apply_roblox_ipset()
-        elif preset_id == "fall_guys":
-            self._apply_fallguys_domains()
-            self._apply_fallguys_ipset()
-        elif preset_id == "elite_dangerous":
-            self._apply_ipset_loaded()
-        lines = preset.get("lines") or []
-        if lines:
-            path = self.get_config_path()
-            existing = ""
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as stream:
-                    existing = stream.read()
-            block = "\n".join(lines)
-            if existing != block and not existing.startswith(block + "\n"):
-                with open(path, "w", encoding="utf-8") as stream:
-                    stream.write(block + "\n" + existing)
-        set_active_preset(preset_id, self.manager_dir)
+        apply_game_preset_disk(self.manager_dir, preset_id)
 
     def close_window(self):
         """Закрывает окно (возврат в главное меню)."""
@@ -1017,10 +893,12 @@ class GamePresetWindow:
 
     def run(self):
         """Запускает окно (модально)."""
+        prepare_window_navigation(self.root)
         self.root.update_idletasks()
         self.root.update()
         try:
             self.root.grab_set()
         except tk.TclError:
             pass
+        prepare_window_navigation(self.root)
         self.root.wait_window()

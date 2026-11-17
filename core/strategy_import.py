@@ -44,7 +44,16 @@ def _read_regular(path, suffix):
     path = Path(path)
     if path.suffix.lower() != suffix or path.is_symlink() or not path.is_file():
         raise ImportRejected(f'Выберите обычный файл {suffix.upper()}.')
-    data = path.read_bytes()
+    try:
+        if not path.stat().st_mode & 0o444:
+            raise OSError('нет прав чтения')
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise OSError('не обычный файл')
+            data = source.read()
+    except OSError as error:
+        raise ImportRejected(f'Файл недоступен для чтения: {path} ({error})') from error
     if not data or b'\0' in data and suffix == '.bat':
         raise ImportRejected('Файл пуст или имеет неподдерживаемый формат.')
     return data
@@ -141,9 +150,9 @@ def convert_bat(raw, payloads, mappings):
             return '{' + LISTS[filename] + '}'
         alias = bin_alias(filename)
         if filename not in payloads:
-            raise ImportRejected(f'Отсутствует BIN: {filename}. Сначала добавьте его.')
+            raise ImportRejected(f'Отсутствует BIN (фейк): {filename}. Сначала добавьте его.')
         if mappings.get(alias) != filename:
-            raise ImportRejected(f'BIN не зарегистрирован в starter.sh: {filename}. Добавьте его повторно.')
+            raise ImportRejected(f'BIN (фейк) не зарегистрирован в starter.sh: {filename}. Добавьте его повторно.')
         return '{' + alias + '}'
     joined = re.sub(r'"?%(LISTS|BIN)%([^"\s\\/]+)"?', path, joined, flags=re.I)
     joined = re.sub(r'%GameFilter(?:TCP|UDP)%', '{GameFilter}', joined, flags=re.I)
@@ -164,7 +173,7 @@ def convert_bat(raw, payloads, mappings):
         for placeholder in placeholders:
             filename = mappings.get(placeholder, '')
             if filename.endswith('.bin') and filename not in payloads:
-                raise ImportRejected(f'Отсутствует BIN: {filename}. Сначала добавьте его.')
+                raise ImportRejected(f'Отсутствует BIN (фейк): {filename}. Сначала добавьте его.')
         if token == '--new':
             if not current:
                 raise ImportRejected('Пустой профиль BAT.')
@@ -303,6 +312,8 @@ class StrategyImporter:
         common = starter_mappings(next(iter(starters.values())))[0]
         payloads = {p.name for p in (self.root / 'files/bin').glob('*.bin') if p.is_file() and not p.is_symlink() and p.stat().st_size}
         converted = convert_bat(raw, payloads, common)
+        from core.strategy_payloads import validate_payloads
+        validate_payloads(converted, self.root, self.installed_starter)
         target = self.root / 'files/strategy' / source.stem
         if target.exists() and not overwrite:
             raise ReplacementRequired(f'Стратегия «{source.stem}» уже существует. Заменить?')

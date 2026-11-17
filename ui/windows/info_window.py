@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import webbrowser
 import subprocess
@@ -345,4 +346,5 @@ def show_info_dialog(parent):
     dialog.focus_set()
 
     # Ждем закрытия окна
+    prepare_window_navigation(dialog)
     dialog.wait_window()

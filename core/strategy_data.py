@@ -208,7 +208,7 @@ def get_strategies_names_path():
         os.makedirs(utils_dir)
     return os.path.join(utils_dir, "chosen_strategies.txt")
 
-def save_strategy_names(selected_strategies):
+def save_strategy_names(selected_strategies, restart=None, raise_on_error=False):
     """Сохраняет наименования выбранных стратегий в файл chosen_strategies.txt и команды в config.txt"""
     try:
         names_path = get_strategies_names_path()
@@ -230,7 +230,11 @@ def save_strategy_names(selected_strategies):
             has_valid_strategies = True
             valid_strategies[category] = strategy_name
 
-        with preset_switch_transaction(manager_dir):
+        from core.strategy_payloads import validate_payloads
+        from core.strategy_settings import strategy_change
+        commands = [get_strategy_command(category, name) for category, name in valid_strategies.items()]
+        validate_payloads("\n".join(command for command in commands if command), manager_dir)
+        with strategy_change(manager_dir, restart):
             # Сохраняем наименования в отдельный файл
             with open(names_path, 'w', encoding='utf-8') as f:
                 if has_valid_strategies:
@@ -266,6 +270,8 @@ def save_strategy_names(selected_strategies):
         return True
     except Exception as e:
         print(f"Ошибка сохранения стратегий: {e}")
+        if raise_on_error:
+            raise
         return False
 
 def load_strategy_names():

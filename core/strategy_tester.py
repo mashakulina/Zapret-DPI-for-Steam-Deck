@@ -846,6 +846,14 @@ class StrategyTester:
                 "critical_fail_reason": ""
             }
 
+        # Preflight before stopping the working service or changing any files.
+        from core.strategy_payloads import validate_payloads
+        try:
+            validate_payloads(Path(temp_config).read_text(encoding='utf-8-sig'), self.project_root)
+        except (OSError, ValueError) as error:
+            return {"strategy": strategy_name, "mode": mode, "success": False,
+                    "error": str(error), "critical_fail": False, "critical_fail_reason": ""}
+
         # Для DPI режима очищаем ipset
         if mode == "dpi":
             print("  [DPI] Очищаем ipset-all.txt...")
@@ -2138,6 +2146,15 @@ class StrategyTester:
     async def run_full_test(self, mode: str = "standard",
                             strategies: Optional[List[str]] = None,
                             stop_callback: Optional[callable] = None) -> List[Dict]:
+        # Testing temporarily replaces config and stops the shared service.
+        # Hold the same lock as manual GUI/Decky operations for the whole run.
+        from core.config_lock import manager_settings_lock
+        with manager_settings_lock(self.project_root):
+            return await self._run_full_test_locked(mode, strategies, stop_callback)
+
+    async def _run_full_test_locked(self, mode: str = "standard",
+                                    strategies: Optional[List[str]] = None,
+                                    stop_callback: Optional[callable] = None) -> List[Dict]:
         """
         Выполняет полное тестирование всех стратегий
         """

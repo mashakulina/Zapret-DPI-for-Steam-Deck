@@ -1,5 +1,5 @@
 import tkinter as tk
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
@@ -30,6 +30,7 @@ class AutoSelectionWindow:
 
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.go_back)
+        prepare_window_navigation(self.root)
 
     def setup_ui(self):
         """Настройка интерфейса"""
@@ -103,6 +104,7 @@ class AutoSelectionWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()
 
 
@@ -133,6 +135,7 @@ class StrategySelectionWindow:
 
         # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.go_back)
+        prepare_window_navigation(self.root)
 
     def setup_ui(self):
         """Настройка интерфейса"""
@@ -351,6 +354,7 @@ class StrategySelectionWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()
 
 
@@ -449,4 +453,5 @@ class StrategySelectorWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()

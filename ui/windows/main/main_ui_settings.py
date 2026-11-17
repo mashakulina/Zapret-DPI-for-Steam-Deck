@@ -1,7 +1,7 @@
 """Главное окно: окно настроек и действия."""
 import tkinter as tk
 
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 
 from ui.components.button_styler import create_hover_button, uniform_button_width_for_font
 from ui.windows.connection_check_window import ConnectionCheckWindow
@@ -63,7 +63,7 @@ class MainUISettingsMixin:
                 ("Настройки Hostlist", self.open_hostlist_settings),
                 ("Настройки IPSet", self.open_ipset_settings),
                 ("Настройки DNS", self.open_dns_settings),
-                ("Фаервол", self.open_firewall_settings),
+                ("Настройка Firewall", self.open_firewall_settings),
                 ("Разблокировать сервисы", self.open_service_unlock),
                 ("Проверка соединения", self.open_connection_check),
             ]
@@ -110,6 +110,7 @@ class MainUISettingsMixin:
         window.transient(self.root)
         window.protocol("WM_DELETE_WINDOW", close_command)
         window.bind("<Escape>", lambda event: close_command())
+        prepare_window_navigation(window)
 
         # Отступы компактного меню — в px, шрифты в pt масштабирует сам Tk.
         main_frame = tk.Frame(window, bg='#182030', padx=10, pady=10)

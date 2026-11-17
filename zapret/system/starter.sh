@@ -77,6 +77,13 @@ echo "Using Zapret DPI Manager installation for user: $DETECTED_USER"
 echo "Home directory: $CURRENT_HOME"
 echo "Config file: $CONFIG_FILE"
 
+# Validate mandatory BINs before touching the running service or firewall.
+PAYLOAD_CHECKER="$CURRENT_HOME/Zapret_DPI_Manager/core/strategy_payloads.py"
+if ! REQUIRED_PAYLOADS=$(python3 -I "$PAYLOAD_CHECKER" "$CURRENT_HOME/Zapret_DPI_Manager" "${BASH_SOURCE[0]}"); then
+    echo "Error: required BIN validation failed; nfqws was not started." >&2
+    exit 1
+fi
+
 if pidof "nfqws" > /dev/null; then
     echo "Error: nfqws is already running; refusing to alter firewall." >&2
     exit 1
@@ -130,6 +137,22 @@ echo "Using temp directory: $TEMP_DIR"
 echo "Copying files to temp directory..."
 cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/lists/"* "$TEMP_DIR/" 2>/dev/null || true
 cp -f "$CURRENT_HOME/Zapret_DPI_Manager/files/bin/"* "$TEMP_DIR/" 2>/dev/null || true
+
+# Mandatory payload copies must succeed, even when an unrelated optional file
+# caused the bulk copy to fail. Validate the actual copies before firewall setup.
+while IFS= read -r payload; do
+    [ -n "$payload" ] || continue
+    if [ -L "$payload" ] || [ ! -f "$payload" ] || [ ! -s "$payload" ] || [ ! -r "$payload" ] ||
+       ! cp -f -- "$payload" "$TEMP_DIR/$(basename "$payload")"; then
+        echo "Error: cannot copy required BIN: $payload; nfqws was not started." >&2
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+done <<< "$REQUIRED_PAYLOADS"
+if ! python3 -I "$PAYLOAD_CHECKER" "$CURRENT_HOME/Zapret_DPI_Manager" "${BASH_SOURCE[0]}" "$TEMP_DIR" >/dev/null; then
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
 # ОБЪЕДИНЯЕМ ОСНОВНЫЕ И USER-СПИСКИ В ОДИН ФАЙЛ
 # Это исключает зависимость от порядка повторяющихся --hostlist/--hostlist-exclude/--ipset-exclude.

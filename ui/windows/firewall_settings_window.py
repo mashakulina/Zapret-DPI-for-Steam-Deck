@@ -8,7 +8,7 @@ from core.dpi_utils import application_tk_root, place_toplevel_centered_on_paren
 from core.tk_scale_lab_helpers import logical_ui_scale, warning_dialog_scale
 from ui.components.button_styler import create_hover_button
 from ui.components.custom_messagebox import show_error
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 from ui.windows.sudo_password_window import SudoPasswordWindow
 
 
@@ -30,11 +30,12 @@ class FirewallSettingsWindow:
         self._s = lambda value: max(1, int(round(value * scale)))
         self.root = tk.Toplevel(parent)
         self.root.withdraw()
-        self.root.title("Фаервол")
+        self.root.title("Настройка Firewall")
         self.root.configure(bg="#182030")
         self.root.transient(self._anchor)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        prepare_window_navigation(self.root)
         self.root.bind("<Escape>", lambda event: self._close())
         self._main = tk.Frame(self.root, bg="#182030", padx=self._s(18), pady=self._s(14))
         self._main.pack(fill=tk.BOTH, expand=True)
@@ -231,7 +232,7 @@ class FirewallSettingsWindow:
         self._set_busy(False)
         self._fit_dialog()
         if error and kind == "apply":
-            show_error(self.root, "Фаервол", error)
+            show_error(self.root, "Настройка Firewall", error)
 
     def _password(self):
         main = self._main_window
@@ -251,10 +252,10 @@ class FirewallSettingsWindow:
             self._fit_dialog()
             return
         if selected not in ("nftables", "iptables"):
-            show_error(self.root, "Фаервол", "Выберите nftables или iptables.")
+            show_error(self.root, "Настройка Firewall", "Выберите nftables или iptables.")
             return
         if not self._available.get(selected):
-            show_error(self.root, "Фаервол", f"{selected} не установлен. Установите необходимые инструменты и откройте это окно снова.")
+            show_error(self.root, "Настройка Firewall", f"{selected} не установлен. Установите необходимые инструменты и откройте это окно снова.")
             return
         password = self._password()
         if password is None:
@@ -288,4 +289,5 @@ class FirewallSettingsWindow:
     def run(self):
         self.root.grab_set()
         self.root.focus_set()
+        prepare_window_navigation(self.root)
         self.root.wait_window()

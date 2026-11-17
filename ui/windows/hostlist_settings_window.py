@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
@@ -918,4 +919,5 @@ class HostlistSettingsWindow:
     def run(self):
         """Запускает окно настроек HOSTLIST"""
         self.create_window()
+        prepare_window_navigation(self.window)
         self.window.wait_window()

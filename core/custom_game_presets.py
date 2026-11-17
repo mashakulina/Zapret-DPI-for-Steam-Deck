@@ -62,6 +62,7 @@ def _write(path, data):
         path.unlink(missing_ok=True)
         return
     mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+    owner = path.stat() if path.exists() else path.parent.stat()
     fd, temp = tempfile.mkstemp(prefix='.game-preset-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as out:
@@ -69,6 +70,8 @@ def _write(path, data):
             out.flush()
             os.fsync(out.fileno())
         os.chmod(temp, mode)
+        if os.geteuid() == 0:
+            os.chown(temp, owner.st_uid, owner.st_gid)
         os.replace(temp, path)
     finally:
         Path(temp).unlink(missing_ok=True)
@@ -445,7 +448,7 @@ def _switch_paths(root):
     paths.update(root / 'utils' / name for name in
                  ('gamefilter.enable', 'gamefilter.mode', 'gamefilter.ports.json', 'gamefilter.main_bypass.disable',
                   'gamefilter.discord.disable', 'chosen_strategies.txt',
-                  'name_strategy.txt', 'working_strategies.txt'))
+                  'name_strategy.txt', 'working_strategies.txt', 'builtin_game_lists.state.json'))
     paths.update((root / 'utils').glob('game_preset_*'))
     paths.update((root / 'utils').glob('custom_*.state.json'))
     return paths
@@ -455,10 +458,12 @@ def _switch_paths(root):
 def preset_switch_transaction(manager_dir=None):
     """Roll back all preset side effects when switching fails."""
     root = _root(manager_dir)
-    paths = _switch_paths(root)
-    snapshot = {path: _read(path) for path in paths}
-    try:
-        yield
-    except Exception:
-        _commit({path: snapshot.get(path) for path in paths | _switch_paths(root)})
-        raise
+    from core.config_lock import manager_settings_lock
+    with manager_settings_lock(root):
+        paths = _switch_paths(root)
+        snapshot = {path: _read(path) for path in paths}
+        try:
+            yield
+        except Exception:
+            _commit({path: snapshot.get(path) for path in paths | _switch_paths(root)})
+            raise

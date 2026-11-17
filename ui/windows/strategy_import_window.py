@@ -14,7 +14,7 @@ from ui.components.button_styler import create_hover_button, uniform_button_widt
 from ui.components.custom_messagebox import ask_yesno, show_error, show_info
 from ui.components.file_picker import ask_open_file
 from ui.components.responsive_buttons import pack_responsive_buttons
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 from ui.windows.sudo_password_window import SudoPasswordWindow
 
 
@@ -64,6 +64,7 @@ class SettingsWindow:
                           if getattr(self, '_layout_ready', True) else None)
         self._labels = [self.heading]
         self.window.protocol('WM_DELETE_WINDOW', self.close)
+        prepare_window_navigation(self.window)
         self.window.bind('<Escape>', lambda event: self.close())
         if place_window:
             dimensions = (min(self.s(width), self.window.winfo_screenwidth() - 32),
@@ -155,6 +156,7 @@ class SettingsWindow:
         self.create_window()
         self.window.grab_set()
         self.window.focus_set()
+        prepare_window_navigation(self.window)
         self.window.wait_window()
 
 
@@ -177,7 +179,7 @@ class StrategyImportWindow(SettingsWindow):
         self.heading.configure(font=('Arial', 14, 'bold'))
         self.heading.pack_configure(pady=(0, 30))
         actions = [('Добавить стратегию', self.convert_strategy),
-                   ('Добавить новый фейк', self.add_bin),
+                   ('Добавить новый BIN (фейк)', self.add_bin),
                    ('Открыть config', self.open_config),
                    ('Замена используемого фейка', self.open_fakes)]
         # Match the compact, centered menu in IpsetMainWindow.
@@ -194,7 +196,7 @@ class StrategyImportWindow(SettingsWindow):
 
     def _import(self, is_bin):
         suffix = '.bin' if is_bin else '.bat'
-        source = ask_open_file(self.window, title=f'Выберите файл {suffix[1:].upper()}',
+        source = ask_open_file(self.window, title='Выберите файл BIN (фейк)' if is_bin else 'Выберите файл BAT',
                                suffix=suffix, initialdir=getattr(self, '_last_directory', Path.home()))
         if not source:
             return
@@ -209,7 +211,7 @@ class StrategyImportWindow(SettingsWindow):
                     kwargs['password'] = password
                 result = action(Path(source), **kwargs)
                 self.dialog(show_info, 'Готово',
-                          ('Новый фейк добавлен' if is_bin else 'Новая стратегия добавлена в список') + f'\n{result}')
+                          ('Новый BIN (фейк) добавлен' if is_bin else 'Новая стратегия добавлена в список') + f'\n{result}')
                 return
             except ReplacementRequired as error:
                 if not self.dialog(ask_yesno, 'Замена файла', str(error)):
@@ -258,7 +260,7 @@ class StrategyImportWindow(SettingsWindow):
 class ConfigWindow(SettingsWindow):
     def __init__(self, parent, root=None, config_path=None, installed_starter='/opt/zapret/starter.sh'):
         self.parent = parent
-        self.document = ConfigDocument(config_path, root)
+        self.document = ConfigDocument(config_path, root, installed_starter)
         self.installed_starter = installed_starter
 
     def action_buttons(self, caption, command):
@@ -285,8 +287,34 @@ class ConfigWindow(SettingsWindow):
                 return
         try:
             restart_zapret(password)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-            self.dialog(show_error, 'Ошибка применения', f'Config сохранён, но перезапуск не удался.\n{error}')
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            previous = getattr(self.document, 'previous', None)
+            if previous is None:
+                self.dialog(show_error, 'Ошибка применения', f'Перезапуск не удался. Проверьте config и состояние службы.\n{error}')
+                return
+            try:
+                self.document.save_bytes(previous)
+                if hasattr(self, 'fields'):
+                    restored_slots = fake_slots(self.document.text, self.document.root)
+                    for kind, (variable, _slot) in list(self.fields.items()):
+                        slot = restored_slots[kind]
+                        label = next((label for label, alias in self.display_aliases.items()
+                                      if alias == slot.current_alias), None)
+                        if label is not None:
+                            variable.set(label)
+                        self.fields[kind] = (variable, slot)
+            except (OSError, ValueError) as restore_error:
+                self.dialog(show_error, 'Ошибка применения', f'{error}\nНе удалось восстановить прежний config: {restore_error}')
+                return
+            if isinstance(error, (ValueError, FileNotFoundError, PermissionError)):
+                self.dialog(show_error, 'Ошибка применения', f'{error}\nПрежний config восстановлен; перезапуск не выполнялся.')
+                return
+            try:
+                restart_zapret(password)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as restore_error:
+                self.dialog(show_error, 'Ошибка применения', f'{error}\nПрежний config восстановлен, но восстановить запуск не удалось: {restore_error}')
+            else:
+                self.dialog(show_error, 'Ошибка применения', f'{error}\nПрежний config и запуск восстановлены.')
 
 
 class KateConfigEditor(ConfigWindow):
@@ -421,6 +449,7 @@ class FakeSelectionWindow(ConfigWindow):
                         raise ValueError('Выбранный BIN отсутствует или больше не зарегистрирован.')
                     selections[kind] = names[value]
             text = replace_fakes(self.document.text, selections, payloads, self.document.root)
+            self.document.installed_starter = self.installed_starter
             changed = self.document.save_bytes(text.encode('utf-8'))
         except (OSError, ValueError, UnicodeError) as error:
             self.dialog(show_error, 'Ошибка замены', str(error))

@@ -1,10 +1,15 @@
 """Game Filter: индикатор, предупреждение, перезапуск службы."""
 import os
 import threading
+import queue
 import tkinter as tk
 
 from ui.windows.gamefilter_window import GameFilterWindow, clear_active_game_preset_disk
 from ui.windows.main.main_gamefilter_warning import show_game_filter_warning_dialog
+from core.game_mode import toggle_gamefilter_disk
+from core.config_lock import manager_settings_lock
+from core.strategy_settings import strategy_change
+from core.game_filter_extras import clear_game_mode_extras_if_inactive
 from core.game_presets import get_active_preset_id, get_game_presets, get_manager_dir, preset_switch_transaction
 from core.game_filter_settings import (
     read_game_filter_protocol_mode,
@@ -132,117 +137,90 @@ class MainGameFilterMixin:
             self._perform_game_filter_toggle(protocol_mode_for_enable=protocol_mode, custom_ports=custom_ports)
 
     def _perform_game_filter_toggle(self, protocol_mode_for_enable: str | None = None, custom_ports=None):
-        """Выполняет фактическое переключение Game Filter"""
+        """Save and restart in one worker; the Tk thread only updates widgets."""
         try:
-            # Получаем текущее состояние
-            was_enabled = self.is_game_filter_enabled()
+            mode = protocol_mode_for_enable or GAMEFILTER_PROTOCOL_BOTH
+            ports = validate_game_filter_custom_ports(mode, custom_ports)
+        except ValueError as error:
+            self.show_status_message(str(error), error=True)
+            return
+        manager_dir = get_manager_dir()
+        enabling = not self.is_game_filter_enabled()
+        status = f"Game Filter включен ({_game_filter_protocol_label(mode)})" if enabling else "Game Filter выключен"
 
-            if was_enabled:
-                # Удаляем файл (выключаем)
-                with preset_switch_transaction(get_manager_dir()):
-                    disable_standalone_gamefilter(get_manager_dir())
-                new_icon = "⌨"
-                status_message = "Game Filter выключен"
-                print("🎮🔴 Game Filter выключен")
+        def mutate():
+            if enabling:
+                # The desktop wizard explicitly chooses default/custom ranges.
+                clear_active_game_preset_disk(manager_dir)
+                write_game_filter_settings(mode, ports, manager_dir)
+                with open(self.game_filter_file, 'w'):
+                    pass
             else:
-                mode = protocol_mode_for_enable or GAMEFILTER_PROTOCOL_BOTH
-                custom_ports = validate_game_filter_custom_ports(mode, custom_ports)
-                manager_dir = get_manager_dir()
-                had_preset = get_active_preset_id() is not None
-                with preset_switch_transaction(manager_dir):
-                    clear_active_game_preset_disk(manager_dir)
-                    directory = os.path.dirname(self.game_filter_file)
-                    if directory:
-                        os.makedirs(directory, exist_ok=True)
-                    write_game_filter_settings(mode, custom_ports, manager_dir)
-                    with open(self.game_filter_file, 'w'):
-                        pass
-                if had_preset:
-                    self.show_status_message(
-                        "Активный пресет игры снят (несовместим с отдельным GameFilter)", warning=True)
-                    self.update_game_filter_indicator()
+                # The shared core clears mode, ports and inactive extras together.
+                if os.path.isfile(self.game_filter_file):
+                    toggle_gamefilter_disk(manager_dir)
+                else:
+                    disable_standalone_gamefilter(manager_dir)
+                    clear_game_mode_extras_if_inactive(manager_dir)
 
-                new_icon = "⌨"
-                status_message = (
-                    f"Game Filter включен ({_game_filter_protocol_label(mode)})"
-                )
-                print(f"🎮🟢 Game Filter включен, режим: {mode}")
+        self._restart_zapret_service(status, mutation=mutate, manager_dir=manager_dir)
 
-            # Меняем иконку
-            self.game_filter_indicator.config(text=new_icon)
+    def _restart_zapret_service(self, status_message, mutation=None, on_success=None, manager_dir=None):
+        """Keep mutation, validation, restart and recovery under one worker lock."""
+        if getattr(self, '_game_filter_operation', False):
+            self.show_status_message("Настройки GameFilter уже применяются", warning=True)
+            return
+        self._game_filter_operation = True
+        self.game_filter_indicator.config(state=tk.DISABLED, fg='#ff9500')
+        self.show_status_message(f"{status_message}, применение и перезапуск...")
+        root_path = manager_dir or get_manager_dir()
+        results = queue.Queue()
 
-            # Обновляем всплывающую подсказку
-            if hasattr(self, 'game_filter_tooltip') and self.game_filter_tooltip:
+        def work():
+            try:
+                with manager_settings_lock(root_path):
+                    prior_state = self.service_manager.get_service_status()
+                    if prior_state not in ('active', 'activating', 'inactive', 'failed'):
+                        raise RuntimeError('Не удалось определить прежнее состояние службы. Настройки не изменены.')
+                    restore = (self.service_manager.restart_service if prior_state in ('active', 'activating')
+                               else self.service_manager.stop_service)
+                    with strategy_change(root_path, self.service_manager.restart_service, restore=restore):
+                        if mutation is not None:
+                            mutation()
+                results.put((True, status_message + ", служба перезапущена"))
+            except Exception as error:
+                results.put((False, str(error)))
+
+        def poll():
+            try:
+                success, message = results.get_nowait()
+            except queue.Empty:
+                self.root.after(50, poll)
+                return
+            self._game_filter_operation = False
+            self.game_filter_indicator.config(state=tk.NORMAL)
+            self.update_game_filter_indicator()
+            if getattr(self, 'game_filter_tooltip', None):
                 self.hide_game_filter_tooltip()
                 self.show_game_filter_tooltip()
+            if success:
+                self.show_status_message(message, success=True)
+                if on_success is not None:
+                    on_success()
+            else:
+                self.show_status_message(f"Ошибка применения: {message}", error=True)
+            self.root.after(1000, self.check_service_status)
 
-            # Показываем сообщение о смене состояния
-            self.show_status_message(status_message, success=True)
+        try:
+            # Finish the bounded service operation and any disk rollback even
+            # when closing the main window ends Tk's event loop. The worker
+            # publishes only to Queue and never calls Tk during shutdown.
+            threading.Thread(target=work, daemon=False).start()
+        except RuntimeError as error:
+            results.put((False, str(error)))
+        self.root.after(50, poll)
 
-            # Перезапускаем службу zapret
-            self._restart_zapret_service(status_message)
-
-        except Exception as e:
-            error_msg = f"Ошибка переключения Game Filter: {e}"
-            print(f"❌ {error_msg}")
-            self.show_status_message(error_msg, error=True)
-
-    def _restart_zapret_service(self, status_message):
-        """Перезапускает службу zapret после изменения Game Filter"""
-        # Блокируем UI
-        self.game_filter_indicator.config(state=tk.DISABLED)
-
-        # Показываем анимацию загрузки (меняем цвет индикатора на оранжевый)
-        self.game_filter_indicator.config(fg='#ff9500')
-        self.show_status_message(f"{status_message}, перезапуск службы...")
-        self.root.update()
-
-        def restart_service_thread():
-            try:
-                # Запускаем перезапуск службы
-                success, message = self.service_manager.restart_service()
-
-                if success:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, служба перезапущена", success=True))
-                else:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, но служба не перезапущена: {message}", warning=True))
-
-            except Exception as e:
-                self.root.after(0, lambda: self.show_status_message(
-                    f"Ошибка перезапуска службы: {e}", error=True))
-            finally:
-                # Восстанавливаем UI и обновляем индикатор
-                self.root.after(0, lambda: self.game_filter_indicator.config(state=tk.NORMAL))
-                self.root.after(0, self.update_game_filter_indicator)
-
-                # Обновляем статус службы через 1 секунду
-                self.root.after(1000, self.check_service_status)
-
-        # Запускаем в отдельном потоке
-        thread = threading.Thread(target=restart_service_thread, daemon=True)
-        thread.start()
-
-    def restart_zapret_after_preset(self, status_message):
-        """Перезапускает службу zapret после изменения пресета (без изменения иконки GameFilter)."""
-        self.show_status_message(f"{status_message}, перезапуск службы...")
-        self.root.update()
-
-        def restart_thread():
-            try:
-                success, message = self.service_manager.restart_service()
-                if success:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, служба перезапущена", success=True))
-                else:
-                    self.root.after(0, lambda: self.show_status_message(
-                        f"{status_message}, но служба не перезапущена: {message}", warning=True))
-            except Exception as e:
-                self.root.after(0, lambda: self.show_status_message(
-                    f"Ошибка перезапуска службы: {e}", error=True))
-            finally:
-                self.root.after(1000, self.check_service_status)
-
-        thread = threading.Thread(target=restart_thread, daemon=True)
-        thread.start()
+    def restart_zapret_after_preset(self, status_message, mutation=None, on_success=None, manager_dir=None):
+        """Apply a preset/settings mutation in the same worker as its restart."""
+        self._restart_zapret_service(status_message, mutation=mutation,
+                                    on_success=on_success, manager_dir=manager_dir)

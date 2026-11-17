@@ -1,5 +1,5 @@
 import tkinter as tk
-from ui.components.window_navigation import run_child_window
+from ui.components.window_navigation import prepare_window_navigation, run_child_window
 from ui.components.button_styler import create_hover_button
 from core.dpi_utils import place_toplevel_centered_on_parent
 from ui.windows.strategy_window import StrategyWindow
@@ -87,4 +87,5 @@ class StrategySelectorWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()

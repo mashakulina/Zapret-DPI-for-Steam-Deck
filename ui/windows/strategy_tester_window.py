@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
@@ -17,6 +18,9 @@ from datetime import datetime, timedelta
 # Добавляем путь к core для импорта strategy_tester
 sys.path.append(str(Path(__file__).parent.parent.parent / 'core'))
 
+from core.strategy_payloads import validate_payloads, validate_active
+from core.strategy_settings import strategy_change
+from core.service_manager import ServiceManager
 from core.game_presets import reapply_active_preset_to_config, preset_switch_transaction
 
 class OutputRedirector:
@@ -85,6 +89,7 @@ class StrategyTesterWindow:
         )
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        prepare_window_navigation(self.window)
         self.window.wait_window()
 
 
@@ -636,10 +641,7 @@ class StrategyTesterWindow:
                     self.log_message("=" * 60, "#4fc3f7")
 
                     # Применяем лучшую хорошую стратегию
-                    if self.apply_best_strategy(best_strategy):
-                        # Перезапускаем службу
-                        self.restart_service_with_strategy(best_strategy, sudo_password)
-                    else:
+                    if not self.apply_best_strategy(best_strategy, restart=True):
                         self.log_message("⚠️  Не удалось применить стратегию автоматически", "#ff9500")
 
                 else:
@@ -734,7 +736,7 @@ class StrategyTesterWindow:
         except Exception as e:
             self.log_message(f"❌ Ошибка открытия отчета: {str(e)}", "#ff3b30")
 
-    def apply_best_strategy(self, strategy_name):
+    def apply_best_strategy(self, strategy_name, restart=False):
         """
         Применяет лучшую стратегию, записывая ее в config.txt и name_strategy.txt
         Добавляет дополнительные проверки
@@ -778,7 +780,9 @@ class StrategyTesterWindow:
 
             config_path = self.project_root / "config.txt"
             name_strategy_path = self.project_root / "utils" / "name_strategy.txt"
-            with preset_switch_transaction(str(self.project_root)):
+            validate_payloads(content, self.project_root)
+            restart_action = (lambda: self.restart_service_with_strategy(strategy_name, self.current_password)) if restart else None
+            with strategy_change(self.project_root, restart_action):
                 with open(config_path, 'w', encoding='utf-8') as f:
                     f.write(content + ("\n" if content and not content.endswith("\n") else ""))
                 with open(name_strategy_path, 'w', encoding='utf-8') as f:
@@ -814,35 +818,14 @@ class StrategyTesterWindow:
         Перезапускает службу zapret с примененной стратегией
         """
         try:
-            self.log_message("\n🔄 Перезапуск службы zapret...", "#4fc3f7")
-
-            # Останавливаем службу
-            success, output = self._run_command("systemctl stop zapret", use_sudo=True)
-            if not success:
-                self.log_message(f"⚠️  Предупреждение при остановке: {output}", "#ff9500")
-
-            # Убиваем процессы nfqws
-            self._run_command("pkill -9 nfqws", use_sudo=True)
-            time.sleep(2)
-
-            # Запускаем службу
-            success, output = self._run_command("systemctl start zapret", use_sudo=True, timeout=10)
-            if success:
-                self.log_message(f"✅ Служба zapret перезапущена", "#30d158")
-
-                # Ждем немного и проверяем статус
-                time.sleep(3)
-                status_success, status_output = self._run_command("systemctl is-active zapret", use_sudo=False)
-
-                if status_success and "active" in status_output:
-                    self.log_message(f"✅ Служба активна и работает со стратегией '{strategy_name}'", "#30d158")
-                else:
-                    self.log_message(f"⚠️  Служба не активна: {status_output}", "#ff9500")
-            else:
-                self.log_message(f"❌ Ошибка запуска службы: {output}", "#ff3b30")
-
-        except Exception as e:
-            self.log_message(f"❌ Ошибка перезапуска службы: {str(e)}", "#ff3b30")
+            validate_active(self.project_root)
+            manager = ServiceManager(password)
+            success, message = manager.restart_service()
+            self.log_message(message, "#30d158" if success else "#ff3b30")
+            return success, message
+        except Exception as error:
+            self.log_message(f"Ошибка перезапуска: {error}", "#ff3b30")
+            return False, str(error)
 
     def _run_command(self, command, use_sudo=False, timeout=10):
         """

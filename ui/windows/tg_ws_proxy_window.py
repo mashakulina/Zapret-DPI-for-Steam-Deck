@@ -1,5 +1,6 @@
 """Flowseal GUI integration. Workers communicate exclusively through a queue."""
 
+from ui.components.window_navigation import prepare_window_navigation
 import queue
 import threading
 import tkinter as tk
@@ -39,6 +40,7 @@ class TgWsProxyWindow:
         self.window.title("TG WS Proxy by Flowseal")
         self.window.configure(bg="#182030")
         self.window.protocol("WM_DELETE_WINDOW", self.close)
+        prepare_window_navigation(self.window)
         self.window.bind("<Escape>", lambda event: self.close())
         self.window.bind("<Destroy>", self._destroyed, add="+")
         self._build()
@@ -287,6 +289,7 @@ class TgWsProxyWindow:
         window.bind("<MouseWheel>", lambda event: canvas.yview_scroll(-int(event.delta / 120), "units"))
         window.bind("<Escape>", lambda event: close())
         window.protocol("WM_DELETE_WINDOW", close)
+        prepare_window_navigation(window)
         window.update_idletasks()
         width = min(max(body.winfo_reqwidth() + scrollbar.winfo_reqwidth(), footer.winfo_reqwidth()),
                     max(1, window.winfo_screenwidth() - 32))
@@ -477,4 +480,5 @@ class TgWsProxyWindow:
         self.window.destroy()
 
     def run(self):
+        prepare_window_navigation(self.window)
         self.window.wait_window()

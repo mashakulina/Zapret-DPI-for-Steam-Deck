@@ -144,7 +144,18 @@ class FirewallSettingsEngine:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise FirewallSettingsError('Настройки firewall уже изменяются') from exc
-            yield
+            # The current manager also serializes Decky/preset changes. Keep
+            # this helper executable in isolation for legacy recovery copies.
+            root = Path(__file__).resolve().parent.parent
+            if (root / 'core/config_lock.py').is_file():
+                if str(root) not in sys.path:
+                    sys.path.insert(0, str(root))
+                from core.config_lock import manager_settings_lock
+                lock_root = root if self.config_path == CONFIG_PATH else self.config_path.parent
+                with manager_settings_lock(lock_root):
+                    yield
+            else:
+                yield
         finally:
             os.close(descriptor)
 

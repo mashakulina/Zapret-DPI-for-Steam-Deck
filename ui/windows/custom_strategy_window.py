@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import os
 from ui.components.button_styler import create_hover_button
@@ -389,70 +390,23 @@ class CustomStrategyWindow:
             self.status_label.config(text="Сохранение стратегий...")
             self.root.update()
 
-            # Сохраняем наименования в файл и команды в config.txt
-            if not save_strategy_names(selected_strategies):
-                self.status_label.config(text="Ошибка сохранения стратегий", fg=self.error_color)
-                self.reset_ui_state()
-                return
-
-            print(f"Сохранено {len(selected_strategies)} стратегий")
-
-            # Проверяем, есть ли хотя бы одна валидная стратегия (не "Не выбирать")
-            if has_valid_strategy:
-                # Проверяем возможность перезапуска службы
-                if not self.service_manager:
-                    self.status_label.config(
-                        text="Стратегии сохранены. Перезапустите службу вручную",
-                        fg=self.warning_color
-                    )
-                    # Сброс состояния через 3 секунды
-                    self.root.after(3000, self.reset_ui_state)
-                    return
-
-                # Запрашиваем пароль sudo для перезапуска службы
-                self.status_label.config(text="Запрос прав администратора...")
-                self.root.update()
-
+            restart = None
+            if has_valid_strategy and self.service_manager:
                 if not self.ensure_sudo_password():
-                    self.status_label.config(
-                        text="Стратегии сохранены. Перезапустите службу вручную",
-                        fg=self.warning_color
-                    )
-                    # Сброс состояния через 3 секунды
-                    self.root.after(3000, self.reset_ui_state)
+                    self.reset_ui_state()
                     return
-
-                # Перезапускаем службу
-                self.status_label.config(text="Перезапуск службы...")
-                self.apply_button.config(text="Перезапуск...")
-                self.root.update()
-
-                success, message = self.restart_service()
-
-                if success:
-                    self.status_label.config(
-                        text=f"Сохранено {len(selected_strategies)} стратегий, служба перезапущена",
-                        fg=self.success_color
-                    )
-                    # Ждем немного и закрываем окно
-                    self.root.after(1500, self.close_window)
-                else:
-                    self.status_label.config(
-                        text=f"Сохранено {len(selected_strategies)} стратегий, но служба не перезапущена",
-                        fg=self.warning_color
-                    )
-                    # Сброс состояния через 3 секунды
-                    self.root.after(3000, self.reset_ui_state)
-            else:
-                # Если выбраны только "Не выбирать" - очищаем стратегии
-                self.status_label.config(
-                    text="Все стратегии очищены",
-                    fg=self.success_color
-                )
-                # Ждем немного и закрываем окно
-                self.root.after(1500, self.close_window)
+                restart = self.restart_service
+            if not save_strategy_names(selected_strategies, restart=restart, raise_on_error=True):
+                self.status_label.config(text="Ошибка применения: прежние настройки восстановлены. Подробности в журнале.", fg=self.error_color)
+                self.root.after(3000, self.reset_ui_state)
+                return
+            self.status_label.config(text="Стратегии применены" if restart else "Стратегии сохранены", fg=self.success_color)
+            self.root.after(1500, self.close_window)
 
         except Exception as e:
+            for variable in self.strategy_vars.values():
+                variable.set("Не выбирать")
+            self.load_saved_strategies()
             self.status_label.config(text=f"Ошибка: {str(e)}", fg=self.error_color)
             print(f"Ошибка применения стратегий: {e}")
             # Сброс состояния через 3 секунды
@@ -470,4 +424,5 @@ class CustomStrategyWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()

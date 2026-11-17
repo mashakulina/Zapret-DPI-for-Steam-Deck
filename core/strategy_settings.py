@@ -12,6 +12,7 @@ import re
 import stat
 import subprocess
 from core.strategy_import import bin_alias, manager_root, starter_mappings, _transaction, ImportRejected
+from core.strategy_payloads import validate_payloads, validate_active
 from core.game_presets import get_game_presets, get_active_preset_id
 
 
@@ -20,7 +21,9 @@ class ConfigConflict(ValueError):
 
 
 class ConfigDocument:
-    def __init__(self, config_path=None, root=None):
+    def __init__(self, config_path=None, root=None, installed_starter="/opt/zapret/starter.sh"):
+        self.installed_starter = installed_starter
+        self.previous = None
         self.root = Path(root) if root is not None else manager_root()
         self.path = Path(config_path) if config_path is not None else self.root / 'config.txt'
         self.original = self._read()
@@ -51,9 +54,15 @@ class ConfigDocument:
         return self.save_bytes(data)
 
     def save_bytes(self, data):
+        from core.config_lock import manager_settings_lock
+        with manager_settings_lock(self.root):
+            return self._save_bytes(data)
+
+    def _save_bytes(self, data):
         decoded = data.decode('utf-8')
         if not decoded.removeprefix('\ufeff').strip():
             raise ValueError('Пустой config не сохранён.')
+        validate_payloads(decoded, self.root, self.installed_starter)
         if self._read() != self.original:
             raise ConfigConflict('Config изменился на диске. Откройте его заново, чтобы не потерять внешние изменения.')
         if data == self.original:
@@ -65,6 +74,7 @@ class ConfigDocument:
                      data=base64.b64encode(data).decode(), mode=stat.S_IMODE(info.st_mode),
                      uid=info.st_uid, gid=info.st_gid)
         _transaction([entry])
+        self.previous = self.original
         self.original = data
         self.text = data.decode('utf-8')
         return True
@@ -84,7 +94,7 @@ def registered_payloads(root=None, installed_starter='/opt/zapret/starter.sh'):
     mapping, _ = starter_mappings(starter.read_text(encoding='utf-8'))
     result = []
     for path in sorted((root / 'files/bin').glob('*.bin')):
-        if path.is_symlink() or not path.is_file() or not path.stat().st_size:
+        if path.is_symlink() or not path.is_file() or not path.stat().st_size or not path.stat().st_mode & 0o444:
             continue
         try:
             alias = bin_alias(path.name)
@@ -210,6 +220,7 @@ def replace_fakes(text, selections, payloads, root=None):
 
 
 def restart_zapret(password=None, runner=None):
+    validate_active()
     runner = runner or subprocess.run
     argv = ['systemctl', 'restart', 'zapret']
     kwargs = dict(capture_output=True, text=True, timeout=30)
@@ -222,3 +233,51 @@ def restart_zapret(password=None, runner=None):
     status = runner(['systemctl', 'is-active', '--quiet', 'zapret'], capture_output=True, text=True, timeout=10)
     if status.returncode:
         raise RuntimeError('Служба Zapret не активна после перезапуска.')
+
+
+
+def strategy_change(root, restart=None, restore=None):
+    """Keep preset and strategy files coherent when save or restart fails."""
+    from contextlib import contextmanager
+    from core.game_presets import preset_switch_transaction
+
+    @contextmanager
+    def change():
+        attempted = False
+        failure = None
+        try:
+            with preset_switch_transaction(str(root)):
+                try:
+                    yield
+                    validate_active(root)
+                    if restart is not None:
+                        attempted = True
+                        success, message = restart()
+                        if not success:
+                            raise RuntimeError(message or 'Не удалось запустить новую стратегию.')
+                except Exception as error:
+                    failure = error
+                    raise
+        except Exception as error:
+            if failure is not None and error is not failure:
+                raise RuntimeError(f'{failure}\nНе удалось восстановить прежние настройки: {error}. Проверьте config и состояние службы.') from error
+            if attempted:
+                try:
+                    # A caller restoring an originally stopped service must be
+                    # able to stop it even when its old config is not startable.
+                    if restore is None:
+                        validate_active(root)
+                    success, message = (restore or restart)()
+                    if not success:
+                        raise RuntimeError(message)
+                except Exception as restore_error:
+                    raise RuntimeError(f'{error}\nПрежние настройки восстановлены, но восстановить запуск не удалось: {restore_error}') from error
+                raise RuntimeError(f'{error}\nПрежние настройки и запуск восстановлены.') from error
+            raise
+    @contextmanager
+    def locked_change():
+        from core.config_lock import manager_settings_lock
+        with manager_settings_lock(root):
+            with change():
+                yield
+    return locked_change()

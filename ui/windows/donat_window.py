@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import webbrowser
 import os
@@ -172,4 +173,5 @@ class DonationWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()

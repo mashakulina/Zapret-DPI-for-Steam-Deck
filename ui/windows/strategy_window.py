@@ -1,7 +1,10 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import os
 from tkinter import messagebox
 from ui.components.button_styler import create_hover_button
+from core.strategy_payloads import validate_payloads
+from core.strategy_settings import strategy_change
 from core.service_manager import ServiceManager
 from core.game_presets import reapply_active_preset_to_config, preset_switch_transaction
 from ui.windows.sudo_password_window import SudoPasswordWindow
@@ -385,34 +388,20 @@ class StrategyWindow:
             with open(strategy_file, 'r', encoding='utf-8') as f:
                 strategy_content = f.read().strip()
 
-            strategy_name = self.selected_strategy if strategy_content else "Не выбрано"
-            with preset_switch_transaction(manager_dir):
+            if not strategy_content:
+                raise ValueError("Файл стратегии пуст.")
+            strategy_name = self.selected_strategy
+            validate_payloads(strategy_content, manager_dir)
+            with strategy_change(manager_dir, self.service_manager.restart_service):
                 with open(name_strategy_file, 'w', encoding='utf-8') as f:
                     f.write(self.selected_strategy if strategy_content else "")
                 with open(config_file, 'w', encoding='utf-8') as f:
                     f.write(strategy_content + ("\n" if strategy_content else ""))
                 reapply_active_preset_to_config(manager_dir)
 
-            print(f"Стратегия '{strategy_name}' применена успешно")
-
-            # Обновляем текущую стратегию
             self.current_strategy = strategy_name
-
-            # Перезапускаем службу zapret
-            self.status_label.config(text="Перезапуск службы...")
-            self.apply_button.config(text="Перезапуск...")
-            self.root.update()
-
-            success, message = self.service_manager.restart_service()
-
-            if success:
-                self.status_label.config(text="Стратегия применена, служба перезапущена", fg=self.success_color)
-                # Ждем немного, чтобы пользователь увидел сообщение
-                self.root.after(1500, self.close_window)
-            else:
-                self.status_label.config(text=f"Стратегия применена, но служба не перезапущена: {message}", fg=self.warning_color)
-                # Сброс состояния через 3 секунды
-                self.root.after(3000, self.reset_ui_state)
+            self.status_label.config(text="Стратегия применена, служба перезапущена", fg=self.success_color)
+            self.root.after(1500, self.close_window)
 
         except Exception as e:
             self.status_label.config(text=f"Ошибка: {str(e)}", fg=self.error_color)
@@ -453,4 +442,5 @@ class StrategyWindow:
 
     def run(self):
         """Запускает окно"""
+        prepare_window_navigation(self.root)
         self.root.wait_window()

@@ -1,6 +1,7 @@
 import subprocess
 import time
 
+from core.strategy_payloads import validate_active
 from core.app_logging import get_error_logger
 
 
@@ -102,6 +103,10 @@ class ServiceManager:
     def _start_or_restart_zapret(self, op):
         """op: 'start' или 'restart'. Пишет подробности в лог при ошибке."""
         log = get_error_logger()
+        try:
+            validate_active()
+        except (OSError, ValueError) as error:
+            return False, str(error)
         ok, msg = self._run_sudo_command(f"systemctl {op} zapret")
         if not ok:
             ctx = self._collect_zapret_failure_context()

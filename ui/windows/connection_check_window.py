@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 
 import tkinter as tk
-from tkinter import scrolledtext
 import threading
 import subprocess
 import time
-import socket
-import http.client
-import urllib.parse
-import ssl
-from urllib.error import URLError
-from ui.components.button_styler import create_hover_button
-from core.dpi_utils import place_toplevel_centered_on_parent
 import os
+import queue
+from types import SimpleNamespace
+from ui.components.button_styler import create_hover_button
+from ui.components.window_navigation import prepare_window_navigation
+from core.dpi_utils import place_toplevel_centered_on_parent
+from core.connection_check import (YOUTUBE_PROBES, DISCORD_PROBES, INTERNET_PROBES,
+                                   run_probe, interpret_results, connection_summary)
 
 class ConnectionCheckWindow:
     def __init__(self, parent):
@@ -20,8 +19,46 @@ class ConnectionCheckWindow:
         self.window = None
         self.closed = threading.Event()
         self.checking = False
-        self.results = []
-        self.zapret_status = None
+        self._local = threading.local()
+        self._generation = 0
+        self._events = queue.Queue()
+        self._poll_after = None
+        self._context = self._new_context()
+
+    def _new_context(self):
+        return SimpleNamespace(generation=self._generation, cancel=threading.Event(),
+                               results=[], zapret_status=None, internet=[], youtube=[], discord=[])
+
+    @property
+    def context(self):
+        return getattr(self._local, "context", self._context)
+
+    @property
+    def results(self):
+        return self.context.results
+
+    @property
+    def zapret_status(self):
+        return self.context.zapret_status
+
+    @zapret_status.setter
+    def zapret_status(self, value):
+        self.context.zapret_status = value
+
+    def _active(self):
+        return not self.closed.is_set() and not self.context.cancel.is_set()
+
+    def _drain_events(self):
+        if self.closed.is_set():
+            return
+        for _ in range(200):
+            try:
+                generation, callback, args = self._events.get_nowait()
+            except queue.Empty:
+                break
+            if generation == self._generation:
+                callback(*args)
+        self._poll_after = self.parent.after(30, self._drain_events)
 
     def run(self):
         """Запускает окно проверки соединения"""
@@ -30,12 +67,21 @@ class ConnectionCheckWindow:
         self.window.title("Проверка соединения")
         self.window.configure(bg='#182030')
 
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        prepare_window_navigation(self.window)
         self.setup_ui()
+        self.window.update_idletasks()
+        width = min(self.window.winfo_reqwidth(), self.window.winfo_screenwidth() - 32)
+        height = min(self.window.winfo_reqheight(), self.window.winfo_screenheight() - 60)
+        self.window.minsize(min(420, width), min(280, height))
         place_toplevel_centered_on_parent(
-            self.window, self.parent, min_width=520, min_height=400, margin_width=8, margin_height=12
+            self.window, self.parent, fixed_content_size=(width, height), immediate=True
         )
 
-        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        if self.closed.is_set():
+            return
+        self.window.bind("<Escape>", lambda _event: self.on_close())
+        self._drain_events()
         self.window.wait_window()
 
     def setup_ui(self):
@@ -47,15 +93,16 @@ class ConnectionCheckWindow:
         title_label = tk.Label(
             main_frame,
             text="Проверка сетевого соединения",
-            font=("Arial", 16, "bold"),
+            font=("Arial", 14, "bold"),
             fg='white',
             bg='#182030'
         )
-        title_label.pack(pady=(0, 20))
+        title_label.pack(fill=tk.X, pady=(0, 20))
+        main_frame.bind("<Configure>", lambda event: title_label.configure(wraplength=max(100, event.width - 40)))
 
         # Область вывода результатов
         results_frame = tk.Frame(main_frame, bg='#182030')
-        results_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+
 
         tk.Label(
             results_frame,
@@ -78,15 +125,45 @@ class ConnectionCheckWindow:
             highlightthickness=0,
             state='disabled'
         )
-        self.results_text.pack(fill=tk.BOTH, expand=True)
+        self.results_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar = tk.Scrollbar(results_frame, command=self.results_text.yview)
+
+        def update_scrollbar(first, last):
+            scrollbar.set(first, last)
+            if float(first) > 0 or float(last) < 1:
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            else:
+                scrollbar.pack_forget()
+
+        self.results_text.configure(yscrollcommand=update_scrollbar)
 
         # Панель управления
         control_frame = tk.Frame(main_frame, bg='#182030')
-        control_frame.pack(fill=tk.X, pady=(0, 0))
+        control_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.summary_label = tk.Label(
+            main_frame, text="Итог: проверка не запускалась.",
+            font=("Arial", 11), fg="white", bg="#182030", justify=tk.LEFT, anchor=tk.W)
+        self.summary_note = tk.Label(
+            main_frame, text="Проверка веб-ресурсов. Видео YouTube и голос Discord не проверяются.",
+            font=("Arial", 10), fg="#8e8e93", bg="#182030", justify=tk.LEFT, anchor=tk.W)
+        self.summary_note.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 15))
+        self.summary_label.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 5))
+        # Reserve actions and summary before giving the remaining height to the log.
+        results_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        button_group = tk.Frame(control_frame, bg='#182030')
+        button_group.pack(anchor=tk.CENTER)
+
+        def wrap_summary(event):
+            width = max(1, event.width - 40)
+            self.summary_label.configure(wraplength=width)
+            self.summary_note.configure(wraplength=width)
+
+        main_frame.bind("<Configure>", wrap_summary, add="+")
 
         # Кнопки
         button_style = {
             'font': ('Arial', 11),
+            'width': 22,
             'bg': '#15354D',
             'fg': 'white',
             'bd': 0,
@@ -98,21 +175,35 @@ class ConnectionCheckWindow:
 
         # Динамическая кнопка Запустить/Остановить
         self.toggle_button = create_hover_button(
-            control_frame,
+            button_group,
             text="Запустить проверку",
             command=self.toggle_check,
             **button_style
         )
-        self.toggle_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.toggle_button.pack(side=tk.LEFT, padx=(0, 15))
 
         # Кнопка назад
         self.back_button = create_hover_button(
-            control_frame,
+            button_group,
             text="Назад",
             command=self.on_close,
             **button_style
         )
-        self.back_button.pack(side=tk.RIGHT)
+        self.back_button.pack(side=tk.LEFT)
+
+        def layout_controls(event):
+            needed = self.toggle_button.winfo_reqwidth() + self.back_button.winfo_reqwidth() + 15
+            stacked = event.width < needed
+            if getattr(self, '_controls_stacked', None) == stacked:
+                return
+            self._controls_stacked = stacked
+            self.toggle_button.pack_forget()
+            self.back_button.pack_forget()
+            self.toggle_button.pack(side=tk.TOP if stacked else tk.LEFT,
+                                    padx=(0, 0 if stacked else 15), pady=(0, 15 if stacked else 0))
+            self.back_button.pack(side=tk.TOP if stacked else tk.LEFT)
+
+        control_frame.bind('<Configure>', layout_controls)
 
     def toggle_check(self):
         """Переключает состояние проверки (запуск/остановка)"""
@@ -127,19 +218,21 @@ class ConnectionCheckWindow:
             return
 
         self.checking = True
-        self.results = []
+        self._generation += 1
+        self._context = self._new_context()
 
         # Обновляем текст кнопки
         self.toggle_button.config(text="Остановить проверку", bg='#15354D')
 
         # Очищаем результаты перед началом проверки
         self.clear_results()
+        self._set_summary("Итог: выполняется проверка…")
 
         # Все операции с GUI должны выполняться в главном потоке
-        self._schedule_ui(self._start_check_ui)
+        self._start_check_ui()
 
         # Запускаем проверку в отдельном потоке
-        thread = threading.Thread(target=self.run_checks)
+        thread = threading.Thread(target=self.run_checks, args=(self._context,))
         thread.daemon = True
         thread.start()
 
@@ -151,36 +244,29 @@ class ConnectionCheckWindow:
         self.log_message(f"Время начала: {time.strftime('%H:%M:%S')}")
         self.log_message("")
 
+    def _cancel_poll(self):
+        if self._poll_after is not None:
+            try:
+                self.parent.after_cancel(self._poll_after)
+            except tk.TclError:
+                pass
+            self._poll_after = None
+
     def _on_destroy(self, event):
         if event.widget is self.window:
+            self._cancel_poll()
             self.closed.set()
+            self._context.cancel.set()
             self.checking = False
 
     def _schedule_ui(self, callback, *args):
-        """Отбрасывает обновления закрытой страницы, в том числе уже в очереди."""
-        if self.closed.is_set():
-            return
-
-        def deliver():
-            if self.closed.is_set():
-                return
-            try:
-                if self.window is not None and self.window.winfo_exists():
-                    callback(*args)
-            except (tk.TclError, RuntimeError):
-                # Окно/интерпретатор могли закрыться во время доставки.
-                pass
-
-        try:
-            # Регистрируем callback на живом предке: destroy страницы не
-            # удалит Tcl-команду до обработки уже поставленного события.
-            self.parent.after(0, deliver)
-        except (tk.TclError, RuntimeError):
-            pass
+        """Workers only write Python data; the Tk thread drains the queue."""
+        if not self.closed.is_set():
+            self._events.put((self.context.generation, callback, args))
 
     def log_message(self, message, color='white'):
         """Добавляет сообщение в область вывода (безопасно для потоков)"""
-        # Используем after для безопасного обновления GUI из другого потока
+        # Worker передаёт только данные в очередь главного потока.
         self._schedule_ui(self._log_message_thread_safe, message, color)
 
     def _log_message_thread_safe(self, message, color):
@@ -201,10 +287,12 @@ class ConnectionCheckWindow:
     def stop_check(self):
         """Останавливает проверку"""
         if self.checking:
+            self._context.cancel.set()
             self.checking = False
             self.log_message("\n[!] Проверка остановлена пользователем", "#ff9500")
             # Обновляем кнопку немедленно
             self._schedule_ui(self._update_button_to_start)
+            self._publish_summary()
 
     def _update_button_to_start(self):
         """Обновляет кнопку в состояние 'Запустить'"""
@@ -216,8 +304,9 @@ class ConnectionCheckWindow:
         self.results_text.delete(1.0, tk.END)
         self.results_text.config(state='disabled')
 
-    def run_checks(self):
-        """Выполняет проверки соединения"""
+    def run_checks(self, context=None):
+        """Выполняет проверки соединения с отдельными данными каждого запуска."""
+        self._local.context = context or self._context
         try:
             # Проверяем статус Zapret перед началом проверок
             self.zapret_status = self.check_zapret_status()
@@ -225,25 +314,25 @@ class ConnectionCheckWindow:
             # 1. Проверка локальной сети
             self.check_local_network()
 
-            if not self.checking:
+            if not self._active():
                 return
 
             # 2. Проверка интернет-соединения
             self.check_internet()
 
-            if not self.checking:
+            if not self._active():
                 return
 
             # 3. Проверка YouTube (специальные URL)
             self.check_youtube()
 
-            if not self.checking:
+            if not self._active():
                 return
 
             # 4. Проверка Discord
             self.check_discord()
 
-            if not self.checking:
+            if not self._active():
                 return
 
            # 5. Итоги
@@ -252,7 +341,7 @@ class ConnectionCheckWindow:
         except Exception as e:
             self.log_message(f"\n[ОШИБКА] {str(e)}", "#ff3b30")
         finally:
-            self.checking = False
+            self._publish_summary()
             self._schedule_ui(self.on_check_complete)
 
     def check_zapret_status(self):
@@ -280,7 +369,8 @@ class ConnectionCheckWindow:
             result = subprocess.run(
                 ["ip", "route", "show", "default"],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=3
             )
 
             if result.stdout:
@@ -295,7 +385,8 @@ class ConnectionCheckWindow:
                         ping_result = subprocess.run(
                             ["ping", "-c", "2", "-W", "1", gateway],
                             capture_output=True,
-                            text=True
+                            text=True,
+                            timeout=4
                         )
 
                         if ping_result.returncode == 0:
@@ -318,416 +409,68 @@ class ConnectionCheckWindow:
 
         self.log_message("")
 
+    def _check_probes(self, category, probes):
+        key = {"Интернет": "internet", "YouTube": "youtube", "Discord": "discord"}[category]
+        results = getattr(self.context, key)
+        for probe in probes:
+            if not self._active():
+                break
+            result = run_probe(probe, self.context.cancel)
+            results.append(result)
+            if not self._active():
+                break
+            self.results.append((category, probe.name, result.success))
+            color = '#30d158' if result.success else '#ff9500'
+            self.log_message(f"  {probe.name}: {result.diagnosis} ({result.elapsed_ms:.0f} мс)", color)
+            if result.final_url:
+                self.log_message(f"    Конечный URL: {result.final_url}", '#8e8e93')
+        return results
+
     def check_internet(self):
-        """Проверка интернет-соединения через curl"""
-        self.log_message("🔍 ПРОВЕРКА ИНТЕРНЕТ-СОЕДИНЕНИЯ:", "#0a84ff")
-
-        test_urls = [
-            ("Google", "https://www.google.com"),
-            ("Cloudflare", "https://1.1.1.1"),
-            ("Yandex", "https://ya.ru"),
-        ]
-
-        for name, url in test_urls:
-            if not self.checking:
-                return
-
-            try:
-                start_time = time.time()
-
-                # Используем curl для проверки
-                result = subprocess.run(
-                    ["curl", "-s", "-I", "--max-time", "5", url],
-                    capture_output=True,
-                    text=True,
-                    timeout=7
-                )
-
-                response_time = (time.time() - start_time) * 1000
-
-                if result.returncode == 0:
-                    # Парсим статус код из вывода curl
-                    for line in result.stdout.split('\n'):
-                        if line.startswith('HTTP/'):
-                            status_code = int(line.split()[1])
-                            if status_code < 400:
-                                self.log_message(f"  ✅ {name}: {status_code} ({response_time:.0f} мс)", "#30d158")
-                                self.results.append(("Интернет", name, True))
-                            else:
-                                self.log_message(f"  ⚠️ {name}: код {status_code}", "#ff9500")
-                                self.results.append(("Интернет", name, False))
-                            break
-                else:
-                    self.log_message(f"  ❌ {name}: ошибка curl", "#ff3b30")
-                    self.results.append(("Интернет", name, False))
-
-            except subprocess.TimeoutExpired:
-                self.log_message(f"  ⏱️ {name}: таймаут", "#ff9500")
-                self.results.append(("Интернет", name, False))
-            except Exception as e:
-                self.log_message(f"  ❌ {name}: {str(e)}", "#ff3b30")
-                self.results.append(("Интернет", name, False))
-
+        self.log_message("🔍 ПРОВЕРКА ИНТЕРНЕТ-СОЕДИНЕНИЯ:", '#0a84ff')
+        self._check_probes("Интернет", INTERNET_PROBES)
         self.log_message("")
+
+    def _log_availability(self, category, results, count):
+        state = interpret_results(results, count, not self._active())
+        descriptions = {
+            "available": ("Проверенные HTTP-ресурсы доступны", '#30d158'),
+            "partial": ("Проверенные HTTP-ресурсы частично доступны", '#ff9500'),
+            "unavailable": ("Проверенные HTTP-ресурсы недоступны", '#ff3b30'),
+            "incomplete": ("Проверка не завершена", '#ff9500'),
+        }
+        message, color = descriptions[state]
+        self.log_message(f"{category}: {message} ({sum(r.success for r in results)}/{count})", color)
+        return state
 
     def check_discord(self):
-        """Проверка доступности Discord"""
-        self.log_message("🔍 ПРОВЕРКА ДОСТУПА К DISCORD:", "#0a84ff")
-
-        discord_tests = [
-            {
-                "name": "Discord Website",
-                "url": "discord.com",
-                "path": "/",
-                "method": "HEAD",
-                "expected": [200, 301, 302]
-            },
-            {
-                "name": "Discord API",
-                "url": "discord.com",
-                "path": "/api/v9/gateway",
-                "method": "GET",
-                "expected": [200, 400, 401]
-            },
-        ]
-
-        discord_results = []  # Временный список для результатов Discord
-
-        for test in discord_tests:
-            if not self.checking:
-                return
-
-            try:
-                start_time = time.time()
-
-                # Создаем SSL контекст для HTTPS
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-
-                # Устанавливаем соединение
-                conn = http.client.HTTPSConnection(test["url"], timeout=5, context=context)
-
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': '*/*'
-                }
-
-                conn.request(test["method"], test["path"], headers=headers)
-
-                response = conn.getresponse()
-                response_time = (time.time() - start_time) * 1000
-                status_code = response.status
-
-                # Проверяем статус
-                if status_code in test["expected"] or (200 <= status_code < 300):
-                    self.log_message(f"  ✅ {test['name']}: {status_code} ({response_time:.0f} мс)", "#30d158")
-                    self.results.append(("Discord", test['name'], True))
-                    discord_results.append(True)  # Добавляем в временный список
-
-                else:
-                    self.log_message(f"  ⚠️ {test['name']}: код {status_code}", "#ff9500")
-                    self.results.append(("Discord", test['name'], False))
-                    discord_results.append(False)  # Добавляем в временный список
-
-                conn.close()
-
-            except socket.timeout:
-                self.log_message(f"  ⏱️ {test['name']}: таймаут", "#ff9500")
-                self.results.append(("Discord", test['name'], False))
-                discord_results.append(False)  # Добавляем в временный список
-            except Exception as e:
-                self.log_message(f"  ❌ {test['name']}: {str(e)}", "#ff3b30")
-                self.results.append(("Discord", test['name'], False))
-                discord_results.append(False)  # Добавляем в временный список
-
-        self.log_message("")
-        # Проверяем результаты Discord тестов
-        if discord_results:  # Если есть результаты
-            successful_tests = sum(1 for result in discord_results if result)
-            total_tests = len(discord_results)
-
-            self.log_message("=" * 40, "#0a84ff")
-            self.log_message("🔍 АНАЛИЗ РЕЗУЛЬТАТОВ YOUTUBE:", "#0a84ff")
-            self.log_message("=" * 40, "#0a84ff")
-
-            if successful_tests == total_tests:  # Все тесты успешны
-                self.log_message(f"✅ Discord разблокирован и должен работать!", "#30d158")
-            elif successful_tests > 0:  # Частично успешно
-                self.log_message(f"  ⚠️ Discord частично доступен ({successful_tests}/{total_tests} тестов)", "#ff9500")
-            else:  # Все тесты провалены
-                self.log_message(f"❌ Discord не работает! Попробуйте другую стратегию", "#ff3b30")
-        else:
-            self.log_message(f"ℹ️  Нет результатов проверки Discord", "#8e8e93")
-
+        self.log_message("🔍 ПРОВЕРКА ДОСТУПА К DISCORD:", '#0a84ff')
+        results = self._check_probes("Discord", DISCORD_PROBES)
+        self._log_availability("Discord", results, len(DISCORD_PROBES))
+        self.log_message("Голосовая связь Discord не проверялась.", '#8e8e93')
         self.log_message("")
 
     def check_youtube(self):
-        """Проверка YouTube через curl с реальными endpoint'ами"""
-        self.log_message("🔍 ПРОВЕРКА ДОСТУПА К YOUTUBE И ВИДЕО:", "#0a84ff")
-
-        youtube_tests = [
-            {
-                "name": "youtube.com",
-                "url": "https://www.youtube.com/",
-                "method": "HEAD"
-            },
-            {
-                "name": "generate_204",
-                "url": "https://rr2---sn-axq7sn7z.googlevideo.com/generate_204",
-                "method": "HEAD"
-            },
-            {
-                "name": "YouTube API",
-                "url": "https://www.googleapis.com/youtube/v3/videos?id=dQw4w9WgXcQ&key=test",
-                "method": "GET"
-            },
-            {
-                "name": "YouTube Images",
-                "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-                "method": "HEAD"
-            }
-        ]
-
-        for test in youtube_tests:
-            if not self.checking:
-                return
-
-            self.log_message(f"  Тест: {test['name']}", "#8e8e93")
-
-            try:
-                # Строим команду curl
-                command = [
-                    "curl",
-                    "-I",  # Только заголовки
-                    "--connect-timeout", "5",
-                    "--max-time", "10",
-                    "--silent",
-                    "--show-error",
-                    "--location"  # Следовать редиректам
-                ]
-
-                # Добавляем метод запроса
-                if test["method"] == "HEAD":
-                    command.extend(["-X", "HEAD"])
-                # Для GET метод по умолчанию, ничего не добавляем
-
-                # Добавляем User-Agent как у браузера
-                command.extend(["-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
-
-                # Добавляем URL
-                command.append(test["url"])
-
-                start_time = time.time()
-
-                # Выполняем curl команду
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=12  # Немного больше чем --max-time
-                )
-
-                response_time = (time.time() - start_time) * 1000
-
-                if result.returncode == 0:
-                    # Успешный запрос, анализируем вывод
-                    lines = result.stdout.strip().split('\n')
-                    status_line = lines[0] if lines else ""
-
-                    if "HTTP/" in status_line:
-                        try:
-                            status_code = int(status_line.split()[1])
-                            status_str = str(status_code)
-
-                            # Логика проверки для разных тестов
-                            if test["name"] == "YouTube API":
-                                if status_str in ['400', '403', '404']:
-                                    self.log_message(f"    ✅ HTTP {status_code} ({response_time:.0f} мс) - ожидаемая ошибка ключа", "#30d158")
-                                    self.results.append(("YouTube", test['name'], True))
-                                elif status_str == '429':
-                                    self.log_message(f"    🚫 HTTP {status_code} - лимит запросов", "#ff3b30")
-                                    self.results.append(("YouTube", test['name'], False))
-                                elif status_str == '200':
-                                    self.log_message(f"    ⚠️ HTTP {status_code} - неожиданно для тестового ключа", "#ff9500")
-                                    self.results.append(("YouTube", test['name'], True))
-                                else:
-                                    self.log_message(f"    ❓ HTTP {status_code} - неожиданный ответ", "#ff9500")
-                                    self.results.append(("YouTube", test['name'], False))
-
-                            else:  # youtube.com, YouTube Images и generate_204
-                                if status_str in ['200', '204']:
-                                    self.log_message(f"    ✅ HTTP {status_code} ({response_time:.0f} мс)", "#30d158")
-                                    self.results.append(("YouTube", test['name'], True))
-                                elif status_str == '404':
-                                    self.log_message(f"    ⚠️ HTTP {status_code} - endpoint не найден", "#ff9500")
-                                    self.results.append(("YouTube", test['name'], False))
-                                elif status_str in ['403', '429']:
-                                    self.log_message(f"    🚫 HTTP {status_code} - блокировка", "#ff3b30")
-                                    self.results.append(("YouTube", test['name'], False))
-                                elif status_str in ['301', '302', '307', '308']:
-                                    self.log_message(f"    🔀 HTTP {status_code} - редирект", "#ff9500")
-                                    self.results.append(("YouTube", test['name'], True))
-                                else:
-                                    self.log_message(f"    ❓ HTTP {status_code} - неожиданный ответ", "#ff9500")
-                                    self.results.append(("YouTube", test['name'], False))
-
-                        except (IndexError, ValueError) as e:
-                            self.log_message(f"    ❌ Ошибка парсинга ответа: {str(e)}", "#ff3b30")
-                            self.results.append(("YouTube", test['name'], False))
-                    else:
-                        self.log_message(f"    ❌ Нет HTTP заголовка в ответе", "#ff3b30")
-                        self.results.append(("YouTube", test['name'], False))
-
-                else:
-                    # Ошибка curl, анализируем stderr
-                    error_output = result.stderr.strip() if result.stderr else result.stdout.strip()
-                    error_lower = error_output.lower()
-
-                    if "could not resolve host" in error_lower:
-                        self.log_message(f"    ❌ DNS блокировка - не удалось разрешить хост", "#ff3b30")
-                    elif "connection timed out" in error_lower:
-                        self.log_message(f"    ❌ Таймаут соединения - возможная DPI блокировка", "#ff3b30")
-                    elif "connection refused" in error_lower:
-                        self.log_message(f"    ❌ Соединение отклонено - блокировка", "#ff3b30")
-                    elif "ssl handshake" in error_lower or "tls" in error_lower:
-                        self.log_message(f"    🔐 SSL handshake ошибка - вероятная DPI блокировка", "#ff3b30")
-                    elif "operation timed out" in error_lower:
-                        self.log_message(f"    ⏱️ Общий таймаут запроса", "#ff9500")
-                    else:
-                        # Берем первую строку ошибки
-                        error_first_line = error_output.split('\n')[0] if error_output else "Неизвестная ошибка"
-                        self.log_message(f"    ❌ Ошибка curl: {error_first_line[:80]}", "#ff3b30")
-
-                    self.results.append(("YouTube", test['name'], False))
-
-            except subprocess.TimeoutExpired:
-                self.log_message(f"    ⏱️ Таймаут выполнения команды (>12 сек)", "#ff9500")
-                self.results.append(("YouTube", test['name'], False))
-            except Exception as e:
-                self.log_message(f"    ❌ Системная ошибка: {str(e)[:80]}", "#ff3b30")
-                self.results.append(("YouTube", test['name'], False))
-
-        self.log_message("")
-
-        # Интерпретируем результаты
+        self.log_message("🔍 ПРОВЕРКА HTTP-РЕСУРСОВ YOUTUBE:", '#0a84ff')
+        self.context.youtube = self._check_probes("YouTube", YOUTUBE_PROBES)
         self.interpret_youtube_results()
 
-    def _check_ssl_handshake_issues(self):
-        """Проверяет наличие SSL handshake проблем в результатах"""
-        ssl_errors = []
-
-        # Собираем все сообщения об ошибках из results_text
-        text_content = self.results_text.get("1.0", tk.END)
-
-        # Ищем SSL ошибки
-        ssl_keywords = [
-            "SSL ошибка",
-            "SSLError",
-            "handshake",
-            "SSL handshake",
-            "TLS",
-            "certificate",
-            "CERT",
-            "ssl.CERT"
-        ]
-
-        youtube_keywords = [
-            "googlevideo",
-            "youtube",
-            "ytimg"
-        ]
-
-        lines = text_content.split('\n')
-        for line in lines:
-            line_lower = line.lower()
-            # Проверяем, есть ли в строке SSL ошибка И связана ли она с YouTube
-            if any(keyword.lower() in line_lower for keyword in ssl_keywords):
-                if any(keyword in line for keyword in youtube_keywords):
-                    ssl_errors.append(line.strip())
-
-        return len(ssl_errors) > 0
-
     def interpret_youtube_results(self):
-        """Интерпретирует результаты YouTube тестов"""
-        self.log_message("=" * 40, "#0a84ff")
-        self.log_message("🔍 АНАЛИЗ РЕЗУЛЬТАТОВ YOUTUBE:", "#0a84ff")
-        self.log_message("=" * 40, "#0a84ff")
-
-        # Проверяем наличие SSL handshake проблем
-        ssl_problems = self._check_ssl_handshake_issues()
-
-        # Считаем результаты YouTube тестов
-        youtube_results = [r for r in self.results if r[0] == "YouTube"]
-        total_youtube = len(youtube_results)
-        successful_youtube = sum(1 for r in youtube_results if r[2])
-
-        # Проверяем конкретные тесты
-        has_generate_204 = any(r[1] == "generate_204" and r[2] for r in youtube_results)
-        has_youtube_main = any(r[1] == "youtube.com" and r[2] for r in youtube_results)
-        has_images = any(r[1] == "YouTube Images" and r[2] for r in youtube_results)
-
-        if ssl_problems:
-            self.log_message("🚨 ОБНАРУЖЕНА ВОЗМОЖНАЯ DPI БЛОКИРОВКА!", "#ff3b30")
-            self.log_message("")
-            self.log_message("❌ Признаки блокировки:", "#ff3b30")
-            self.log_message("   • SSL handshake ошибки на YouTube доменах", "#ff3b30")
-            self.log_message("   • TCP соединение может работать, но HTTPS блокируется", "#ff3b30")
-            self.log_message("   • DPI система может быть активна", "#ff3b30")
-            self.log_message("")
-            self.log_message("🛠️ РЕКОМЕНДАЦИИ:", "#ff9500")
-            self.log_message("   1. Проверьте запущена ли служба Zapret", "#ff3b30")
-            self.log_message("   2. Выберите другую стратегию обхода", "#ff3b30")
-            self.log_message("   3. Убедитесь в наличии интернет-соединения", "#ff3b30")
-            self.log_message("   4. Попробуйте включить DNS", "#ff3b30")
-            self.log_message("")
-
-        elif successful_youtube == total_youtube and total_youtube > 0:
-            self.log_message("✅ YouTube разблокирован и должен работать!", "#30d158")
-            self.log_message("")
-            # self.log_message("🔑 Ключевые индикаторы успеха:", "#30d158")
-            # if has_generate_204:
-            #     self.log_message("   • HTTP 204 на /generate_204 - идеальный ответ", "#30d158")
-            # if has_images:
-            #     self.log_message("   • HTTP 200 на thumbnail сервер - изображения загружаются", "#30d158")
-            # if has_youtube_main:
-            #     self.log_message("   • Доступность youtube.com - основной сайт работает", "#30d158")
-            # self.log_message("   • SSL handshake успешен - нет DPI блокировки", "#30d158")
-            # self.log_message("   • DNS разрешается - нет DNS блокировки", "#30d158")
-
-        elif successful_youtube == total_youtube:
-            self.log_message("⚠️ ЧАСТИЧНАЯ ДОСТУПНОСТЬ YOUTUBE", "#ff9500")
-            self.log_message("")
-            self.log_message("🔍 Возможные проблемы:", "#ff9500")
-            if not has_generate_204:
-                self.log_message(
-                    "   • Проблемы с видео-серверами Google. Скорее всего сам сайт youtube грузится, но могут наблюдаться тормоза",
-                    "#ff9500",
-                )
-            if not has_youtube_main:
-                self.log_message(
-                    "   • Основной сайт YouTube недоступен. Попробуйте включить DNS Google",
-                    "#ff9500",
-                )
-            if not has_images:
-                self.log_message("   • Проблемы с загрузкой изображений", "#ff9500")
-
-        else:
-            self.log_message("❌ YOUTUBE НЕ ДОСТУПЕН", "#ff3b30")
-            self.log_message("")
-            self.log_message("🛠️ НЕОБХОДИМЫ ДЕЙСТВИЯ:", "#ff3b30")
-            self.log_message("   1. Проверьте запущена ли служба Zapret", "#ff3b30")
-            self.log_message("   2. Выберите другую стратегию обхода", "#ff3b30")
-            self.log_message("   3. Убедитесь в наличии интернет-соединения", "#ff3b30")
-            self.log_message("   4. Попробуйте включить DNS", "#ff3b30")
-
+        state = self._log_availability("YouTube", self.context.youtube, len(YOUTUBE_PROBES))
+        self.log_message("Сайт, generate_204 и изображения не подтверждают воспроизведение видео.", '#8e8e93')
+        self.log_message("Видеопоток не проверялся. Ошибка запроса сама по себе не доказывает DPI-блокировку.", '#8e8e93')
         self.log_message("")
-        # self.log_message("📋 Справочная информация:", "#8e8e93")
-        # self.log_message("   • HTTP 404 на API - нормально (без ключа)", "#8e8e93")
-        # self.log_message("   • Ping успешный = сетевая связность OK", "#8e8e93")
-        # self.log_message("   • Порт 443 открыт = TCP соединение OK", "#8e8e93")
-        # self.log_message("   • SSL handshake = критичен для HTTPS", "#8e8e93")
-        # self.log_message("=" * 40, "#0a84ff")
+        return state
+
+    def _set_summary(self, text):
+        """Only called on the Tk thread, via the generation-filtered event queue."""
+        self.summary_label.configure(text=text)
+
+    def _publish_summary(self):
+        context = self.context
+        text = connection_summary(context.internet, context.youtube, context.discord)
+        self._schedule_ui(self._set_summary, text)
+        self.log_message(text, "#0a84ff")
 
     def show_summary(self):
 
@@ -768,12 +511,11 @@ class ConnectionCheckWindow:
         # Обновляем кнопку обратно в состояние "Запустить проверку"
         self.toggle_button.config(text="Запустить проверку", bg='#15354D')
 
-        total_success = sum(1 for _, _, success in self.results if success)
-        total_tests = len(self.results)
-
     def on_close(self):
         """Закрывает окно"""
+        self._cancel_poll()
         self.closed.set()
+        self._context.cancel.set()
         self.checking = False
         if self.window:
             self.window.destroy()

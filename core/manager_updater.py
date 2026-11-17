@@ -28,6 +28,7 @@ class ManagerUpdater(BaseUpdater):
             "utils/name_strategy.txt",
             "utils/working_strategies.txt",
             "utils/gamefilter.ports.json",
+            "utils/builtin_game_lists.state.json",
             "utils/for games/presets.json",
             "files/lists/ipset-all_user.txt",
             "files/lists/ipset-exclude_user.txt",

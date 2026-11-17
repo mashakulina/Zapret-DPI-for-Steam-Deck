@@ -1,3 +1,4 @@
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import threading
 
@@ -131,6 +132,7 @@ class UpdateWindow:
         self.root.transient(self.parent)
         self.root.grab_set()
         self.root.protocol("WM_DELETE_WINDOW", self.close_window)
+        prepare_window_navigation(self.root)
 
     def setup_ui(self):
         main_frame = tk.Frame(self.root, bg='#182030', padx=20, pady=15)
@@ -341,6 +343,7 @@ class UpdateWindow:
         self.root.destroy()
 
     def run(self):
+        prepare_window_navigation(self.root)
         self.root.wait_window()
 
 
@@ -387,6 +390,8 @@ class UpdateProgressWindow:
         self.start_update_process()
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        prepare_window_navigation(self.window)
+        prepare_window_navigation(self.window)
         self.window.wait_window()
 
     def setup_ui(self):

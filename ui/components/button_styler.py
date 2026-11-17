@@ -36,6 +36,8 @@ def create_hover_button(parent, text, command, **kwargs):
         'font': ('Arial', 10),
         'bg': '#15354D',
         'fg': 'white',
+        'activebackground': '#1E4A6E',
+        'activeforeground': 'white',
         'bd': 0,
         'padx': 10,
         'pady': 5,

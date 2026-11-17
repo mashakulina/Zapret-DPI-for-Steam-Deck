@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from ui.components.window_navigation import prepare_window_navigation
 import tkinter as tk
 import subprocess
 import re
@@ -877,4 +878,5 @@ class DNSSettingsWindow:
     def run(self):
         """Запускает окно настроек DNS"""
         self.create_window()
+        prepare_window_navigation(self.window)
         self.window.wait_window()
