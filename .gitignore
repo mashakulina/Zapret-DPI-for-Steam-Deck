@@ -1,5 +1,9 @@
 /docs/ui_scaling.md
 git-add-commit-loop.sh
+# Рабочие каталоги разработки не переносятся и не коммитятся.
 /tests/
 /scripts/
 /dist/
+/pyproject.toml
+__pycache__/
+.pytest_cache/
